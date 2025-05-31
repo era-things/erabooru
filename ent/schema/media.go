@@ -14,10 +14,6 @@ type Media struct {
 // Fields of the Media.
 func (Media) Fields() []ent.Field {
 	return []ent.Field{
-		field.Int("id").
-			Unique().
-			Immutable().
-			Comment("Unique identifier for the media item"),
 		field.String("hash").
 			Unique().
 			Immutable().

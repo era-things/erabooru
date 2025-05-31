@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 )
 
@@ -30,5 +31,9 @@ func (Tag) Fields() []ent.Field {
 
 // Edges of the Tag.
 func (Tag) Edges() []ent.Edge {
-	return nil
+	return []ent.Edge{
+		edge.From("media", Media.Type).
+			Ref("tags").
+			Comment("Media items associated with this tag, used for categorization"),
+	}
 }
