@@ -1,0 +1,49 @@
+############################
+#  Go build artefacts
+############################
+# output binaries
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.a
+*.test
+# build cache & coverage
+*.out
+*.coverprofile
+coverage.*
+_cgo*
+# IDE launch configs created by `go run -race`
+launch.json
+
+############################
+#  Copied bundle (embedded)
+############################
+/internal/assets/build/     
+
+############################
+#  Environment & config
+############################
+.env
+.env.*                      
+*.local
+*.secret
+*.pem
+
+############################
+#  Editor / IDE clutter
+############################
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+############################
+#  Docker
+############################
+/**/.dockerignore
+**/docker-compose.override.yml
