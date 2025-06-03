@@ -45,11 +45,12 @@ test:
 ## -race
 
 .PHONY: backend-build
-backend-build: generate vet test ## Build API + worker binaries
+backend-build: generate vet test ui-copy ## Build API + worker binaries
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -o $(BINARY)     ./cmd/server
 	$(GO) build -o $(BIN_DIR)/worker ./cmd/worker
 	@echo "🛠  Built $(BINARY) and worker binary"
+
 
 # ──────────────────────────────────────────
 # PRODUCTION ARTIFACT  (`make release`)
