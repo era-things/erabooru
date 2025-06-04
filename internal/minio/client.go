@@ -25,7 +25,21 @@ func New(cfg *config.Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{Client: cli, Bucket: cfg.MinioBucket}, nil
+
+	c := &Client{Client: cli, Bucket: cfg.MinioBucket}
+
+	ctx := context.Background()
+	exists, err := cli.BucketExists(ctx, cfg.MinioBucket)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		if err := cli.MakeBucket(ctx, cfg.MinioBucket, mc.MakeBucketOptions{}); err != nil {
+			return nil, err
+		}
+	}
+
+	return c, nil
 }
 
 // PresignedPut returns a presigned URL for uploading an object.
