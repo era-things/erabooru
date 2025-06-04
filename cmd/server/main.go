@@ -4,11 +4,14 @@ import (
 	"embed"
 	"era/booru/internal/assets"
 	"era/booru/internal/config"
+	minio "era/booru/internal/minio"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 func corsMiddleware() gin.HandlerFunc {
@@ -30,10 +33,39 @@ func main() {
 	if err != nil {
 		log.Fatalf("error loading configuration: %v", err)
 	}
-	_ = cfg
+
+	m, err := minio.New(cfg)
+	if err != nil {
+		log.Fatalf("init minio: %v", err)
+	}
 
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery(), corsMiddleware())
+
+	r.POST("/api/upload-url", func(c *gin.Context) {
+		type req struct {
+			Filename string `json:"filename"`
+		}
+		var body req
+		if err := c.BindJSON(&body); err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		if !strings.HasSuffix(strings.ToLower(body.Filename), ".png") {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		object := uuid.New().String() + ".png"
+		url, err := m.PresignedPut(c.Request.Context(), object, time.Minute*15)
+		if err != nil {
+			log.Printf("presign: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"url": url, "object": object})
+	})
 
 	// Serve assets from the embedded build directory
 	r.GET("/_app/*filepath", serveStatic)
