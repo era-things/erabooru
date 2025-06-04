@@ -3,18 +3,18 @@ services:
   db:
     image: postgres:15
     environment:
-      POSTGRES_USER: booru
-      POSTGRES_PASSWORD: booru
-      POSTGRES_DB: booru
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT}:5432"
 
   minio:
     image: quay.io/minio/minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minio
-      MINIO_ROOT_PASSWORD: minio123
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - ./minio-data:/data
     ports:
@@ -25,6 +25,8 @@ services:
     build:
       context: .
       target: prod
+    env_file:
+      - .env
     depends_on:
       - db
       - minio

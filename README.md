@@ -8,16 +8,17 @@ This repository contains a Go backend with a SvelteKit frontend. During developm
 - Node.js and npm
 
 ## Starting the stack
-1. Start the databases with Docker Compose:
+1. Copy `.env.example` to `.env` to configure the database and MinIO credentials. Docker Compose will automatically load these values and pass them to the application container via `env_file`.
+2. Start the databases with Docker Compose:
    ```sh
    docker compose up -d
    ```
-2. In a separate terminal, start the Go API server (for example with [Air](https://github.com/cosmtrek/air)):
+3. In a separate terminal, start the Go API server (for example with [Air](https://github.com/cosmtrek/air)):
    ```sh
    air
    ```
    The API listens on `http://localhost:8080`.
-3. Run the Vite dev server for the UI:
+4. Run the Vite dev server for the UI:
    ```sh
    cd web && npm install && npm run dev
    ```

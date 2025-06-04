@@ -3,6 +3,8 @@ package main
 import (
 	"embed"
 	"era/booru/internal/assets"
+	"era/booru/internal/config"
+	"log"
 	"net/http"
 	"strings"
 
@@ -24,6 +26,12 @@ func corsMiddleware() gin.HandlerFunc {
 }
 
 func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("error loading configuration: %v", err)
+	}
+	_ = cfg
+
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery(), corsMiddleware())
 

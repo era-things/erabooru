@@ -29,7 +29,8 @@ launch.json
 #  Environment & config
 ############################
 .env
-.env.*                      
+.env.*
+!.env.example
 *.local
 *.secret
 *.pem
