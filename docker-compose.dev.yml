@@ -8,6 +8,18 @@ services:
     ports:
       - "5173:5173"
       - "8080:8080"
+    environment:
+      MINIO_ENDPOINT: caddy:9000
     depends_on:
       - db
+      - minio
+      - caddy
+
+  caddy:
+    image: caddy:2
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+    ports:
+      - "9000:9000"
+    depends_on:
       - minio
