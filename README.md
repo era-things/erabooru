@@ -24,3 +24,35 @@ This repository contains a Go backend with a SvelteKit frontend. During developm
    The UI will be available at `http://localhost:5173` and will communicate with the API.
 
 With this setup you can edit the Svelte application and see changes instantly while still interacting with the backend databases.
+
+## Dockerized workflow
+
+A `Dockerfile` and compose configuration allow running everything in containers.
+
+### Development
+
+Launch the backend, databases and the Vite dev server with:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+The API will be available at `http://localhost:8080` and the UI with hot reload at `http://localhost:5173`.
+
+### Production image
+
+Build the release container that serves the prebuilt UI:
+
+```sh
+docker compose build app
+docker compose up -d app
+```
+
+Or directly with Docker:
+
+```sh
+docker build -t erabooru .
+docker run -p 8080:8080 erabooru
+```
+
+The application will then serve the static website on port 8080.
