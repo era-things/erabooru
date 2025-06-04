@@ -21,7 +21,8 @@ launch.json
 ############################
 #  Copied bundle (embedded)
 ############################
-/internal/assets/build/     
+/internal/assets/build/
+!/internal/assets/build/.gitkeep
 
 ############################
 #  Environment & config
