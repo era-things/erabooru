@@ -1,47 +1,35 @@
 package main
 
 import (
+	"embed"
 	"era/booru/internal/assets"
 	"net/http"
 	"strings"
-	"embed"
+
 	"github.com/gin-gonic/gin"
 )
 
 func corsMiddleware() gin.HandlerFunc {
-        return func(c *gin.Context) {
-                c.Header("Access-Control-Allow-Origin", "http://localhost:5173")
-                c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-                c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept")
-                c.Header("Access-Control-Allow-Credentials", "true")
-                if c.Request.Method == http.MethodOptions {
-                        c.AbortWithStatus(http.StatusNoContent)
-                        return
-                }
-                c.Next()
-        }
+	return func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "http://localhost:5173")
+		c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept")
+		c.Header("Access-Control-Allow-Credentials", "true")
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		c.Next()
+	}
 }
 
 func main() {
-        r := gin.New()
-        r.Use(gin.Logger(), gin.Recovery(), corsMiddleware())
+	r := gin.New()
+	r.Use(gin.Logger(), gin.Recovery(), corsMiddleware())
 
-	// Create a file server from the embedded FS 
-	fs := http.FS(assets.UI)
-
-	// Serve static files from the embedded build directory
-	r.GET("/static/*filepath", func(c *gin.Context) {
-		path := "build" + c.Request.URL.Path
-		// Prevent directory traversal
-		if strings.Contains(c.Param("filepath"), "..") {
-			c.AbortWithStatus(http.StatusForbidden)
-			return
-		}
-		c.FileFromFS(path, fs)
-	})
-
-	// Serve index.html for root
-	r.GET("/", serveIndex(assets.UI))
+	// Serve assets from the embedded build directory
+	r.GET("/_app/*filepath", serveStatic)
+	r.GET("/favicon.png", serveStatic)
 
 	// SPA fallback - serve index.html for all other routes
 	r.NoRoute(serveIndex(assets.UI))
@@ -58,4 +46,26 @@ func serveIndex(ui embed.FS) gin.HandlerFunc {
 		}
 		c.Data(http.StatusOK, "text/html", file)
 	}
+}
+
+func serveStatic(c *gin.Context) {
+	path := "build" + c.Request.URL.Path
+
+	// Prevent directory traversal
+	if strings.Contains(c.Param("filepath"), "..") {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+
+	fs := http.FS(assets.UI)
+
+	// Check if file exists
+	f, err := fs.Open(path)
+	if err != nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	f.Close()
+
+	c.FileFromFS(path, fs)
 }

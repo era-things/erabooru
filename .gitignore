@@ -15,6 +15,7 @@
 *.coverprofile
 coverage.*
 _cgo*
+minio-data/
 # IDE launch configs created by `go run -race`
 launch.json
 

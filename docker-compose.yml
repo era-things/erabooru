@@ -1,4 +1,4 @@
-# docker-compose.yml (minimal)
+version: '3'
 services:
   db:
     image: postgres:15
@@ -6,12 +6,27 @@ services:
       POSTGRES_USER: booru
       POSTGRES_PASSWORD: booru
       POSTGRES_DB: booru
-    ports: ["5432:5432"]
+    ports:
+      - "5432:5432"
+
   minio:
     image: quay.io/minio/minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: minio123
-    volumes: ["./minio-data:/data"]
-    ports: ["9000:9000", "9001:9001"]
+    volumes:
+      - ./minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  app:
+    build:
+      context: .
+      target: prod
+    depends_on:
+      - db
+      - minio
+    ports:
+      - "8080:8080"
