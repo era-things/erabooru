@@ -18,7 +18,8 @@
                        body: JSON.stringify({ filename: file.name })
                });
                if (!res.ok) {
-                       alert('Failed to get upload URL');
+                        console.warn(`Failed to get upload URL: ${res.status} ${res.statusText}`);
+                       alert(`Failed to get upload URL from ${apiBase}/api/upload-url`);
                        return;
                }
 
