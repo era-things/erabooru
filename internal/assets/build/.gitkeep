@@ -1,0 +1,1 @@
+# this file needed to remove "no matching files found" error in fs.go (actual files will be copied here on build stage)
