@@ -4,6 +4,7 @@ import (
 	"context"
 	"era/booru/internal/config"
 	"log"
+	"path"
 	"time"
 
 	mc "github.com/minio/minio-go/v7"
@@ -18,7 +19,7 @@ type Client struct {
 
 // New creates a MinIO client using values from configuration.
 func New(cfg *config.Config) (*Client, error) {
-	cli, err := mc.New(cfg.MinioEndpoint, &mc.Options{
+	cli, err := mc.New(cfg.MinioInternalEndpoint, &mc.Options{
 		Creds:  credentials.NewStaticV4(cfg.MinioUser, cfg.MinioPassword, ""),
 		Secure: cfg.MinioSSL,
 	})
@@ -43,11 +44,15 @@ func New(cfg *config.Config) (*Client, error) {
 }
 
 // PresignedPut returns a presigned URL for uploading an object.
-func (c *Client) PresignedPut(ctx context.Context, object string, expiry time.Duration) (string, error) {
+func (c *Client) PresignedPut(ctx context.Context, cfg *config.Config, object string, expiry time.Duration) (string, error) {
 	u, err := c.PresignedPutObject(ctx, c.Bucket, object, expiry)
 	if err != nil {
 		return "", err
 	}
+
+	// Rewrite for browser upload
+	u.Host = cfg.MinioPublicHost
+	u.Path = path.Join(cfg.MinioPublicPrefix, u.Path) // safe join
 	return u.String(), nil
 }
 

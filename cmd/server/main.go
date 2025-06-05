@@ -58,7 +58,7 @@ func main() {
 		}
 
 		object := uuid.New().String() + ".png"
-		url, err := m.PresignedPut(c.Request.Context(), object, time.Minute*15)
+		url, err := m.PresignedPut(c.Request.Context(), cfg, object, time.Minute*15)
 		if err != nil {
 			log.Printf("presign: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
