@@ -14,11 +14,11 @@ This repository contains a Go backend with a SvelteKit frontend. During developm
    docker compose up -d
    ```
    Caddy will proxy MinIO so presigned URLs resolve to `localhost:9000`.
-3. In a separate terminal, start the Go API server (for example with [Air](https://github.com/cosmtrek/air)):
+3. In a separate terminal, start the Go API server with [Air](https://github.com/air-verse/air) for hot reload:
    ```sh
    air
    ```
-   The API listens on `http://localhost:8080`.
+   The API listens on `http://localhost:8080` and automatically restarts on changes.
 4. Run the Vite dev server for the UI:
    ```sh
    cd web && npm install && npm run dev
@@ -33,13 +33,13 @@ A `Dockerfile` and compose configuration allow running everything in containers.
 
 ### Development
 
-Launch the backend, databases and the Vite dev server with:
+Launch the backend, databases and the hot-reloading servers with:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+make dev
 ```
 
-The API will be available at `http://localhost:8080`, the UI with hot reload at `http://localhost:5173`, and MinIO through Caddy on `http://localhost:9000`.
+This uses `docker-compose.dev.yml` to run `scripts/dev.sh` inside the container, starting Air and the Vite dev server. The API will be available at `http://localhost:8080`, the UI at `http://localhost:5173`, and MinIO through Caddy on `http://localhost:9000`.
 
 ### Production image
 

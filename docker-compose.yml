@@ -24,7 +24,7 @@ services:
   caddy:
     image: caddy:2
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
     ports:
       - "80:80"
     depends_on:
