@@ -1,45 +1,52 @@
 <script lang="ts">
-       let fileInput: HTMLInputElement | null = null;
-       const apiBase = import.meta.env.DEV ? 'http://localhost:8080' : '';
+	let fileInput: HTMLInputElement | null = null;
+	//const apiBase = import.meta.env.DEV ? 'http://localhost:8080' : '';
+    const apiBase = 'http://localhost/api'; 
 
-       async function upload() {
-               const file = fileInput?.files?.[0];
-               if (!file) return;
+	async function upload() {
+		const file = fileInput?.files?.[0];
+		if (!file) return;
 
-               if (file.type !== 'image/png') {
-                       alert('Only PNG files are supported');
-                       fileInput!.value = '';
-                       return;
-               }
+		if (file.type !== 'image/png') {
+			alert('Only PNG files are supported');
+			fileInput!.value = '';
+			return;
+		}
 
-               const res = await fetch(`${apiBase}/api/upload-url`, {
-                       method: 'POST',
-                       headers: { 'Content-Type': 'application/json' },
-                       body: JSON.stringify({ filename: file.name })
-               });
-               if (!res.ok) {
-                        console.warn(`Failed to get upload URL: ${res.status} ${res.statusText}`);
-                       alert(`Failed to get upload URL from ${apiBase}/api/upload-url`);
-                       return;
-               }
+		const res = await fetch(`${apiBase}/upload-url`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ filename: file.name })
+		});
+		if (!res.ok) {
+			console.warn(`Failed to get upload URL: ${res.status} ${res.statusText}`);
+			alert(`Failed to get upload URL from ${apiBase}/upload-url`);
+			return;
+		}
 
-               const data: { url: string } = await res.json();
-               const up = await fetch(data.url, {
-                       method: 'PUT',
-                       headers: { 'Content-Type': 'image/png' },
-                       body: file
-               });
-               if (!up.ok) {
-                       alert('Upload failed');
-               } else {
-                       alert('Upload successful');
-               }
-               fileInput!.value = '';
-       }
+		const data: { url: string } = await res.json();
+		try {
+                        console.log('Uploading to:', data.url);
+			const up = await fetch(data.url, {
+				method: 'PUT',
+				//headers: { 'Content-Type': 'image/png' },
+				body: file
+			});
+			if (!up.ok) {
+				alert('Upload failed');
+			} else {
+				alert('Upload successful');
+			}
+		} catch (error) {
+			console.error('Upload error:', error);
+		}
 
-       function trigger() {
-               fileInput?.click();
-       }
+		fileInput!.value = '';
+	}
+
+	function trigger() {
+		fileInput?.click();
+	}
 </script>
 
 <div
@@ -50,12 +57,6 @@
 	aria-label="Upload file"
 	tabindex="0"
 >
-       <p class="text-gray-500">Click to upload a file</p>
-       <input
-               type="file"
-               accept="image/png"
-               class="hidden"
-               bind:this={fileInput}
-               on:change={upload}
-       />
+	<p class="text-gray-500">Click to upload a file</p>
+	<input type="file" accept="image/png" class="hidden" bind:this={fileInput} on:change={upload} />
 </div>
