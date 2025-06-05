@@ -22,14 +22,17 @@ RUN CGO_ENABLED=0 go build -o /erabooru ./cmd/server
 FROM golang:1.24-bookworm AS dev
 RUN apt-get update && apt-get install -y curl && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && rm -rf /var/lib/apt/lists/*
+    apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* && \
+    go install github.com/cosmtrek/air@latest
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN npm install --prefix web
+COPY scripts ./scripts
+RUN chmod +x scripts/dev.sh
 EXPOSE 8080 5173
-CMD go run ./cmd/server & cd web && npm run dev -- --host 0.0.0.0
+CMD go run ./cmd/server
 
 # ----- final minimal image -----
 FROM gcr.io/distroless/base-debian12 AS prod
