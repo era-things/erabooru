@@ -14,7 +14,7 @@ This repository contains a Go backend with a SvelteKit frontend. During developm
    docker compose up -d
    ```
    Caddy will proxy MinIO so presigned URLs resolve to `localhost:9000`.
-3. In a separate terminal, start the Go API server with [Air](https://github.com/cosmtrek/air) for hot reload:
+3. In a separate terminal, start the Go API server with [Air](https://github.com/air-verse/air) for hot reload:
    ```sh
    air
    ```

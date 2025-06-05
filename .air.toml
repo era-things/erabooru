@@ -4,7 +4,7 @@ tmp_dir = "tmp"
 
 [build]
   bin = "./bin/erabooru"
-  cmd = "go build -o ./bin/erabooru ./cmd/server"
+  cmd = "go build -buildvcs=false -o ./bin/erabooru ./cmd/server"
   delay = 1000 # ms
   exclude_dir = ["bin", "assets", "tmp", "vendor", "internal/assets", "ent", "web/node_modules", "web/build"]
   exclude_file = []
