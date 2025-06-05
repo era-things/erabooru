@@ -1,0 +1,14 @@
+http://localhost {
+    handle /api/* {
+        reverse_proxy app:8080
+    }
+
+    handle_path /minio/* {
+        reverse_proxy minio:9000 {
+            header_up Host {http.reverse_proxy.upstream.hostport}
+        }
+    }
+
+
+    respond "Not Found" 404
+}

@@ -8,11 +8,12 @@ This repository contains a Go backend with a SvelteKit frontend. During developm
 - Node.js and npm
 
 ## Starting the stack
-1. Copy `.env.example` to `.env` to configure the database and MinIO credentials. Docker Compose will automatically load these values and pass them to the application container via `env_file`.
+1. Copy `.env.example` to `.env` to configure the database and MinIO credentials. Docker Compose will automatically load these values. When running the stack entirely in containers, set `MINIO_ENDPOINT=caddy:9000` so the backend uses the proxy.
 2. Start the databases with Docker Compose:
    ```sh
    docker compose up -d
    ```
+   Caddy will proxy MinIO so presigned URLs resolve to `localhost:9000`.
 3. In a separate terminal, start the Go API server (for example with [Air](https://github.com/cosmtrek/air)):
    ```sh
    air
@@ -38,7 +39,7 @@ Launch the backend, databases and the Vite dev server with:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-The API will be available at `http://localhost:8080` and the UI with hot reload at `http://localhost:5173`.
+The API will be available at `http://localhost:8080`, the UI with hot reload at `http://localhost:5173`, and MinIO through Caddy on `http://localhost:9000`.
 
 ### Production image
 

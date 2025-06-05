@@ -11,3 +11,5 @@ services:
     depends_on:
       - db
       - minio
+      - caddy
+

@@ -21,6 +21,15 @@ services:
       - "9000:9000"
       - "9001:9001"
 
+  caddy:
+    image: caddy:2
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+    ports:
+      - "80:80"
+    depends_on:
+      - minio
+
   app:
     build:
       context: .
@@ -30,5 +39,6 @@ services:
     depends_on:
       - db
       - minio
+      - caddy
     ports:
       - "8080:8080"
