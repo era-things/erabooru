@@ -16,8 +16,16 @@ type Media struct {
 	config `json:"-"`
 	// ID of the ent.
 	ID int `json:"id,omitempty"`
+	// MinIO object key
+	Key string `json:"key,omitempty"`
 	// Hash of the media file, used for deduplication
 	Hash string `json:"hash,omitempty"`
+	// File format such as png or jpg
+	Format string `json:"format,omitempty"`
+	// Image width in pixels
+	Width int `json:"width,omitempty"`
+	// Image height in pixels
+	Height int `json:"height,omitempty"`
 	// Type of the media, can be image, video, or audio
 	Type media.Type `json:"type,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -49,9 +57,9 @@ func (*Media) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case media.FieldID:
+		case media.FieldID, media.FieldWidth, media.FieldHeight:
 			values[i] = new(sql.NullInt64)
-		case media.FieldHash, media.FieldType:
+		case media.FieldKey, media.FieldHash, media.FieldFormat, media.FieldType:
 			values[i] = new(sql.NullString)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -74,11 +82,35 @@ func (m *Media) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field id", value)
 			}
 			m.ID = int(value.Int64)
+		case media.FieldKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field key", values[i])
+			} else if value.Valid {
+				m.Key = value.String
+			}
 		case media.FieldHash:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field hash", values[i])
 			} else if value.Valid {
 				m.Hash = value.String
+			}
+		case media.FieldFormat:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field format", values[i])
+			} else if value.Valid {
+				m.Format = value.String
+			}
+		case media.FieldWidth:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field width", values[i])
+			} else if value.Valid {
+				m.Width = int(value.Int64)
+			}
+		case media.FieldHeight:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field height", values[i])
+			} else if value.Valid {
+				m.Height = int(value.Int64)
 			}
 		case media.FieldType:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -127,8 +159,20 @@ func (m *Media) String() string {
 	var builder strings.Builder
 	builder.WriteString("Media(")
 	builder.WriteString(fmt.Sprintf("id=%v, ", m.ID))
+	builder.WriteString("key=")
+	builder.WriteString(m.Key)
+	builder.WriteString(", ")
 	builder.WriteString("hash=")
 	builder.WriteString(m.Hash)
+	builder.WriteString(", ")
+	builder.WriteString("format=")
+	builder.WriteString(m.Format)
+	builder.WriteString(", ")
+	builder.WriteString("width=")
+	builder.WriteString(fmt.Sprintf("%v", m.Width))
+	builder.WriteString(", ")
+	builder.WriteString("height=")
+	builder.WriteString(fmt.Sprintf("%v", m.Height))
 	builder.WriteString(", ")
 	builder.WriteString("type=")
 	builder.WriteString(fmt.Sprintf("%v", m.Type))

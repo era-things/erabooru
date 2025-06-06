@@ -14,8 +14,16 @@ const (
 	Label = "media"
 	// FieldID holds the string denoting the id field in the database.
 	FieldID = "id"
+	// FieldKey holds the string denoting the key field in the database.
+	FieldKey = "key"
 	// FieldHash holds the string denoting the hash field in the database.
 	FieldHash = "hash"
+	// FieldFormat holds the string denoting the format field in the database.
+	FieldFormat = "format"
+	// FieldWidth holds the string denoting the width field in the database.
+	FieldWidth = "width"
+	// FieldHeight holds the string denoting the height field in the database.
+	FieldHeight = "height"
 	// FieldType holds the string denoting the type field in the database.
 	FieldType = "type"
 	// EdgeTags holds the string denoting the tags edge name in mutations.
@@ -32,7 +40,11 @@ const (
 // Columns holds all SQL columns for media fields.
 var Columns = []string{
 	FieldID,
+	FieldKey,
 	FieldHash,
+	FieldFormat,
+	FieldWidth,
+	FieldHeight,
 	FieldType,
 }
 
@@ -84,9 +96,29 @@ func ByID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldID, opts...).ToFunc()
 }
 
+// ByKey orders the results by the key field.
+func ByKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldKey, opts...).ToFunc()
+}
+
 // ByHash orders the results by the hash field.
 func ByHash(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldHash, opts...).ToFunc()
+}
+
+// ByFormat orders the results by the format field.
+func ByFormat(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFormat, opts...).ToFunc()
+}
+
+// ByWidth orders the results by the width field.
+func ByWidth(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldWidth, opts...).ToFunc()
+}
+
+// ByHeight orders the results by the height field.
+func ByHeight(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldHeight, opts...).ToFunc()
 }
 
 // ByType orders the results by the type field.

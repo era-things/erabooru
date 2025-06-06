@@ -299,12 +299,12 @@ func (mq *MediaQuery) WithTags(opts ...func(*TagQuery)) *MediaQuery {
 // Example:
 //
 //	var v []struct {
-//		Hash string `json:"hash,omitempty"`
+//		Key string `json:"key,omitempty"`
 //		Count int `json:"count,omitempty"`
 //	}
 //
 //	client.Media.Query().
-//		GroupBy(media.FieldHash).
+//		GroupBy(media.FieldKey).
 //		Aggregate(ent.Count()).
 //		Scan(ctx, &v)
 func (mq *MediaQuery) GroupBy(field string, fields ...string) *MediaGroupBy {
@@ -322,11 +322,11 @@ func (mq *MediaQuery) GroupBy(field string, fields ...string) *MediaGroupBy {
 // Example:
 //
 //	var v []struct {
-//		Hash string `json:"hash,omitempty"`
+//		Key string `json:"key,omitempty"`
 //	}
 //
 //	client.Media.Query().
-//		Select(media.FieldHash).
+//		Select(media.FieldKey).
 //		Scan(ctx, &v)
 func (mq *MediaQuery) Select(fields ...string) *MediaSelect {
 	mq.ctx.Fields = append(mq.ctx.Fields, fields...)

@@ -11,7 +11,11 @@ var (
 	// MediaColumns holds the columns for the "media" table.
 	MediaColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "key", Type: field.TypeString},
 		{Name: "hash", Type: field.TypeString, Unique: true},
+		{Name: "format", Type: field.TypeString},
+		{Name: "width", Type: field.TypeInt},
+		{Name: "height", Type: field.TypeInt},
 		{Name: "type", Type: field.TypeEnum, Enums: []string{"image", "video", "audio"}},
 	}
 	// MediaTable holds the schema information for the "media" table.
