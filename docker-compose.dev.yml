@@ -1,5 +1,6 @@
 services:
   app:
+    image: booru:dev
     build:
       context: .
       target: dev
@@ -13,4 +14,11 @@ services:
       - db
       - minio
       - caddy
-
+  pgweb:
+    image: sosedoff/pgweb
+    container_name: pgweb
+    ports:
+      - "8081:8081"
+    command: --bind=0.0.0.0 --listen=8081 --url postgres://booru:booru@db:5432/booru?sslmode=disable
+    depends_on:
+      - db

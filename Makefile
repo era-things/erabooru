@@ -12,7 +12,7 @@ BIN_DIR   ?= bin
 # ──────────────────────────────────────────
 .PHONY: dev
 dev: 
-	docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+	docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build --remove-orphans
 	@echo "🟢  Dev services up  |  API → http://localhost:8080  UI (vite) → http://localhost:5173"
 
 .PHONY: prod
