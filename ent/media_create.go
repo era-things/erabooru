@@ -20,9 +20,33 @@ type MediaCreate struct {
 	hooks    []Hook
 }
 
+// SetKey sets the "key" field.
+func (mc *MediaCreate) SetKey(s string) *MediaCreate {
+	mc.mutation.SetKey(s)
+	return mc
+}
+
 // SetHash sets the "hash" field.
 func (mc *MediaCreate) SetHash(s string) *MediaCreate {
 	mc.mutation.SetHash(s)
+	return mc
+}
+
+// SetFormat sets the "format" field.
+func (mc *MediaCreate) SetFormat(s string) *MediaCreate {
+	mc.mutation.SetFormat(s)
+	return mc
+}
+
+// SetWidth sets the "width" field.
+func (mc *MediaCreate) SetWidth(i int) *MediaCreate {
+	mc.mutation.SetWidth(i)
+	return mc
+}
+
+// SetHeight sets the "height" field.
+func (mc *MediaCreate) SetHeight(i int) *MediaCreate {
+	mc.mutation.SetHeight(i)
 	return mc
 }
 
@@ -81,8 +105,20 @@ func (mc *MediaCreate) ExecX(ctx context.Context) {
 
 // check runs all checks and user-defined validators on the builder.
 func (mc *MediaCreate) check() error {
+	if _, ok := mc.mutation.Key(); !ok {
+		return &ValidationError{Name: "key", err: errors.New(`ent: missing required field "Media.key"`)}
+	}
 	if _, ok := mc.mutation.Hash(); !ok {
 		return &ValidationError{Name: "hash", err: errors.New(`ent: missing required field "Media.hash"`)}
+	}
+	if _, ok := mc.mutation.Format(); !ok {
+		return &ValidationError{Name: "format", err: errors.New(`ent: missing required field "Media.format"`)}
+	}
+	if _, ok := mc.mutation.Width(); !ok {
+		return &ValidationError{Name: "width", err: errors.New(`ent: missing required field "Media.width"`)}
+	}
+	if _, ok := mc.mutation.Height(); !ok {
+		return &ValidationError{Name: "height", err: errors.New(`ent: missing required field "Media.height"`)}
 	}
 	if _, ok := mc.mutation.GetType(); !ok {
 		return &ValidationError{Name: "type", err: errors.New(`ent: missing required field "Media.type"`)}
@@ -118,9 +154,25 @@ func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 		_node = &Media{config: mc.config}
 		_spec = sqlgraph.NewCreateSpec(media.Table, sqlgraph.NewFieldSpec(media.FieldID, field.TypeInt))
 	)
+	if value, ok := mc.mutation.Key(); ok {
+		_spec.SetField(media.FieldKey, field.TypeString, value)
+		_node.Key = value
+	}
 	if value, ok := mc.mutation.Hash(); ok {
 		_spec.SetField(media.FieldHash, field.TypeString, value)
 		_node.Hash = value
+	}
+	if value, ok := mc.mutation.Format(); ok {
+		_spec.SetField(media.FieldFormat, field.TypeString, value)
+		_node.Format = value
+	}
+	if value, ok := mc.mutation.Width(); ok {
+		_spec.SetField(media.FieldWidth, field.TypeInt, value)
+		_node.Width = value
+	}
+	if value, ok := mc.mutation.Height(); ok {
+		_spec.SetField(media.FieldHeight, field.TypeInt, value)
+		_node.Height = value
 	}
 	if value, ok := mc.mutation.GetType(); ok {
 		_spec.SetField(media.FieldType, field.TypeEnum, value)

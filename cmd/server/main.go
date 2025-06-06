@@ -12,6 +12,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	"context"
+	"era/booru/internal/db"
+	"os/signal"
+	"syscall"
 )
 
 func corsMiddleware() gin.HandlerFunc {
@@ -38,6 +43,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("init minio: %v", err)
 	}
+
+	database, err := db.New(cfg)
+	if err != nil {
+		log.Fatalf("connect db: %v", err)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	log.Println("watching for new uploads")
+	go m.Watch(ctx, database)
 
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery(), corsMiddleware())
@@ -75,6 +91,8 @@ func main() {
 	r.NoRoute(serveIndex(assets.UI))
 
 	r.Run(":8080")
+	log.Printf("Server running on http://localhost:8080")
+
 }
 
 func serveIndex(ui embed.FS) gin.HandlerFunc {

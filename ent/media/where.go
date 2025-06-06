@@ -54,9 +54,94 @@ func IDLTE(id int) predicate.Media {
 	return predicate.Media(sql.FieldLTE(FieldID, id))
 }
 
+// Key applies equality check predicate on the "key" field. It's identical to KeyEQ.
+func Key(v string) predicate.Media {
+	return predicate.Media(sql.FieldEQ(FieldKey, v))
+}
+
 // Hash applies equality check predicate on the "hash" field. It's identical to HashEQ.
 func Hash(v string) predicate.Media {
 	return predicate.Media(sql.FieldEQ(FieldHash, v))
+}
+
+// Format applies equality check predicate on the "format" field. It's identical to FormatEQ.
+func Format(v string) predicate.Media {
+	return predicate.Media(sql.FieldEQ(FieldFormat, v))
+}
+
+// Width applies equality check predicate on the "width" field. It's identical to WidthEQ.
+func Width(v int) predicate.Media {
+	return predicate.Media(sql.FieldEQ(FieldWidth, v))
+}
+
+// Height applies equality check predicate on the "height" field. It's identical to HeightEQ.
+func Height(v int) predicate.Media {
+	return predicate.Media(sql.FieldEQ(FieldHeight, v))
+}
+
+// KeyEQ applies the EQ predicate on the "key" field.
+func KeyEQ(v string) predicate.Media {
+	return predicate.Media(sql.FieldEQ(FieldKey, v))
+}
+
+// KeyNEQ applies the NEQ predicate on the "key" field.
+func KeyNEQ(v string) predicate.Media {
+	return predicate.Media(sql.FieldNEQ(FieldKey, v))
+}
+
+// KeyIn applies the In predicate on the "key" field.
+func KeyIn(vs ...string) predicate.Media {
+	return predicate.Media(sql.FieldIn(FieldKey, vs...))
+}
+
+// KeyNotIn applies the NotIn predicate on the "key" field.
+func KeyNotIn(vs ...string) predicate.Media {
+	return predicate.Media(sql.FieldNotIn(FieldKey, vs...))
+}
+
+// KeyGT applies the GT predicate on the "key" field.
+func KeyGT(v string) predicate.Media {
+	return predicate.Media(sql.FieldGT(FieldKey, v))
+}
+
+// KeyGTE applies the GTE predicate on the "key" field.
+func KeyGTE(v string) predicate.Media {
+	return predicate.Media(sql.FieldGTE(FieldKey, v))
+}
+
+// KeyLT applies the LT predicate on the "key" field.
+func KeyLT(v string) predicate.Media {
+	return predicate.Media(sql.FieldLT(FieldKey, v))
+}
+
+// KeyLTE applies the LTE predicate on the "key" field.
+func KeyLTE(v string) predicate.Media {
+	return predicate.Media(sql.FieldLTE(FieldKey, v))
+}
+
+// KeyContains applies the Contains predicate on the "key" field.
+func KeyContains(v string) predicate.Media {
+	return predicate.Media(sql.FieldContains(FieldKey, v))
+}
+
+// KeyHasPrefix applies the HasPrefix predicate on the "key" field.
+func KeyHasPrefix(v string) predicate.Media {
+	return predicate.Media(sql.FieldHasPrefix(FieldKey, v))
+}
+
+// KeyHasSuffix applies the HasSuffix predicate on the "key" field.
+func KeyHasSuffix(v string) predicate.Media {
+	return predicate.Media(sql.FieldHasSuffix(FieldKey, v))
+}
+
+// KeyEqualFold applies the EqualFold predicate on the "key" field.
+func KeyEqualFold(v string) predicate.Media {
+	return predicate.Media(sql.FieldEqualFold(FieldKey, v))
+}
+
+// KeyContainsFold applies the ContainsFold predicate on the "key" field.
+func KeyContainsFold(v string) predicate.Media {
+	return predicate.Media(sql.FieldContainsFold(FieldKey, v))
 }
 
 // HashEQ applies the EQ predicate on the "hash" field.
@@ -122,6 +207,151 @@ func HashEqualFold(v string) predicate.Media {
 // HashContainsFold applies the ContainsFold predicate on the "hash" field.
 func HashContainsFold(v string) predicate.Media {
 	return predicate.Media(sql.FieldContainsFold(FieldHash, v))
+}
+
+// FormatEQ applies the EQ predicate on the "format" field.
+func FormatEQ(v string) predicate.Media {
+	return predicate.Media(sql.FieldEQ(FieldFormat, v))
+}
+
+// FormatNEQ applies the NEQ predicate on the "format" field.
+func FormatNEQ(v string) predicate.Media {
+	return predicate.Media(sql.FieldNEQ(FieldFormat, v))
+}
+
+// FormatIn applies the In predicate on the "format" field.
+func FormatIn(vs ...string) predicate.Media {
+	return predicate.Media(sql.FieldIn(FieldFormat, vs...))
+}
+
+// FormatNotIn applies the NotIn predicate on the "format" field.
+func FormatNotIn(vs ...string) predicate.Media {
+	return predicate.Media(sql.FieldNotIn(FieldFormat, vs...))
+}
+
+// FormatGT applies the GT predicate on the "format" field.
+func FormatGT(v string) predicate.Media {
+	return predicate.Media(sql.FieldGT(FieldFormat, v))
+}
+
+// FormatGTE applies the GTE predicate on the "format" field.
+func FormatGTE(v string) predicate.Media {
+	return predicate.Media(sql.FieldGTE(FieldFormat, v))
+}
+
+// FormatLT applies the LT predicate on the "format" field.
+func FormatLT(v string) predicate.Media {
+	return predicate.Media(sql.FieldLT(FieldFormat, v))
+}
+
+// FormatLTE applies the LTE predicate on the "format" field.
+func FormatLTE(v string) predicate.Media {
+	return predicate.Media(sql.FieldLTE(FieldFormat, v))
+}
+
+// FormatContains applies the Contains predicate on the "format" field.
+func FormatContains(v string) predicate.Media {
+	return predicate.Media(sql.FieldContains(FieldFormat, v))
+}
+
+// FormatHasPrefix applies the HasPrefix predicate on the "format" field.
+func FormatHasPrefix(v string) predicate.Media {
+	return predicate.Media(sql.FieldHasPrefix(FieldFormat, v))
+}
+
+// FormatHasSuffix applies the HasSuffix predicate on the "format" field.
+func FormatHasSuffix(v string) predicate.Media {
+	return predicate.Media(sql.FieldHasSuffix(FieldFormat, v))
+}
+
+// FormatEqualFold applies the EqualFold predicate on the "format" field.
+func FormatEqualFold(v string) predicate.Media {
+	return predicate.Media(sql.FieldEqualFold(FieldFormat, v))
+}
+
+// FormatContainsFold applies the ContainsFold predicate on the "format" field.
+func FormatContainsFold(v string) predicate.Media {
+	return predicate.Media(sql.FieldContainsFold(FieldFormat, v))
+}
+
+// WidthEQ applies the EQ predicate on the "width" field.
+func WidthEQ(v int) predicate.Media {
+	return predicate.Media(sql.FieldEQ(FieldWidth, v))
+}
+
+// WidthNEQ applies the NEQ predicate on the "width" field.
+func WidthNEQ(v int) predicate.Media {
+	return predicate.Media(sql.FieldNEQ(FieldWidth, v))
+}
+
+// WidthIn applies the In predicate on the "width" field.
+func WidthIn(vs ...int) predicate.Media {
+	return predicate.Media(sql.FieldIn(FieldWidth, vs...))
+}
+
+// WidthNotIn applies the NotIn predicate on the "width" field.
+func WidthNotIn(vs ...int) predicate.Media {
+	return predicate.Media(sql.FieldNotIn(FieldWidth, vs...))
+}
+
+// WidthGT applies the GT predicate on the "width" field.
+func WidthGT(v int) predicate.Media {
+	return predicate.Media(sql.FieldGT(FieldWidth, v))
+}
+
+// WidthGTE applies the GTE predicate on the "width" field.
+func WidthGTE(v int) predicate.Media {
+	return predicate.Media(sql.FieldGTE(FieldWidth, v))
+}
+
+// WidthLT applies the LT predicate on the "width" field.
+func WidthLT(v int) predicate.Media {
+	return predicate.Media(sql.FieldLT(FieldWidth, v))
+}
+
+// WidthLTE applies the LTE predicate on the "width" field.
+func WidthLTE(v int) predicate.Media {
+	return predicate.Media(sql.FieldLTE(FieldWidth, v))
+}
+
+// HeightEQ applies the EQ predicate on the "height" field.
+func HeightEQ(v int) predicate.Media {
+	return predicate.Media(sql.FieldEQ(FieldHeight, v))
+}
+
+// HeightNEQ applies the NEQ predicate on the "height" field.
+func HeightNEQ(v int) predicate.Media {
+	return predicate.Media(sql.FieldNEQ(FieldHeight, v))
+}
+
+// HeightIn applies the In predicate on the "height" field.
+func HeightIn(vs ...int) predicate.Media {
+	return predicate.Media(sql.FieldIn(FieldHeight, vs...))
+}
+
+// HeightNotIn applies the NotIn predicate on the "height" field.
+func HeightNotIn(vs ...int) predicate.Media {
+	return predicate.Media(sql.FieldNotIn(FieldHeight, vs...))
+}
+
+// HeightGT applies the GT predicate on the "height" field.
+func HeightGT(v int) predicate.Media {
+	return predicate.Media(sql.FieldGT(FieldHeight, v))
+}
+
+// HeightGTE applies the GTE predicate on the "height" field.
+func HeightGTE(v int) predicate.Media {
+	return predicate.Media(sql.FieldGTE(FieldHeight, v))
+}
+
+// HeightLT applies the LT predicate on the "height" field.
+func HeightLT(v int) predicate.Media {
+	return predicate.Media(sql.FieldLT(FieldHeight, v))
+}
+
+// HeightLTE applies the LTE predicate on the "height" field.
+func HeightLTE(v int) predicate.Media {
+	return predicate.Media(sql.FieldLTE(FieldHeight, v))
 }
 
 // TypeEQ applies the EQ predicate on the "type" field.

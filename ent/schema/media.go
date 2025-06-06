@@ -14,10 +14,22 @@ type Media struct {
 // Fields of the Media.
 func (Media) Fields() []ent.Field {
 	return []ent.Field{
+		field.String("key").
+			Immutable().
+			Comment("MinIO object key"),
 		field.String("hash").
 			Unique().
 			Immutable().
 			Comment("Hash of the media file, used for deduplication"),
+		field.String("format").
+			Immutable().
+			Comment("File format such as png or jpg"),
+		field.Int("width").
+			Immutable().
+			Comment("Image width in pixels"),
+		field.Int("height").
+			Immutable().
+			Comment("Image height in pixels"),
 		field.Enum("type").
 			Values("image", "video", "audio").
 			Immutable().

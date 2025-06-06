@@ -1,11 +1,21 @@
 package minio
 
 import (
+	"bytes"
 	"context"
-	"era/booru/internal/config"
+	"crypto/sha256"
+	"encoding/hex"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"io"
 	"log"
 	"path"
 	"time"
+
+	"era/booru/ent"
+	"era/booru/internal/config"
 
 	mc "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -57,7 +67,7 @@ func (c *Client) PresignedPut(ctx context.Context, cfg *config.Config, object st
 }
 
 // Watch listens for new object created events and triggers analysis.
-func (c *Client) Watch(ctx context.Context) {
+func (c *Client) Watch(ctx context.Context, db *ent.Client) {
 	ch := c.ListenBucketNotification(ctx, c.Bucket, "", "", []string{"s3:ObjectCreated:*"})
 	for notification := range ch {
 		if notification.Err != nil {
@@ -65,11 +75,44 @@ func (c *Client) Watch(ctx context.Context) {
 			continue
 		}
 		for _, rec := range notification.Records {
-			go analyze(rec.S3.Object.Key)
+			go c.analyze(ctx, db, rec.S3.Object.Key)
 		}
 	}
 }
 
-func analyze(object string) {
-	log.Printf("mock analyze of %s", object)
+func (c *Client) analyze(ctx context.Context, db *ent.Client, object string) {
+	rc, err := c.GetObject(ctx, c.Bucket, object, mc.GetObjectOptions{})
+	if err != nil {
+		log.Printf("get object %s: %v", object, err)
+		return
+	}
+	defer rc.Close()
+
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		log.Printf("read object %s: %v", object, err)
+		return
+	}
+
+	sum := sha256.Sum256(data)
+	hash := hex.EncodeToString(sum[:])
+
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		log.Printf("decode image %s: %v", object, err)
+		return
+	}
+
+	if _, err := db.Media.Create().
+		SetKey(object).
+		SetHash(hash).
+		SetFormat(format).
+		SetWidth(cfg.Width).
+		SetHeight(cfg.Height).
+		SetType("image").
+		Save(ctx); err != nil {
+		log.Printf("create media: %v", err)
+	} else {
+		log.Printf("saved media %s", object)
+	}
 }

@@ -2,17 +2,24 @@ package main
 
 import (
 	"context"
-	"era/booru/internal/config"
-	minio "era/booru/internal/minio"
 	"log"
 	"os/signal"
 	"syscall"
+
+	"era/booru/internal/config"
+	"era/booru/internal/db"
+	minio "era/booru/internal/minio"
 )
 
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
+	}
+
+	database, err := db.New(cfg)
+	if err != nil {
+		log.Fatalf("connect db: %v", err)
 	}
 
 	m, err := minio.New(cfg)
@@ -24,5 +31,5 @@ func main() {
 	defer stop()
 
 	log.Println("watching for new uploads")
-	m.Watch(ctx)
+	m.Watch(ctx, database)
 }
