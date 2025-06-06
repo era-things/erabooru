@@ -7,6 +7,8 @@ import (
 	"era/booru/ent"
 	_ "era/booru/ent/runtime"
 	"era/booru/internal/config"
+
+	_ "github.com/lib/pq"
 )
 
 // New creates a new ent.Client connected to Postgres and runs migrations.
