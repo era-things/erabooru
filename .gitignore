@@ -34,6 +34,7 @@ launch.json
 *.local
 *.secret
 *.pem
+/tmp/
 
 ############################
 #  Editor / IDE clutter

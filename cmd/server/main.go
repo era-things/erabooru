@@ -5,6 +5,7 @@ import (
 	"era/booru/internal/assets"
 	"era/booru/internal/config"
 	minio "era/booru/internal/minio"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -13,8 +14,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"entgo.io/ent/dialect/sql"
 	"era/booru/ent/media"
+
+	"entgo.io/ent/dialect/sql"
 
 	"context"
 	"era/booru/internal/db"
@@ -99,12 +101,7 @@ func main() {
 
 		out := make([]gin.H, len(items))
 		for i, mitem := range items {
-			url, err := m.PresignedGet(c.Request.Context(), cfg, mitem.Key, time.Minute*15)
-			if err != nil {
-				log.Printf("presign get: %v", err)
-				c.AbortWithStatus(http.StatusInternalServerError)
-				return
-			}
+			url := fmt.Sprintf("http://localhost/minio/%s/%s", cfg.MinioBucket, mitem.Key)
 			out[i] = gin.H{
 				"id":     mitem.ID,
 				"url":    url,

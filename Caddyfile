@@ -4,8 +4,10 @@ http://localhost {
     }
 
     handle_path /minio/* {
+        header Cache-Control "public, max-age=604800, immutable"
         reverse_proxy minio:9000 {
             header_up Host {http.reverse_proxy.upstream.hostport}
+            flush_interval -1
         }
     }
 
