@@ -1,7 +1,7 @@
 <script lang="ts">
 	let fileInput: HTMLInputElement | null = null;
 	//const apiBase = import.meta.env.DEV ? 'http://localhost:8080' : '';
-    const apiBase = 'http://localhost/api'; 
+	const apiBase = 'http://localhost/api';
 
 	async function upload() {
 		const file = fileInput?.files?.[0];
@@ -26,7 +26,7 @@
 
 		const data: { url: string } = await res.json();
 		try {
-                        console.log('Uploading to:', data.url);
+			console.log('Uploading to:', data.url);
 			const up = await fetch(data.url, {
 				method: 'PUT',
 				//headers: { 'Content-Type': 'image/png' },

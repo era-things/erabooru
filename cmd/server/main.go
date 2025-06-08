@@ -13,6 +13,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"entgo.io/ent/dialect/sql"
+	"era/booru/ent/media"
+
 	"context"
 	"era/booru/internal/db"
 	"os/signal"
@@ -81,6 +84,36 @@ func main() {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"url": url, "object": object})
+	})
+
+	r.GET("/api/media", func(c *gin.Context) {
+		items, err := database.Media.Query().
+			Limit(50).
+			Order(media.ByID(sql.OrderDesc())).
+			All(c.Request.Context())
+		if err != nil {
+			log.Printf("query media: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		out := make([]gin.H, len(items))
+		for i, mitem := range items {
+			url, err := m.PresignedGet(c.Request.Context(), cfg, mitem.Key, time.Minute*15)
+			if err != nil {
+				log.Printf("presign get: %v", err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			out[i] = gin.H{
+				"id":     mitem.ID,
+				"url":    url,
+				"width":  mitem.Width,
+				"height": mitem.Height,
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{"media": out})
 	})
 
 	// Serve assets from the embedded build directory
