@@ -1,5 +1,5 @@
 <script lang="ts">
-	import MediaGridPlaceholder from './MediaGridPlaceholder.svelte';
+	import MediaGrid from './MediaGrid.svelte';
 	import UploadArea from './UploadArea.svelte';
 
 	let active: 'media' | 'upload' = 'media';
@@ -32,7 +32,7 @@
 	</div>
 
 	{#if active === 'media'}
-		<MediaGridPlaceholder />
+		<MediaGrid />
 	{:else}
 		<UploadArea />
 	{/if}

@@ -66,6 +66,19 @@ func (c *Client) PresignedPut(ctx context.Context, cfg *config.Config, object st
 	return u.String(), nil
 }
 
+// PresignedGet returns a presigned URL for downloading an object.
+func (c *Client) PresignedGet(ctx context.Context, cfg *config.Config, object string, expiry time.Duration) (string, error) {
+	u, err := c.PresignedGetObject(ctx, c.Bucket, object, expiry, nil)
+	if err != nil {
+		return "", err
+	}
+
+	// Rewrite for browser download
+	u.Host = cfg.MinioPublicHost
+	u.Path = path.Join(cfg.MinioPublicPrefix, u.Path) // safe join
+	return u.String(), nil
+}
+
 // Watch listens for new object created events and triggers analysis.
 func (c *Client) Watch(ctx context.Context, db *ent.Client) {
 	ch := c.ListenBucketNotification(ctx, c.Bucket, "", "", []string{"s3:ObjectCreated:*"})
