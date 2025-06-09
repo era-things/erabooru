@@ -1,0 +1,132 @@
+package api
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"era/booru/ent"
+	"era/booru/ent/media"
+	"era/booru/internal/config"
+	"era/booru/internal/minio"
+
+	"entgo.io/ent/dialect/sql"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	mc "github.com/minio/minio-go/v7"
+)
+
+func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClient *minio.Client, cfg *config.Config) {
+	ginEngine.GET("/api/media", func(c *gin.Context) {
+		items, err := database.Media.Query().
+			Limit(50).
+			Order(media.ByID(sql.OrderDesc())).
+			All(c.Request.Context())
+		if err != nil {
+			log.Printf("query media: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		out := make([]gin.H, len(items))
+		for i, mitem := range items {
+			url := fmt.Sprintf("http://localhost/minio/%s/%s", cfg.MinioBucket, mitem.Key)
+			out[i] = gin.H{
+				"id":     mitem.ID,
+				"url":    url,
+				"width":  mitem.Width,
+				"height": mitem.Height,
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{"media": out})
+	})
+
+	ginEngine.GET("/api/media/:id", func(c *gin.Context) {
+		id, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		item, err := database.Media.Get(c.Request.Context(), id)
+		if err != nil {
+			log.Printf("get media %d: %v", id, err)
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+
+		stat, err := minioClient.StatObject(c.Request.Context(), minioClient.Bucket, item.Key, mc.StatObjectOptions{})
+		if err != nil {
+			log.Printf("stat object %s: %v", item.Key, err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		url := fmt.Sprintf("http://localhost/minio/%s/%s", cfg.MinioBucket, item.Key)
+		c.JSON(http.StatusOK, gin.H{
+			"id":     item.ID,
+			"url":    url,
+			"width":  item.Width,
+			"height": item.Height,
+			"format": item.Format,
+			"size":   stat.Size,
+		})
+	})
+
+	ginEngine.POST("/api/media/upload-url", func(c *gin.Context) {
+		type req struct {
+			Filename string `json:"filename"`
+		}
+		var body req
+		if err := c.BindJSON(&body); err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		if !strings.HasSuffix(strings.ToLower(body.Filename), ".png") {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		object := uuid.New().String() + ".png"
+		url, err := minioClient.PresignedPut(c.Request.Context(), cfg, object, time.Minute*15)
+		if err != nil {
+			log.Printf("presign: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"url": url, "object": object})
+	})
+
+	ginEngine.DELETE("/api/media/:id", func(c *gin.Context) {
+		id, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		item, err := database.Media.Get(c.Request.Context(), id)
+		if err != nil {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+
+		if err := minioClient.RemoveObject(c.Request.Context(), minioClient.Bucket, item.Key, mc.RemoveObjectOptions{}); err != nil {
+			log.Printf("remove object %s: %v", item.Key, err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		if err := database.Media.DeleteOneID(id).Exec(c.Request.Context()); err != nil {
+			log.Printf("delete media %d: %v", id, err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		c.Status(http.StatusOK)
+	})
+}

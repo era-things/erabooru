@@ -1,5 +1,7 @@
 <script lang="ts">
-	import MediaTabs from '$lib/components/MediaTabs.svelte';
+	import MediaGrid from '$lib/components/MediaGrid.svelte';
+	import TabNav from '$lib/components/TabNav.svelte';
 </script>
 
-<MediaTabs />
+<TabNav active="media" />
+<MediaGrid />

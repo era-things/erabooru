@@ -1,8 +1,8 @@
 <script lang="ts">
 	import Column from './Column.svelte';
 
-	export let items: unknown[]        = [];
-	export let columnWidths: string[]  = ['1fr', '1fr'];
+	export let items: unknown[] = [];
+	export let columnWidths: string[] = ['1fr', '1fr'];
 
 	let columns: unknown[][] = [];
 
@@ -16,6 +16,6 @@
 
 <div class="grid gap-3" style="grid-template-columns:{columnWidths.join(' ')}">
 	{#each columns as col}
-		<Column items={col}/>
+		<Column items={col} />
 	{/each}
 </div>
