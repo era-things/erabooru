@@ -6,8 +6,10 @@ import (
 	"era/booru/internal/config"
 	minio "era/booru/internal/minio"
 	"fmt"
+	mc "github.com/minio/minio-go/v7"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -111,6 +113,66 @@ func main() {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"media": out})
+	})
+
+	r.GET("/api/media/:id", func(c *gin.Context) {
+		id, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		item, err := database.Media.Get(c.Request.Context(), id)
+		if err != nil {
+			log.Printf("get media %d: %v", id, err)
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+
+		stat, err := m.StatObject(c.Request.Context(), m.Bucket, item.Key, mc.StatObjectOptions{})
+		if err != nil {
+			log.Printf("stat object %s: %v", item.Key, err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		url := fmt.Sprintf("http://localhost/minio/%s/%s", cfg.MinioBucket, item.Key)
+		c.JSON(http.StatusOK, gin.H{
+			"id":     item.ID,
+			"url":    url,
+			"width":  item.Width,
+			"height": item.Height,
+			"format": item.Format,
+			"size":   stat.Size,
+		})
+	})
+
+	r.DELETE("/api/media/:id", func(c *gin.Context) {
+		id, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		item, err := database.Media.Get(c.Request.Context(), id)
+		if err != nil {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+
+		if err := m.RemoveObject(c.Request.Context(), m.Bucket, item.Key, mc.RemoveObjectOptions{}); err != nil {
+			log.Printf("remove object %s: %v", item.Key, err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		if err := database.Media.DeleteOneID(id).Exec(c.Request.Context()); err != nil {
+			log.Printf("delete media %d: %v", id, err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		c.Status(http.StatusOK)
 	})
 
 	// Serve assets from the embedded build directory
