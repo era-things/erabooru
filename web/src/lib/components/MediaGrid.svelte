@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Masonry from './Masonry.svelte'; // the Masonry component from the previous example
+	import Masonry from './media_grid/Masonry.svelte'; // the Masonry component from the previous example
 
 	interface MediaItem {
 		id: number;
