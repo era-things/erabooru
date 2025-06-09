@@ -13,7 +13,7 @@
 	let media: MediaItem[] = [];
 
 	/* Re-mapped to the shape Masonry / Column expect */
-	let photos: { src: string; alt: string; id: number }[] = [];
+	let photos: { src: string; alt: string; id: number, height: number }[] = [];
 
 	/* Pick any mix of fixed / fluid column sizes */
 	const columnWidths = ['1fr', '1fr', '1fr', '1fr'];
@@ -26,7 +26,7 @@
 			if (res.ok) {
 				const data = await res.json();
 				media = data.media as MediaItem[];
-				photos = media.map((m) => ({ src: m.url, alt: `media ${m.id}`, id: m.id }));
+				photos = media.map((m) => ({ src: m.url, alt: `media ${m.id}`, id: m.id, height: m.height }));
 			} else {
 				console.error('media fetch error', res.status, res.statusText);
 			}
