@@ -13,14 +13,14 @@
 			return;
 		}
 
-		const res = await fetch(`${apiBase}/upload-url`, {
+		const res = await fetch(`${apiBase}/media/upload-url`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ filename: file.name })
 		});
 		if (!res.ok) {
 			console.warn(`Failed to get upload URL: ${res.status} ${res.statusText}`);
-			alert(`Failed to get upload URL from ${apiBase}/upload-url`);
+			alert(`Failed to get upload URL from ${apiBase}/media/upload-url`);
 			return;
 		}
 
