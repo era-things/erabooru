@@ -7,26 +7,11 @@ import (
 	"era/booru/internal/db"
 	minio "era/booru/internal/minio"
 	"log"
-	"net/http"
 	"os/signal"
 	"syscall"
 
 	"github.com/gin-gonic/gin"
 )
-
-func corsMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "http://localhost:5173")
-		c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept")
-		c.Header("Access-Control-Allow-Credentials", "true")
-		if c.Request.Method == http.MethodOptions {
-			c.AbortWithStatus(http.StatusNoContent)
-			return
-		}
-		c.Next()
-	}
-}
 
 func main() {
 	cfg, err := config.Load()
@@ -51,7 +36,7 @@ func main() {
 	go m.Watch(ctx, database)
 
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery(), corsMiddleware())
+	r.Use(gin.Logger(), gin.Recovery(), api.CORSMiddleware())
 
 	// Register API routes
 	api.RegisterMediaRoutes(r, database, m, cfg)
