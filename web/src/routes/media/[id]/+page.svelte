@@ -43,7 +43,7 @@
 	}
 </script>
 
-<TabNav />
+<TabNav active="media" />
 
 {#if media}
 	<div class="flex flex-row gap-6 p-4">
@@ -56,11 +56,13 @@
 			<button class="rounded bg-red-500 px-4 py-2 text-white" on:click={remove}>Delete</button>
 		</div>
 
-		<img
-			src={media.url}
-			alt="image"
-			class="object-contain"
-			style="max-width:75vw; max-height:75vh"
-		/>
+		<div class="flex flex-1 items-center justify-center">
+			<img
+				src={media.url}
+				alt="image"
+				class="object-contain"
+				style="max-width:75vw; max-height:75vh"
+			/>
+		</div>
 	</div>
 {/if}
