@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
+	import TabNav from '$lib/components/TabNav.svelte';
 
 	interface MediaDetail {
 		id: number;
@@ -42,14 +43,24 @@
 	}
 </script>
 
+<TabNav />
+
 {#if media}
-	<div class="flex flex-col items-center gap-4 p-4">
-		<img src={media.url} alt="image" class="max-h-screen w-auto object-contain" />
-		<div class="text-sm">
-			<p>Format: {media.format}</p>
-			<p>Dimensions: {media.width}×{media.height}</p>
-			<p>Size: {media.size} bytes</p>
+	<div class="flex flex-row gap-6 p-4">
+		<div class="flex w-60 flex-col gap-4">
+			<div class="text-sm">
+				<p>Format: {media.format}</p>
+				<p>Dimensions: {media.width}×{media.height}</p>
+				<p>Size: {media.size} bytes</p>
+			</div>
+			<button class="rounded bg-red-500 px-4 py-2 text-white" on:click={remove}>Delete</button>
 		</div>
-		<button class="rounded bg-red-500 px-4 py-2 text-white" on:click={remove}> Delete </button>
+
+		<img
+			src={media.url}
+			alt="image"
+			class="object-contain"
+			style="max-width:75vw; max-height:75vh"
+		/>
 	</div>
 {/if}
