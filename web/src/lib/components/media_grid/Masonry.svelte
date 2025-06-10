@@ -1,15 +1,17 @@
 <script lang="ts">
 	import Column from './Column.svelte';
-    import { distributeByHeight } from '$lib/masonryDistribution';
+    import { distributeVertically, distributeRoundRobin } from '$lib/masonryDistribution';
 
-	export let items: {height: number}[] = [];
+	export let items: {height: number, width: number}[] = [];
 	export let columnWidths: string[] = ['1fr', '1fr'];
 
 	let columns: unknown[][] = [];
 
 	/* simple round-robin distribution */
 	$: {
-        columns = distributeByHeight(items, columnWidths.length);
+        columns = items.length > columnWidths.length ? 
+		distributeVertically(items, columnWidths.length):
+		distributeRoundRobin(items, columnWidths.length);
 	}
 </script>
 
