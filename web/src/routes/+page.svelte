@@ -3,5 +3,7 @@
 	import TabNav from '$lib/components/TabNav.svelte';
 </script>
 
-<TabNav active="media" />
-<MediaGrid />
+<div class="h-screen ">
+	<TabNav active="media" />
+	<MediaGrid />
+</div>

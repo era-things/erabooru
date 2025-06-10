@@ -1,11 +1,7 @@
 package minio
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
@@ -16,6 +12,7 @@ import (
 
 	"era/booru/ent"
 	"era/booru/internal/config"
+	"era/booru/internal/processing"
 
 	mc "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -107,21 +104,18 @@ func (c *Client) analyze(ctx context.Context, db *ent.Client, object string) {
 		return
 	}
 
-	sum := sha256.Sum256(data)
-	hash := hex.EncodeToString(sum[:])
-
-	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	metadata, err := processing.GetMetadata(data)
 	if err != nil {
-		log.Printf("decode image %s: %v", object, err)
+		log.Printf("get metadata for %s: %v", object, err)
 		return
 	}
 
 	if _, err := db.Media.Create().
 		SetKey(object).
-		SetHash(hash).
-		SetFormat(format).
-		SetWidth(cfg.Width).
-		SetHeight(cfg.Height).
+		SetFormat(metadata.Format).
+		SetHash(metadata.Hash).
+		SetWidth(metadata.Width).
+		SetHeight(metadata.Height).
 		SetType("image").
 		Save(ctx); err != nil {
 		log.Printf("create media: %v", err)

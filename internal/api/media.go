@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -87,12 +88,13 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 			return
 		}
 
-		if !strings.HasSuffix(strings.ToLower(body.Filename), ".png") {
+		object, err := CreateMediaName(body.Filename)
+		if err != nil {
+			log.Printf("create media name: %v", err)
 			c.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
 
-		object := uuid.New().String() + ".png"
 		url, err := minioClient.PresignedPut(c.Request.Context(), cfg, object, time.Minute*15)
 		if err != nil {
 			log.Printf("presign: %v", err)
@@ -129,4 +131,19 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 
 		c.Status(http.StatusOK)
 	})
+}
+
+func CreateMediaName(filename string) (string, error) {
+	extension := filepath.Ext(filename)
+	// Validate file extension
+	switch strings.ToLower(extension) {
+	case ".png", ".jpg", ".jpeg", ".gif":
+		// Valid formats
+	default:
+		return "", fmt.Errorf("unsupported file format: %s", extension)
+	}
+
+	// Generate a unique name using UUID
+	name := uuid.New().String() + extension
+	return name, nil
 }
