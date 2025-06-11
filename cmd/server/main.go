@@ -6,6 +6,7 @@ import (
 	"era/booru/internal/config"
 	"era/booru/internal/db"
 	minio "era/booru/internal/minio"
+	"era/booru/internal/search"
 	"log"
 	"os/signal"
 	"syscall"
@@ -28,6 +29,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("connect db: %v", err)
 	}
+
+	search.OpenOrCreate(cfg.BlevePath)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

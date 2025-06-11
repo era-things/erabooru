@@ -18,6 +18,7 @@ type Config struct {
 	MinioInternalEndpoint string // for SDK connection (e.g., "minio:9000")
 	MinioPublicHost       string // for browser-facing host (e.g., "localhost")
 	MinioPublicPrefix     string // e.g., "/minio"
+	BlevePath             string // path to Bleve index, e.g., "/data/bleve_index"
 	MinioSSL              bool
 }
 
@@ -37,6 +38,7 @@ func Load() (*Config, error) {
 		MinioInternalEndpoint: getEnv("MINIO_INTERNAL_ENDPOINT", "minio:9000"), // for SDK connection
 		MinioPublicHost:       getEnv("MINIO_PUBLIC_HOST", "localhost:9000"),   // for browser-facing host
 		MinioPublicPrefix:     getEnv("MINIO_PUBLIC_PREFIX", "/minio"),         // e.g., "/minio" for Caddy reverse proxy
+		BlevePath:             getEnv("BLEVE_PATH", "/data/bleve_index"),
 		MinioSSL:              getEnv("MINIO_SSL", "false") == "true",
 	}
 	return cfg, nil
