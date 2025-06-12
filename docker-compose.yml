@@ -52,6 +52,8 @@ services:
       target: prod
     env_file:
       - .env
+    volumes:
+      - ./bleve-index:${BLEVE_PATH}
     depends_on:
       - db
       - minio
