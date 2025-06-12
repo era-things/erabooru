@@ -1,6 +1,6 @@
 # Erabooru Development Guide
 
-This repository contains a Go backend with a SvelteKit frontend. During development you can run the UI with the Vite dev server for hot reloading while using the existing backend services. Bleve is used for search indexing.
+This repository contains a Go backend with a SvelteKit frontend. During development you can run the UI with the Vite dev server for hot reloading while using the existing backend services. Bleve is used for search indexing, and an ent hook keeps the index synchronized with the Postgres metadata.
 
 ## Prerequisites
 - Docker (for Postgres and MinIO services)
