@@ -11,6 +11,7 @@ import (
 
 	"era/booru/ent"
 	"era/booru/ent/media"
+	"era/booru/ent/predicate"
 	"era/booru/internal/config"
 	"era/booru/internal/minio"
 
@@ -20,9 +21,78 @@ import (
 	mc "github.com/minio/minio-go/v7"
 )
 
+// parseSearch converts a simple query string like "width>100 height<=200 type=image"
+// into a slice of ent predicates used for filtering Media.
+func parseSearch(q string) []predicate.Media {
+	tokens := strings.Fields(q)
+	preds := make([]predicate.Media, 0, len(tokens))
+	for _, t := range tokens {
+		var field, op, val string
+		for _, o := range []string{">=", "<=", ">", "<", "="} {
+			if idx := strings.Index(t, o); idx > 0 {
+				field = t[:idx]
+				op = o
+				val = t[idx+len(o):]
+				break
+			}
+		}
+		if field == "" {
+			continue
+		}
+		switch field {
+		case "width":
+			v, err := strconv.Atoi(val)
+			if err != nil {
+				continue
+			}
+			switch op {
+			case "=":
+				preds = append(preds, media.WidthEQ(v))
+			case ">":
+				preds = append(preds, media.WidthGT(v))
+			case "<":
+				preds = append(preds, media.WidthLT(v))
+			case ">=":
+				preds = append(preds, media.WidthGTE(v))
+			case "<=":
+				preds = append(preds, media.WidthLTE(v))
+			}
+		case "height":
+			v, err := strconv.Atoi(val)
+			if err != nil {
+				continue
+			}
+			switch op {
+			case "=":
+				preds = append(preds, media.HeightEQ(v))
+			case ">":
+				preds = append(preds, media.HeightGT(v))
+			case "<":
+				preds = append(preds, media.HeightLT(v))
+			case ">=":
+				preds = append(preds, media.HeightGTE(v))
+			case "<=":
+				preds = append(preds, media.HeightLTE(v))
+			}
+		case "type":
+			if op == "=" {
+				preds = append(preds, media.TypeEQ(media.Type(val)))
+			}
+		}
+	}
+	return preds
+}
+
 func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClient *minio.Client, cfg *config.Config) {
 	ginEngine.GET("/api/media", func(c *gin.Context) {
-		items, err := database.Media.Query().
+		q := c.Query("q")
+		query := database.Media.Query()
+		preds := parseSearch(q)
+		if len(preds) > 0 {
+			query = query.Where(preds...)
+		}
+
+		items, err := query.
 			Limit(50).
 			Order(media.ByID(sql.OrderDesc())).
 			All(c.Request.Context())
