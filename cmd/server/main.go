@@ -15,8 +15,10 @@ import (
 )
 
 func main() {
+	log.Println("Loading config...")
 	cfg, err := config.Load()
 
+	log.Println("Opening Bleve index...")
 	if err := search.OpenOrCreate(cfg.BlevePath); err != nil {
 		log.Fatalf("error initializing search index: %v", err)
 	}
@@ -25,11 +27,13 @@ func main() {
 		log.Fatalf("error loading configuration: %v", err)
 	}
 
+	log.Printf("Initializing MinIO client for bucket '%s'", cfg.MinioBucket)
 	m, err := minio.New(cfg)
 	if err != nil {
 		log.Fatalf("init minio: %v", err)
 	}
 
+	log.Println("Connecting to PostgreSQL database...")
 	database, err := db.New(cfg)
 	if err != nil {
 		log.Fatalf("connect db: %v", err)
@@ -38,7 +42,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	log.Println("watching for new uploads")
+	log.Println("Watching for new uploads")
 	go m.Watch(ctx, database)
 
 	r := gin.New()
@@ -48,6 +52,7 @@ func main() {
 	api.RegisterMediaRoutes(r, database, m, cfg)
 	api.RegisterStaticRoutes(r)
 
+	log.Println("Starting Gin server on :8080")
 	r.Run(":8080")
 	log.Printf("Server running on http://localhost:8080")
 

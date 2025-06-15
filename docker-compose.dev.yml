@@ -44,6 +44,6 @@ services:
     ports:
       - "8095:8095"
     volumes:
-      - bleve-index:/data/bleve
+      - bleve-index:/data/bleve:ro
     depends_on:
       - app                     
