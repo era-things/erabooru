@@ -38,9 +38,8 @@ CMD go run ./cmd/server
 FROM gcr.io/distroless/base-debian12 AS prod
 WORKDIR /
 COPY --from=server-build /erabooru /erabooru
-ARG BLEVE_PATH=/data/bleve_index
-RUN mkdir -p "$BLEVE_PATH" && chown -R nonroot:nonroot "$(dirname "$BLEVE_PATH")"
-ENV BLEVE_PATH=$BLEVE_PATH
+RUN mkdir -p /data/bleve && chown -R nonroot:nonroot /data
+ENV BLEVE_PATH=/data/bleve
 USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/erabooru"]
