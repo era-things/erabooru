@@ -16,6 +16,11 @@ import (
 
 func main() {
 	cfg, err := config.Load()
+
+	if err := search.OpenOrCreate(cfg.BlevePath); err != nil {
+		log.Fatalf("error initializing search index: %v", err)
+	}
+
 	if err != nil {
 		log.Fatalf("error loading configuration: %v", err)
 	}
@@ -29,8 +34,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("connect db: %v", err)
 	}
-
-	search.OpenOrCreate(cfg.BlevePath)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
