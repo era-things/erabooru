@@ -1,8 +1,11 @@
 package search
 
 import (
+	"fmt"
 	"os"
+	"strconv"
 
+	"era/booru/ent"
 	"github.com/blevesearch/bleve/v2"
 )
 
@@ -18,4 +21,20 @@ func OpenOrCreate(path string) error {
 		IDX, err = bleve.Open(path)
 	}
 	return err
+}
+
+// IndexMedia indexes the media metadata in the Bleve index.
+func IndexMedia(m *ent.Media) error {
+	if IDX == nil {
+		return fmt.Errorf("index not open")
+	}
+	return IDX.Index(strconv.Itoa(m.ID), m)
+}
+
+// DeleteMedia removes the document from the Bleve index.
+func DeleteMedia(id int) error {
+	if IDX == nil {
+		return fmt.Errorf("index not open")
+	}
+	return IDX.Delete(strconv.Itoa(id))
 }

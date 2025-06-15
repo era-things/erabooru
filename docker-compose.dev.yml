@@ -7,6 +7,7 @@ services:
     command: ./scripts/dev.sh
     volumes:
       - .:/app
+      - ./bleve-index:${BLEVE_PATH}
     ports:
       - "5173:5173"
       - "8080:8080"

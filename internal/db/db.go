@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"era/booru/ent"
+	"era/booru/ent/hook"
 	_ "era/booru/ent/runtime"
 	"era/booru/internal/config"
 
@@ -23,5 +24,6 @@ func New(cfg *config.Config) (*ent.Client, error) {
 	if err := client.Schema.Create(context.Background()); err != nil {
 		return nil, err
 	}
+	client.Media.Use(hook.SyncBleve())
 	return client, nil
 }
