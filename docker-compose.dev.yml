@@ -1,13 +1,21 @@
+version: "3.9"
+
+volumes:
+  bleve-index:
+
 services:
+  # ────────── App (dev) ──────────
   app:
     image: booru:dev
     build:
       context: .
       target: dev
     command: ./scripts/dev.sh
+    environment:
+      - BLEVE_PATH=/data/bleve
     volumes:
-      - .:/app
-      - ./bleve-index:${BLEVE_PATH}
+      - .:/app                      
+      - bleve-index:/data/bleve
     ports:
       - "5173:5173"
       - "8080:8080"
@@ -15,11 +23,27 @@ services:
       - db
       - minio
       - caddy
+
+  # ────────── pgweb ──────────
   pgweb:
     image: sosedoff/pgweb
     container_name: pgweb
     ports:
       - "8081:8081"
-    command: --bind=0.0.0.0 --listen=8081 --url postgres://booru:booru@db:5432/booru?sslmode=disable
+    command: >-
+      --bind=0.0.0.0 --listen=8081
+      --url postgres://booru:booru@db:5432/booru?sslmode=disable
     depends_on:
       - db
+
+  # ────────── Bleve Explorer ──────────
+  bleve-ui:
+    build:
+      context: .
+      dockerfile: explorer.dockerfile     
+    ports:
+      - "8095:8095"
+    volumes:
+      - bleve-index:/data/bleve
+    depends_on:
+      - app                     

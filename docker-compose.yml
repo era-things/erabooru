@@ -53,7 +53,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./bleve-index:${BLEVE_PATH}
+      - ./bleve-index:/data/bleve
     depends_on:
       - db
       - minio
