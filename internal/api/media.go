@@ -10,73 +10,21 @@ import (
 	"time"
 
 	"era/booru/ent"
-	"era/booru/ent/media"
-	"era/booru/ent/predicate"
 	"era/booru/internal/config"
 	"era/booru/internal/minio"
+	"era/booru/internal/search"
 
-	"entgo.io/ent/dialect/sql"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	mc "github.com/minio/minio-go/v7"
 )
 
-// parseSearch converts a simple query string like "width>100 height<=200 type=image"
-// into a slice of ent predicates used for filtering Media.
-func parseSearch(q string) []predicate.Media {
-	tokens := strings.Fields(q)
-	preds := make([]predicate.Media, 0, len(tokens))
-	for _, t := range tokens {
-		var field, op, val string
-		for _, o := range []string{">=", "<=", ">", "<", "="} {
-			if idx := strings.Index(t, o); idx > 0 {
-				field = t[:idx]
-				op = o
-				val = t[idx+len(o):]
-				break
-			}
-		}
-		if field == "" {
-			continue
-		}
-
-		if v, err := strconv.Atoi(val); err == nil {
-			switch op {
-			case "=":
-				preds = append(preds, predicate.Media(sql.FieldEQ(field, v)))
-			case ">":
-				preds = append(preds, predicate.Media(sql.FieldGT(field, v)))
-			case "<":
-				preds = append(preds, predicate.Media(sql.FieldLT(field, v)))
-			case ">=":
-				preds = append(preds, predicate.Media(sql.FieldGTE(field, v)))
-			case "<=":
-				preds = append(preds, predicate.Media(sql.FieldLTE(field, v)))
-			}
-		} else {
-			if op == "=" {
-				preds = append(preds, predicate.Media(sql.FieldEQ(field, val)))
-			}
-		}
-	}
-	return preds
-}
-
 func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClient *minio.Client, cfg *config.Config) {
 	ginEngine.GET("/api/media", func(c *gin.Context) {
 		q := c.Query("q")
-		query := database.Media.Query()
-		preds := parseSearch(q)
-		if len(preds) > 0 {
-			query = query.Where(preds...)
-		}
-
-		items, err := query.
-			Limit(50).
-			Order(media.ByID(sql.OrderDesc())).
-			All(c.Request.Context())
+		items, err := search.SearchMedia(q, 50)
 		if err != nil {
-			log.Printf("query media: %v", err)
+			log.Printf("search media: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
