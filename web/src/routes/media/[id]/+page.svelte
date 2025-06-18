@@ -57,6 +57,7 @@
 		</div>
 
 		<div class="flex flex-1 items-center justify-center">
+			<!-- svelte-ignore a11y_missing_attribute -->
 			<img
 				src={media.url}
 				class="object-contain"
