@@ -32,7 +32,7 @@ RUN npm install --prefix web
 COPY scripts ./scripts
 RUN chmod +x scripts/dev.sh
 EXPOSE 8080 5173
-CMD go run ./cmd/server
+CMD ["go", "run", "./cmd/server"]
 
 # ----- final minimal image -----
 FROM gcr.io/distroless/base-debian12 AS prod

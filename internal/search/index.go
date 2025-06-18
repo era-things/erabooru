@@ -6,7 +6,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"era/booru/ent"
+
+	"github.com/blevesearch/bleve/v2"
 	q "github.com/blevesearch/bleve/v2/search/query"
+)
 
 // parseQuery turns a string like "width>300 type=image" into a Bleve query.
 // Numeric fields support range comparisons (> < >= <= =) while string fields
@@ -90,12 +95,6 @@ func SearchMedia(expr string, limit int) ([]*ent.Media, error) {
 	}
 	return items, nil
 }
-	"strings"
-
-	"era/booru/ent"
-
-	"github.com/blevesearch/bleve/v2"
-)
 
 var IDX bleve.Index // global handle
 
