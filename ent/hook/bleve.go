@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"era/booru/ent"
+	"era/booru/ent/media"
 	"era/booru/internal/search"
 )
 
@@ -29,18 +30,24 @@ func SyncBleve() ent.Hook {
 					}
 				}
 			default:
-				media, ok := v.(*ent.Media)
+				mobj, ok := v.(*ent.Media)
 				if !ok {
 					id, ok := mv.ID()
 					if !ok {
 						return v, nil
 					}
-					media, err = mv.Client().Media.Get(ctx, id)
+					mobj, err = mv.Client().Media.Query().Where(media.IDEQ(id)).WithTags().Only(ctx)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					// Reload to include tags for indexing
+					mobj, err = mv.Client().Media.Query().Where(media.IDEQ(mobj.ID)).WithTags().Only(ctx)
 					if err != nil {
 						return nil, err
 					}
 				}
-				if ierr := search.IndexMedia(media); ierr != nil {
+				if ierr := search.IndexMedia(mobj); ierr != nil {
 					return nil, ierr
 				}
 			}

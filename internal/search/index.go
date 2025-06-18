@@ -121,7 +121,17 @@ func IndexMedia(m *ent.Media) error {
 	if IDX == nil {
 		return fmt.Errorf("index not open")
 	}
-	return IDX.Index(strconv.Itoa(m.ID), m)
+	doc := struct {
+		*ent.Media
+		Tags []string `json:"tags"`
+	}{Media: m}
+	if m.Edges.Tags != nil {
+		doc.Tags = make([]string, len(m.Edges.Tags))
+		for i, t := range m.Edges.Tags {
+			doc.Tags[i] = t.Name
+		}
+	}
+	return IDX.Index(strconv.Itoa(m.ID), doc)
 }
 
 // DeleteMedia removes the document from the Bleve index.
