@@ -51,7 +51,7 @@
 			<div class="text-sm">
 				<p>Format: {media.format}</p>
 				<p>Dimensions: {media.width}×{media.height}</p>
-				<p>Size: {media.size} bytes</p>
+				<p>Size: {(media.size/1024/1024).toFixed(2)} MB</p>
 			</div>
 			<button class="rounded bg-red-500 px-4 py-2 text-white" on:click={remove}>Delete</button>
 		</div>
