@@ -10,11 +10,10 @@ import (
 	"time"
 
 	"era/booru/ent"
-	"era/booru/ent/media"
 	"era/booru/internal/config"
 	"era/booru/internal/minio"
+	"era/booru/internal/search"
 
-	"entgo.io/ent/dialect/sql"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	mc "github.com/minio/minio-go/v7"
@@ -22,12 +21,10 @@ import (
 
 func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClient *minio.Client, cfg *config.Config) {
 	ginEngine.GET("/api/media", func(c *gin.Context) {
-		items, err := database.Media.Query().
-			Limit(50).
-			Order(media.ByID(sql.OrderDesc())).
-			All(c.Request.Context())
+		q := c.Query("q")
+		items, err := search.SearchMedia(q, 50)
 		if err != nil {
-			log.Printf("query media: %v", err)
+			log.Printf("search media: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
