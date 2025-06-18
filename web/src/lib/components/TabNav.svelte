@@ -41,8 +41,8 @@
 		>
 			Upload
                 </a>
-                <form on:submit|preventDefault={search} class="ml-auto">
-                        <input type="text" placeholder="Search" bind:value={q} class="rounded border px-2 py-1" />
-                </form>
+               <form on:submit|preventDefault={search} class="mx-auto">
+                       <input type="text" placeholder="Search" bind:value={q} class="rounded border px-2 py-1" />
+               </form>
         </nav>
 </div>

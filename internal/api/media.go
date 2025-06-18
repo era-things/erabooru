@@ -39,44 +39,23 @@ func parseSearch(q string) []predicate.Media {
 		if field == "" {
 			continue
 		}
-		switch field {
-		case "width":
-			v, err := strconv.Atoi(val)
-			if err != nil {
-				continue
-			}
+
+		if v, err := strconv.Atoi(val); err == nil {
 			switch op {
 			case "=":
-				preds = append(preds, media.WidthEQ(v))
+				preds = append(preds, predicate.Media(sql.FieldEQ(field, v)))
 			case ">":
-				preds = append(preds, media.WidthGT(v))
+				preds = append(preds, predicate.Media(sql.FieldGT(field, v)))
 			case "<":
-				preds = append(preds, media.WidthLT(v))
+				preds = append(preds, predicate.Media(sql.FieldLT(field, v)))
 			case ">=":
-				preds = append(preds, media.WidthGTE(v))
+				preds = append(preds, predicate.Media(sql.FieldGTE(field, v)))
 			case "<=":
-				preds = append(preds, media.WidthLTE(v))
+				preds = append(preds, predicate.Media(sql.FieldLTE(field, v)))
 			}
-		case "height":
-			v, err := strconv.Atoi(val)
-			if err != nil {
-				continue
-			}
-			switch op {
-			case "=":
-				preds = append(preds, media.HeightEQ(v))
-			case ">":
-				preds = append(preds, media.HeightGT(v))
-			case "<":
-				preds = append(preds, media.HeightLT(v))
-			case ">=":
-				preds = append(preds, media.HeightGTE(v))
-			case "<=":
-				preds = append(preds, media.HeightLTE(v))
-			}
-		case "type":
+		} else {
 			if op == "=" {
-				preds = append(preds, media.TypeEQ(media.Type(val)))
+				preds = append(preds, predicate.Media(sql.FieldEQ(field, val)))
 			}
 		}
 	}
