@@ -59,7 +59,6 @@
 		<div class="flex flex-1 items-center justify-center">
 			<img
 				src={media.url}
-				alt="image"
 				class="object-contain"
 				style="max-width:75vw; max-height:75vh"
 			/>
