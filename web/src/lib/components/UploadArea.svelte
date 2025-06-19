@@ -58,10 +58,11 @@
 	tabindex="0"
 >
 	<p class="text-gray-500">Click to upload a file</p>
-	<input 
-		type="file" 
+	<input
+		type="file"
 		accept={supportedTypes.join(', ')}
-		class="hidden" 
-		bind:this={fileInput} on:change={upload} 
+		class="hidden"
+		bind:this={fileInput}
+		on:change={upload}
 	/>
 </div>
