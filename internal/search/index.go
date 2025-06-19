@@ -3,6 +3,7 @@ package search
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -32,6 +33,10 @@ func parseQuery(expr string) q.Query {
 			}
 		}
 		if field == "" {
+			// If no field/op, treat as tag search
+			tq := bleve.NewTermQuery(t)
+			tq.SetField("tags")
+			parts = append(parts, tq)
 			continue
 		}
 
@@ -75,6 +80,7 @@ func SearchMedia(expr string, limit int) ([]*ent.Media, error) {
 		return nil, fmt.Errorf("index not open")
 	}
 	query := parseQuery(expr)
+	log.Printf("search query: %s", expr)
 	req := bleve.NewSearchRequestOptions(query, limit, 0, false)
 	req.Fields = []string{"*"}
 	res, err := IDX.Search(req)
@@ -82,9 +88,11 @@ func SearchMedia(expr string, limit int) ([]*ent.Media, error) {
 		return nil, err
 	}
 	items := make([]*ent.Media, 0, len(res.Hits))
+
 	for _, hit := range res.Hits {
 		var m ent.Media
 		b, err := json.Marshal(hit.Fields)
+		log.Printf("search hit: %s", string(b))
 		if err != nil {
 			return nil, err
 		}
@@ -122,9 +130,9 @@ func IndexMedia(m *ent.Media) error {
 		return fmt.Errorf("index not open")
 	}
 	doc := struct {
-		*ent.Media
+		ent.Media
 		Tags []string `json:"tags"`
-	}{Media: m}
+	}{Media: *m}
 	if m.Edges.Tags != nil {
 		doc.Tags = make([]string, len(m.Edges.Tags))
 		for i, t := range m.Edges.Tags {

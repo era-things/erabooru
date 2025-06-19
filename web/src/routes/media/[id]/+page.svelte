@@ -26,7 +26,7 @@
 			const res = await fetch(`${apiBase}/media/${id}`);
 			if (res.ok) {
 				media = await res.json();
-				tagsInput = media.tags.map((t) => t.replace(/ /g, '_')).join(' ');
+				tagsInput = media?.tags.map((t) => t.replace(/ /g, '_')).join(' ') ?? '';
 			} else {
 				console.error('failed to load media', res.status, res.statusText);
 			}
