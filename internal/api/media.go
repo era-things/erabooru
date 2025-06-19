@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"era/booru/ent"
+	"era/booru/ent/media"
+	"era/booru/ent/tag"
 	"era/booru/internal/config"
 	"era/booru/internal/minio"
 	"era/booru/internal/search"
@@ -50,7 +52,7 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 			return
 		}
 
-		item, err := database.Media.Get(c.Request.Context(), id)
+		item, err := database.Media.Query().Where(media.IDEQ(id)).WithTags().Only(c.Request.Context())
 		if err != nil {
 			log.Printf("get media %d: %v", id, err)
 			c.AbortWithStatus(http.StatusNotFound)
@@ -65,6 +67,10 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 		}
 
 		url := fmt.Sprintf("http://localhost/minio/%s/%s", cfg.MinioBucket, item.Key)
+		tags := make([]string, len(item.Edges.Tags))
+		for i, t := range item.Edges.Tags {
+			tags[i] = t.Name
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"id":     item.ID,
 			"url":    url,
@@ -72,6 +78,7 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 			"height": item.Height,
 			"format": item.Format,
 			"size":   stat.Size,
+			"tags":   tags,
 		})
 	})
 
@@ -99,6 +106,59 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"url": url, "object": object})
+	})
+
+	ginEngine.POST("/api/media/:id/tags", func(c *gin.Context) {
+		id, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		var body struct {
+			Tags []string `json:"tags"`
+		}
+		if err := c.BindJSON(&body); err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		// Normalize tags: underscores to spaces, trim, deduplicate
+		seen := map[string]struct{}{}
+		clean := make([]string, 0, len(body.Tags))
+		for _, t := range body.Tags {
+			t = strings.TrimSpace(t)
+			log.Printf("tag: %s", t)
+			if t == "" {
+				continue
+			}
+			if _, ok := seen[t]; !ok {
+				seen[t] = struct{}{}
+				clean = append(clean, t)
+			}
+		}
+
+		tagIDs := make([]int, 0, len(clean))
+		for _, name := range clean {
+			tg, err := database.Tag.Query().Where(tag.NameEQ(name)).Only(c.Request.Context())
+			if ent.IsNotFound(err) {
+				tg, err = database.Tag.Create().SetName(name).SetType(tag.TypeUserTag).Save(c.Request.Context())
+			}
+			if err != nil {
+				log.Printf("tag lookup/create %s: %v", name, err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			tagIDs = append(tagIDs, tg.ID)
+		}
+
+		if _, err := database.Media.UpdateOneID(id).ClearTags().AddTagIDs(tagIDs...).Save(c.Request.Context()); err != nil {
+			log.Printf("update media tags %d: %v", id, err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		c.Status(http.StatusOK)
 	})
 
 	ginEngine.DELETE("/api/media/:id", func(c *gin.Context) {
