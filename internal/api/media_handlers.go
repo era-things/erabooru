@@ -4,9 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
 	"era/booru/ent"
@@ -17,12 +14,19 @@ import (
 	"era/booru/internal/search"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	mc "github.com/minio/minio-go/v7"
 )
 
-func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClient *minio.Client, cfg *config.Config) {
-	ginEngine.GET("/api/media", func(c *gin.Context) {
+func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config) {
+	r.GET("/api/media", listMediaHandler(cfg))
+	r.GET("/api/media/:id", getMediaHandler(db, m, cfg))
+	r.POST("/api/media/upload-url", uploadURLHandler(m, cfg))
+	r.POST("/api/media/:id/tags", updateMediaTagsHandler(db))
+	r.DELETE("/api/media/:id", deleteMediaHandler(db, m))
+}
+
+func listMediaHandler(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		q := c.Query("q")
 		items, err := search.SearchMedia(q, 50)
 		if err != nil {
@@ -30,7 +34,6 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
-
 		out := make([]gin.H, len(items))
 		for i, mitem := range items {
 			url := fmt.Sprintf("http://localhost/minio/%s/%s", cfg.MinioBucket, mitem.Key)
@@ -41,25 +44,25 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 				"height": mitem.Height,
 			}
 		}
-
 		c.JSON(http.StatusOK, gin.H{"media": out})
-	})
+	}
+}
 
-	ginEngine.GET("/api/media/:id", func(c *gin.Context) {
-		id, err := strconv.Atoi(c.Param("id"))
-		if err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
+func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := idParam(c)
+		if !ok {
 			return
 		}
 
-		item, err := database.Media.Query().Where(media.IDEQ(id)).WithTags().Only(c.Request.Context())
+		item, err := db.Media.Query().Where(media.IDEQ(id)).WithTags().Only(c.Request.Context())
 		if err != nil {
 			log.Printf("get media %d: %v", id, err)
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
 
-		stat, err := minioClient.StatObject(c.Request.Context(), minioClient.Bucket, item.Key, mc.StatObjectOptions{})
+		stat, err := m.StatObject(c.Request.Context(), m.Bucket, item.Key, mc.StatObjectOptions{})
 		if err != nil {
 			log.Printf("stat object %s: %v", item.Key, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -80,9 +83,11 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 			"size":   stat.Size,
 			"tags":   tags,
 		})
-	})
+	}
+}
 
-	ginEngine.POST("/api/media/upload-url", func(c *gin.Context) {
+func uploadURLHandler(m *minio.Client, cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		type req struct {
 			Filename string `json:"filename"`
 		}
@@ -99,19 +104,20 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 			return
 		}
 
-		url, err := minioClient.PresignedPut(c.Request.Context(), cfg, object, time.Minute*15)
+		url, err := m.PresignedPut(c.Request.Context(), cfg, object, time.Minute*15)
 		if err != nil {
 			log.Printf("presign: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"url": url, "object": object})
-	})
+	}
+}
 
-	ginEngine.POST("/api/media/:id/tags", func(c *gin.Context) {
-		id, err := strconv.Atoi(c.Param("id"))
-		if err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
+func updateMediaTagsHandler(db *ent.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := idParam(c)
+		if !ok {
 			return
 		}
 
@@ -123,25 +129,13 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 			return
 		}
 
-		// Normalize tags: underscores to spaces, trim, deduplicate
-		seen := map[string]struct{}{}
-		clean := make([]string, 0, len(body.Tags))
-		for _, t := range body.Tags {
-			t = strings.TrimSpace(t)
-			if t == "" {
-				continue
-			}
-			if _, ok := seen[t]; !ok {
-				seen[t] = struct{}{}
-				clean = append(clean, t)
-			}
-		}
+		clean := normalizeTags(body.Tags)
 
 		tagIDs := make([]int, 0, len(clean))
 		for _, name := range clean {
-			tg, err := database.Tag.Query().Where(tag.NameEQ(name)).Only(c.Request.Context())
+			tg, err := db.Tag.Query().Where(tag.NameEQ(name)).Only(c.Request.Context())
 			if ent.IsNotFound(err) {
-				tg, err = database.Tag.Create().SetName(name).SetType(tag.TypeUserTag).Save(c.Request.Context())
+				tg, err = db.Tag.Create().SetName(name).SetType(tag.TypeUserTag).Save(c.Request.Context())
 			}
 			if err != nil {
 				log.Printf("tag lookup/create %s: %v", name, err)
@@ -151,55 +145,40 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 			tagIDs = append(tagIDs, tg.ID)
 		}
 
-		if _, err := database.Media.UpdateOneID(id).ClearTags().AddTagIDs(tagIDs...).Save(c.Request.Context()); err != nil {
+		if _, err := db.Media.UpdateOneID(id).ClearTags().AddTagIDs(tagIDs...).Save(c.Request.Context()); err != nil {
 			log.Printf("update media tags %d: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
-
 		c.Status(http.StatusOK)
-	})
+	}
+}
 
-	ginEngine.DELETE("/api/media/:id", func(c *gin.Context) {
-		id, err := strconv.Atoi(c.Param("id"))
-		if err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
+func deleteMediaHandler(db *ent.Client, m *minio.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := idParam(c)
+		if !ok {
 			return
 		}
 
-		item, err := database.Media.Get(c.Request.Context(), id)
+		item, err := db.Media.Get(c.Request.Context(), id)
 		if err != nil {
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
 
-		if err := minioClient.RemoveObject(c.Request.Context(), minioClient.Bucket, item.Key, mc.RemoveObjectOptions{}); err != nil {
+		if err := m.RemoveObject(c.Request.Context(), m.Bucket, item.Key, mc.RemoveObjectOptions{}); err != nil {
 			log.Printf("remove object %s: %v", item.Key, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 
-		if err := database.Media.DeleteOneID(id).Exec(c.Request.Context()); err != nil {
+		if err := db.Media.DeleteOneID(id).Exec(c.Request.Context()); err != nil {
 			log.Printf("delete media %d: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 
 		c.Status(http.StatusOK)
-	})
-}
-
-func CreateMediaName(filename string) (string, error) {
-	extension := filepath.Ext(filename)
-	// Validate file extension
-	switch strings.ToLower(extension) {
-	case ".png", ".jpg", ".jpeg", ".gif":
-		// Valid formats
-	default:
-		return "", fmt.Errorf("unsupported file format: %s", extension)
 	}
-
-	// Generate a unique name using UUID
-	name := uuid.New().String() + extension
-	return name, nil
 }
