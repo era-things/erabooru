@@ -50,8 +50,7 @@
 		if (!media) return;
 		const tags = tagsInput
 			.split(/\s+/)
-			.filter((t) => t.length > 0)
-			.map((t) => t.replace(/_/g, ' '));
+			.filter((t) => t.length > 0);
 		const res = await fetch(`${apiBase}/media/${media.id}/tags`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },

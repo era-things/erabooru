@@ -127,7 +127,8 @@ func RegisterMediaRoutes(ginEngine *gin.Engine, database *ent.Client, minioClien
 		seen := map[string]struct{}{}
 		clean := make([]string, 0, len(body.Tags))
 		for _, t := range body.Tags {
-			t = strings.TrimSpace(strings.ReplaceAll(t, "_", " "))
+			t = strings.TrimSpace(t)
+			log.Printf("tag: %s", t)
 			if t == "" {
 				continue
 			}
