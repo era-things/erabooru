@@ -15,6 +15,7 @@ type Config struct {
 	MinioUser             string
 	MinioPassword         string
 	MinioBucket           string
+	PreviewBucket         string
 	MinioInternalEndpoint string // for SDK connection (e.g., "minio:9000")
 	MinioPublicHost       string // for browser-facing host (e.g., "localhost")
 	MinioPublicPrefix     string // e.g., "/minio"
@@ -35,6 +36,7 @@ func Load() (*Config, error) {
 		MinioUser:             getEnv("MINIO_ROOT_USER", "minio"),
 		MinioPassword:         getEnv("MINIO_ROOT_PASSWORD", "minio123"),
 		MinioBucket:           getEnv("MINIO_BUCKET", "boorubucket"),
+		PreviewBucket:         getEnv("MINIO_PREVIEW_BUCKET", "previews"),
 		MinioInternalEndpoint: getEnv("MINIO_INTERNAL_ENDPOINT", "minio:9000"), // for SDK connection
 		MinioPublicHost:       getEnv("MINIO_PUBLIC_HOST", "localhost:9000"),   // for browser-facing host
 		MinioPublicPrefix:     getEnv("MINIO_PUBLIC_PREFIX", "/minio"),         // e.g., "/minio" for Caddy reverse proxy

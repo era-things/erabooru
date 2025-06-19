@@ -37,12 +37,25 @@ func New(cfg *config.Config) (*Client, error) {
 	c := &Client{Client: cli, Bucket: cfg.MinioBucket}
 
 	ctx := context.Background()
+
+	// Ensure the main bucket exists
 	exists, err := cli.BucketExists(ctx, cfg.MinioBucket)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
 		if err := cli.MakeBucket(ctx, cfg.MinioBucket, mc.MakeBucketOptions{}); err != nil {
+			return nil, err
+		}
+	}
+
+	// Ensure the preview bucket exists
+	exists, err = cli.BucketExists(ctx, cfg.PreviewBucket)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		if err := cli.MakeBucket(ctx, cfg.PreviewBucket, mc.MakeBucketOptions{}); err != nil {
 			return nil, err
 		}
 	}
