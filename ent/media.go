@@ -26,6 +26,8 @@ type Media struct {
 	Width int `json:"width,omitempty"`
 	// Image height in pixels
 	Height int `json:"height,omitempty"`
+	// Duration in seconds for video or audio
+	Duration *int `json:"duration,omitempty"`
 	// Type of the media, can be image, video, or audio
 	Type media.Type `json:"type,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -57,7 +59,7 @@ func (*Media) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case media.FieldID, media.FieldWidth, media.FieldHeight:
+		case media.FieldID, media.FieldWidth, media.FieldHeight, media.FieldDuration:
 			values[i] = new(sql.NullInt64)
 		case media.FieldKey, media.FieldHash, media.FieldFormat, media.FieldType:
 			values[i] = new(sql.NullString)
@@ -111,6 +113,13 @@ func (m *Media) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field height", values[i])
 			} else if value.Valid {
 				m.Height = int(value.Int64)
+			}
+		case media.FieldDuration:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field duration", values[i])
+			} else if value.Valid {
+				m.Duration = new(int)
+				*m.Duration = int(value.Int64)
 			}
 		case media.FieldType:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -173,6 +182,11 @@ func (m *Media) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("height=")
 	builder.WriteString(fmt.Sprintf("%v", m.Height))
+	builder.WriteString(", ")
+	if v := m.Duration; v != nil {
+		builder.WriteString("duration=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("type=")
 	builder.WriteString(fmt.Sprintf("%v", m.Type))

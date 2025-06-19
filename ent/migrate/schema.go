@@ -16,6 +16,7 @@ var (
 		{Name: "format", Type: field.TypeString},
 		{Name: "width", Type: field.TypeInt},
 		{Name: "height", Type: field.TypeInt},
+		{Name: "duration", Type: field.TypeInt, Nullable: true},
 		{Name: "type", Type: field.TypeEnum, Enums: []string{"image", "video", "audio"}},
 	}
 	// MediaTable holds the schema information for the "media" table.

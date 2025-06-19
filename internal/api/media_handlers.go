@@ -19,6 +19,7 @@ import (
 
 func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config) {
 	r.GET("/api/media", listMediaHandler(cfg))
+	r.GET("/api/media/previews", listPreviewsHandler(cfg))
 	r.GET("/api/media/:id", getMediaHandler(db, m, cfg))
 	r.POST("/api/media/upload-url", uploadURLHandler(m, cfg))
 	r.POST("/api/media/:id/tags", updateMediaTagsHandler(db))
@@ -26,6 +27,29 @@ func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *co
 }
 
 func listMediaHandler(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		q := c.Query("q")
+		items, err := search.SearchMedia(q, 50)
+		if err != nil {
+			log.Printf("search media: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		out := make([]gin.H, len(items))
+		for i, mitem := range items {
+			url := fmt.Sprintf("http://localhost/minio/%s/%s", cfg.MinioBucket, mitem.Key)
+			out[i] = gin.H{
+				"id":     mitem.ID,
+				"url":    url,
+				"width":  mitem.Width,
+				"height": mitem.Height,
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"media": out})
+	}
+}
+
+func listPreviewsHandler(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		q := c.Query("q")
 		items, err := search.SearchMedia(q, 50)

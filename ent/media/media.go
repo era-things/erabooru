@@ -24,6 +24,8 @@ const (
 	FieldWidth = "width"
 	// FieldHeight holds the string denoting the height field in the database.
 	FieldHeight = "height"
+	// FieldDuration holds the string denoting the duration field in the database.
+	FieldDuration = "duration"
 	// FieldType holds the string denoting the type field in the database.
 	FieldType = "type"
 	// EdgeTags holds the string denoting the tags edge name in mutations.
@@ -45,6 +47,7 @@ var Columns = []string{
 	FieldFormat,
 	FieldWidth,
 	FieldHeight,
+	FieldDuration,
 	FieldType,
 }
 
@@ -119,6 +122,11 @@ func ByWidth(opts ...sql.OrderTermOption) OrderOption {
 // ByHeight orders the results by the height field.
 func ByHeight(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldHeight, opts...).ToFunc()
+}
+
+// ByDuration orders the results by the duration field.
+func ByDuration(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDuration, opts...).ToFunc()
 }
 
 // ByType orders the results by the type field.

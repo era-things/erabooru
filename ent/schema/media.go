@@ -30,6 +30,10 @@ func (Media) Fields() []ent.Field {
 		field.Int("height").
 			Immutable().
 			Comment("Image height in pixels"),
+		field.Int("duration").
+			Optional().
+			Nillable().
+			Comment("Duration in seconds for video or audio"),
 		field.Enum("type").
 			Values("image", "video", "audio").
 			Immutable().
