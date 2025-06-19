@@ -10,9 +10,7 @@ import (
 	"path"
 	"time"
 
-	"era/booru/ent"
 	"era/booru/internal/config"
-	"era/booru/internal/processing"
 
 	mc "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -21,7 +19,8 @@ import (
 // Client wraps the MinIO SDK client and configured bucket.
 type Client struct {
 	*mc.Client
-	Bucket string
+	Bucket        string
+	PreviewBucket string
 }
 
 // New creates a MinIO client using values from configuration.
@@ -34,7 +33,7 @@ func New(cfg *config.Config) (*Client, error) {
 		return nil, err
 	}
 
-	c := &Client{Client: cli, Bucket: cfg.MinioBucket}
+	c := &Client{Client: cli, Bucket: cfg.MinioBucket, PreviewBucket: cfg.PreviewBucket}
 
 	ctx := context.Background()
 
@@ -61,6 +60,12 @@ func New(cfg *config.Config) (*Client, error) {
 	}
 
 	return c, nil
+}
+
+func (c *Client) PutPreviewJpeg(ctx context.Context, object string, reader io.Reader) (mc.UploadInfo, error) {
+	return c.Client.PutObject(ctx, c.PreviewBucket, object, reader, -1, mc.PutObjectOptions{
+		ContentType: "image/jpeg",
+	})
 }
 
 // PresignedPut returns a presigned URL for uploading an object.
@@ -90,7 +95,7 @@ func (c *Client) PresignedGet(ctx context.Context, cfg *config.Config, object st
 }
 
 // Watch listens for new object created events and triggers analysis.
-func (c *Client) Watch(ctx context.Context, db *ent.Client) {
+func (c *Client) Watch(ctx context.Context, onObject func(ctx context.Context, object string)) {
 	ch := c.ListenBucketNotification(ctx, c.Bucket, "", "", []string{"s3:ObjectCreated:*"})
 	for notification := range ch {
 		if notification.Err != nil {
@@ -98,41 +103,21 @@ func (c *Client) Watch(ctx context.Context, db *ent.Client) {
 			continue
 		}
 		for _, rec := range notification.Records {
-			go c.analyze(ctx, db, rec.S3.Object.Key)
+			go onObject(ctx, rec.S3.Object.Key)
 		}
 	}
 }
 
-func (c *Client) analyze(ctx context.Context, db *ent.Client, object string) {
-	rc, err := c.GetObject(ctx, c.Bucket, object, mc.GetObjectOptions{})
-	if err != nil {
-		log.Printf("get object %s: %v", object, err)
-		return
-	}
-	defer rc.Close()
+func (c *Client) WatchPictures(ctx context.Context, onObject func(ctx context.Context, object string)) {
+	c.Watch(ctx, func(ctx context.Context, object string) {
+		switch path.Ext(object) {
+		case ".jpg", ".jpeg", ".png", ".gif", ".webp":
+			log.Printf("new picture: %s", object)
+		default:
+			log.Printf("skipping non-image object: %s", object)
+			return
+		}
 
-	data, err := io.ReadAll(rc)
-	if err != nil {
-		log.Printf("read object %s: %v", object, err)
-		return
-	}
-
-	metadata, err := processing.GetMetadata(data)
-	if err != nil {
-		log.Printf("get metadata for %s: %v", object, err)
-		return
-	}
-
-	if _, err := db.Media.Create().
-		SetKey(object).
-		SetFormat(metadata.Format).
-		SetHash(metadata.Hash).
-		SetWidth(metadata.Width).
-		SetHeight(metadata.Height).
-		SetType("image").
-		Save(ctx); err != nil {
-		log.Printf("create media: %v", err)
-	} else {
-		log.Printf("saved media %s", object)
-	}
+		onObject(ctx, object)
+	})
 }
