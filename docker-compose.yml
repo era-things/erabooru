@@ -33,8 +33,20 @@ services:
         until mc alias set local http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD; do sleep 2; done
         mc mb --ignore-existing local/boorubucket
         mc anonymous set download local/boorubucket
+        mc mb --ignore-existing local/previews
+        mc anonymous set download local/previews
       "
 
+  video-worker:
+    image: booru:video-worker
+    build:
+      context: .
+      dockerfile: cmd/video_worker/Dockerfile
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - minio
 
   caddy:
     image: caddy:2
