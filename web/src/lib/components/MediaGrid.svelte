@@ -14,7 +14,7 @@
 	/* Raw objects straight from the API */
 	let media: MediaItem[] = [];
 
-	/* Re-mapped to the shape Masonry / Column expect */
+	/* Re-mapped to the shape Masonry / Column expect */
 	let photos: { src: string; alt: string; id: number; height: number; width: number }[] = [];
 
 	const apiBase = 'http://localhost/api';
