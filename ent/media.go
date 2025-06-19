@@ -28,8 +28,6 @@ type Media struct {
 	Height int `json:"height,omitempty"`
 	// Duration in seconds for video or audio
 	Duration *int `json:"duration,omitempty"`
-	// Type of the media, can be image, video, or audio
-	Type media.Type `json:"type,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the MediaQuery when eager-loading is set.
 	Edges        MediaEdges `json:"edges"`
@@ -61,7 +59,7 @@ func (*Media) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case media.FieldID, media.FieldWidth, media.FieldHeight, media.FieldDuration:
 			values[i] = new(sql.NullInt64)
-		case media.FieldKey, media.FieldHash, media.FieldFormat, media.FieldType:
+		case media.FieldKey, media.FieldHash, media.FieldFormat:
 			values[i] = new(sql.NullString)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -120,12 +118,6 @@ func (m *Media) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				m.Duration = new(int)
 				*m.Duration = int(value.Int64)
-			}
-		case media.FieldType:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field type", values[i])
-			} else if value.Valid {
-				m.Type = media.Type(value.String)
 			}
 		default:
 			m.selectValues.Set(columns[i], values[i])
@@ -187,9 +179,6 @@ func (m *Media) String() string {
 		builder.WriteString("duration=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
-	builder.WriteString(", ")
-	builder.WriteString("type=")
-	builder.WriteString(fmt.Sprintf("%v", m.Type))
 	builder.WriteByte(')')
 	return builder.String()
 }

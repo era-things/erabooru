@@ -3,8 +3,6 @@
 package media
 
 import (
-	"fmt"
-
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 )
@@ -26,8 +24,6 @@ const (
 	FieldHeight = "height"
 	// FieldDuration holds the string denoting the duration field in the database.
 	FieldDuration = "duration"
-	// FieldType holds the string denoting the type field in the database.
-	FieldType = "type"
 	// EdgeTags holds the string denoting the tags edge name in mutations.
 	EdgeTags = "tags"
 	// Table holds the table name of the media in the database.
@@ -48,7 +44,6 @@ var Columns = []string{
 	FieldWidth,
 	FieldHeight,
 	FieldDuration,
-	FieldType,
 }
 
 var (
@@ -65,30 +60,6 @@ func ValidColumn(column string) bool {
 		}
 	}
 	return false
-}
-
-// Type defines the type for the "type" enum field.
-type Type string
-
-// Type values.
-const (
-	TypeImage Type = "image"
-	TypeVideo Type = "video"
-	TypeAudio Type = "audio"
-)
-
-func (_type Type) String() string {
-	return string(_type)
-}
-
-// TypeValidator is a validator for the "type" field enum values. It is called by the builders before save.
-func TypeValidator(_type Type) error {
-	switch _type {
-	case TypeImage, TypeVideo, TypeAudio:
-		return nil
-	default:
-		return fmt.Errorf("media: invalid enum value for type field: %q", _type)
-	}
 }
 
 // OrderOption defines the ordering options for the Media queries.
@@ -127,11 +98,6 @@ func ByHeight(opts ...sql.OrderTermOption) OrderOption {
 // ByDuration orders the results by the duration field.
 func ByDuration(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDuration, opts...).ToFunc()
-}
-
-// ByType orders the results by the type field.
-func ByType(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldType, opts...).ToFunc()
 }
 
 // ByTagsCount orders the results by tags count.

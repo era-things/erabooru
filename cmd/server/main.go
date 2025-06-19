@@ -92,7 +92,6 @@ func analyze(m *minio.Client, ctx context.Context, db *ent.Client, object string
 		SetHash(metadata.Hash).
 		SetWidth(metadata.Width).
 		SetHeight(metadata.Height).
-		SetType("image").
 		Save(ctx); err != nil {
 		log.Printf("create media: %v", err)
 	} else {

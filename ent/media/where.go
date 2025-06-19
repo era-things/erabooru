@@ -409,26 +409,6 @@ func DurationNotNil() predicate.Media {
 	return predicate.Media(sql.FieldNotNull(FieldDuration))
 }
 
-// TypeEQ applies the EQ predicate on the "type" field.
-func TypeEQ(v Type) predicate.Media {
-	return predicate.Media(sql.FieldEQ(FieldType, v))
-}
-
-// TypeNEQ applies the NEQ predicate on the "type" field.
-func TypeNEQ(v Type) predicate.Media {
-	return predicate.Media(sql.FieldNEQ(FieldType, v))
-}
-
-// TypeIn applies the In predicate on the "type" field.
-func TypeIn(vs ...Type) predicate.Media {
-	return predicate.Media(sql.FieldIn(FieldType, vs...))
-}
-
-// TypeNotIn applies the NotIn predicate on the "type" field.
-func TypeNotIn(vs ...Type) predicate.Media {
-	return predicate.Media(sql.FieldNotIn(FieldType, vs...))
-}
-
 // HasTags applies the HasEdge predicate on the "tags" edge.
 func HasTags() predicate.Media {
 	return predicate.Media(func(s *sql.Selector) {

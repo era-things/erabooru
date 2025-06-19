@@ -34,10 +34,6 @@ func (Media) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("Duration in seconds for video or audio"),
-		field.Enum("type").
-			Values("image", "video", "audio").
-			Immutable().
-			Comment("Type of the media, can be image, video, or audio"),
 	}
 }
 
