@@ -28,6 +28,33 @@ func (mu *MediaUpdate) Where(ps ...predicate.Media) *MediaUpdate {
 	return mu
 }
 
+// SetDuration sets the "duration" field.
+func (mu *MediaUpdate) SetDuration(i int) *MediaUpdate {
+	mu.mutation.ResetDuration()
+	mu.mutation.SetDuration(i)
+	return mu
+}
+
+// SetNillableDuration sets the "duration" field if the given value is not nil.
+func (mu *MediaUpdate) SetNillableDuration(i *int) *MediaUpdate {
+	if i != nil {
+		mu.SetDuration(*i)
+	}
+	return mu
+}
+
+// AddDuration adds i to the "duration" field.
+func (mu *MediaUpdate) AddDuration(i int) *MediaUpdate {
+	mu.mutation.AddDuration(i)
+	return mu
+}
+
+// ClearDuration clears the value of the "duration" field.
+func (mu *MediaUpdate) ClearDuration() *MediaUpdate {
+	mu.mutation.ClearDuration()
+	return mu
+}
+
 // AddTagIDs adds the "tags" edge to the Tag entity by IDs.
 func (mu *MediaUpdate) AddTagIDs(ids ...int) *MediaUpdate {
 	mu.mutation.AddTagIDs(ids...)
@@ -105,6 +132,15 @@ func (mu *MediaUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			}
 		}
 	}
+	if value, ok := mu.mutation.Duration(); ok {
+		_spec.SetField(media.FieldDuration, field.TypeInt, value)
+	}
+	if value, ok := mu.mutation.AddedDuration(); ok {
+		_spec.AddField(media.FieldDuration, field.TypeInt, value)
+	}
+	if mu.mutation.DurationCleared() {
+		_spec.ClearField(media.FieldDuration, field.TypeInt)
+	}
 	if mu.mutation.TagsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2M,
@@ -168,6 +204,33 @@ type MediaUpdateOne struct {
 	fields   []string
 	hooks    []Hook
 	mutation *MediaMutation
+}
+
+// SetDuration sets the "duration" field.
+func (muo *MediaUpdateOne) SetDuration(i int) *MediaUpdateOne {
+	muo.mutation.ResetDuration()
+	muo.mutation.SetDuration(i)
+	return muo
+}
+
+// SetNillableDuration sets the "duration" field if the given value is not nil.
+func (muo *MediaUpdateOne) SetNillableDuration(i *int) *MediaUpdateOne {
+	if i != nil {
+		muo.SetDuration(*i)
+	}
+	return muo
+}
+
+// AddDuration adds i to the "duration" field.
+func (muo *MediaUpdateOne) AddDuration(i int) *MediaUpdateOne {
+	muo.mutation.AddDuration(i)
+	return muo
+}
+
+// ClearDuration clears the value of the "duration" field.
+func (muo *MediaUpdateOne) ClearDuration() *MediaUpdateOne {
+	muo.mutation.ClearDuration()
+	return muo
 }
 
 // AddTagIDs adds the "tags" edge to the Tag entity by IDs.
@@ -276,6 +339,15 @@ func (muo *MediaUpdateOne) sqlSave(ctx context.Context) (_node *Media, err error
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := muo.mutation.Duration(); ok {
+		_spec.SetField(media.FieldDuration, field.TypeInt, value)
+	}
+	if value, ok := muo.mutation.AddedDuration(); ok {
+		_spec.AddField(media.FieldDuration, field.TypeInt, value)
+	}
+	if muo.mutation.DurationCleared() {
+		_spec.ClearField(media.FieldDuration, field.TypeInt)
 	}
 	if muo.mutation.TagsCleared() {
 		edge := &sqlgraph.EdgeSpec{

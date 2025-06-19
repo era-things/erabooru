@@ -41,7 +41,8 @@ type MediaMutation struct {
 	addwidth      *int
 	height        *int
 	addheight     *int
-	_type         *media.Type
+	duration      *int
+	addduration   *int
 	clearedFields map[string]struct{}
 	tags          map[int]struct{}
 	removedtags   map[int]struct{}
@@ -369,40 +370,74 @@ func (m *MediaMutation) ResetHeight() {
 	m.addheight = nil
 }
 
-// SetType sets the "type" field.
-func (m *MediaMutation) SetType(value media.Type) {
-	m._type = &value
+// SetDuration sets the "duration" field.
+func (m *MediaMutation) SetDuration(i int) {
+	m.duration = &i
+	m.addduration = nil
 }
 
-// GetType returns the value of the "type" field in the mutation.
-func (m *MediaMutation) GetType() (r media.Type, exists bool) {
-	v := m._type
+// Duration returns the value of the "duration" field in the mutation.
+func (m *MediaMutation) Duration() (r int, exists bool) {
+	v := m.duration
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldType returns the old "type" field's value of the Media entity.
+// OldDuration returns the old "duration" field's value of the Media entity.
 // If the Media object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *MediaMutation) OldType(ctx context.Context) (v media.Type, err error) {
+func (m *MediaMutation) OldDuration(ctx context.Context) (v *int, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldType is only allowed on UpdateOne operations")
+		return v, errors.New("OldDuration is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldType requires an ID field in the mutation")
+		return v, errors.New("OldDuration requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldType: %w", err)
+		return v, fmt.Errorf("querying old value for OldDuration: %w", err)
 	}
-	return oldValue.Type, nil
+	return oldValue.Duration, nil
 }
 
-// ResetType resets all changes to the "type" field.
-func (m *MediaMutation) ResetType() {
-	m._type = nil
+// AddDuration adds i to the "duration" field.
+func (m *MediaMutation) AddDuration(i int) {
+	if m.addduration != nil {
+		*m.addduration += i
+	} else {
+		m.addduration = &i
+	}
+}
+
+// AddedDuration returns the value that was added to the "duration" field in this mutation.
+func (m *MediaMutation) AddedDuration() (r int, exists bool) {
+	v := m.addduration
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearDuration clears the value of the "duration" field.
+func (m *MediaMutation) ClearDuration() {
+	m.duration = nil
+	m.addduration = nil
+	m.clearedFields[media.FieldDuration] = struct{}{}
+}
+
+// DurationCleared returns if the "duration" field was cleared in this mutation.
+func (m *MediaMutation) DurationCleared() bool {
+	_, ok := m.clearedFields[media.FieldDuration]
+	return ok
+}
+
+// ResetDuration resets all changes to the "duration" field.
+func (m *MediaMutation) ResetDuration() {
+	m.duration = nil
+	m.addduration = nil
+	delete(m.clearedFields, media.FieldDuration)
 }
 
 // AddTagIDs adds the "tags" edge to the Tag entity by ids.
@@ -509,8 +544,8 @@ func (m *MediaMutation) Fields() []string {
 	if m.height != nil {
 		fields = append(fields, media.FieldHeight)
 	}
-	if m._type != nil {
-		fields = append(fields, media.FieldType)
+	if m.duration != nil {
+		fields = append(fields, media.FieldDuration)
 	}
 	return fields
 }
@@ -530,8 +565,8 @@ func (m *MediaMutation) Field(name string) (ent.Value, bool) {
 		return m.Width()
 	case media.FieldHeight:
 		return m.Height()
-	case media.FieldType:
-		return m.GetType()
+	case media.FieldDuration:
+		return m.Duration()
 	}
 	return nil, false
 }
@@ -551,8 +586,8 @@ func (m *MediaMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldWidth(ctx)
 	case media.FieldHeight:
 		return m.OldHeight(ctx)
-	case media.FieldType:
-		return m.OldType(ctx)
+	case media.FieldDuration:
+		return m.OldDuration(ctx)
 	}
 	return nil, fmt.Errorf("unknown Media field %s", name)
 }
@@ -597,12 +632,12 @@ func (m *MediaMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetHeight(v)
 		return nil
-	case media.FieldType:
-		v, ok := value.(media.Type)
+	case media.FieldDuration:
+		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetType(v)
+		m.SetDuration(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Media field %s", name)
@@ -618,6 +653,9 @@ func (m *MediaMutation) AddedFields() []string {
 	if m.addheight != nil {
 		fields = append(fields, media.FieldHeight)
 	}
+	if m.addduration != nil {
+		fields = append(fields, media.FieldDuration)
+	}
 	return fields
 }
 
@@ -630,6 +668,8 @@ func (m *MediaMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedWidth()
 	case media.FieldHeight:
 		return m.AddedHeight()
+	case media.FieldDuration:
+		return m.AddedDuration()
 	}
 	return nil, false
 }
@@ -653,6 +693,13 @@ func (m *MediaMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddHeight(v)
 		return nil
+	case media.FieldDuration:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDuration(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Media numeric field %s", name)
 }
@@ -660,7 +707,11 @@ func (m *MediaMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *MediaMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(media.FieldDuration) {
+		fields = append(fields, media.FieldDuration)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -673,6 +724,11 @@ func (m *MediaMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *MediaMutation) ClearField(name string) error {
+	switch name {
+	case media.FieldDuration:
+		m.ClearDuration()
+		return nil
+	}
 	return fmt.Errorf("unknown Media nullable field %s", name)
 }
 
@@ -695,8 +751,8 @@ func (m *MediaMutation) ResetField(name string) error {
 	case media.FieldHeight:
 		m.ResetHeight()
 		return nil
-	case media.FieldType:
-		m.ResetType()
+	case media.FieldDuration:
+		m.ResetDuration()
 		return nil
 	}
 	return fmt.Errorf("unknown Media field %s", name)

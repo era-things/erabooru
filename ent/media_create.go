@@ -50,9 +50,17 @@ func (mc *MediaCreate) SetHeight(i int) *MediaCreate {
 	return mc
 }
 
-// SetType sets the "type" field.
-func (mc *MediaCreate) SetType(m media.Type) *MediaCreate {
-	mc.mutation.SetType(m)
+// SetDuration sets the "duration" field.
+func (mc *MediaCreate) SetDuration(i int) *MediaCreate {
+	mc.mutation.SetDuration(i)
+	return mc
+}
+
+// SetNillableDuration sets the "duration" field if the given value is not nil.
+func (mc *MediaCreate) SetNillableDuration(i *int) *MediaCreate {
+	if i != nil {
+		mc.SetDuration(*i)
+	}
 	return mc
 }
 
@@ -120,14 +128,6 @@ func (mc *MediaCreate) check() error {
 	if _, ok := mc.mutation.Height(); !ok {
 		return &ValidationError{Name: "height", err: errors.New(`ent: missing required field "Media.height"`)}
 	}
-	if _, ok := mc.mutation.GetType(); !ok {
-		return &ValidationError{Name: "type", err: errors.New(`ent: missing required field "Media.type"`)}
-	}
-	if v, ok := mc.mutation.GetType(); ok {
-		if err := media.TypeValidator(v); err != nil {
-			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "Media.type": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -174,9 +174,9 @@ func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 		_spec.SetField(media.FieldHeight, field.TypeInt, value)
 		_node.Height = value
 	}
-	if value, ok := mc.mutation.GetType(); ok {
-		_spec.SetField(media.FieldType, field.TypeEnum, value)
-		_node.Type = value
+	if value, ok := mc.mutation.Duration(); ok {
+		_spec.SetField(media.FieldDuration, field.TypeInt, value)
+		_node.Duration = &value
 	}
 	if nodes := mc.mutation.TagsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

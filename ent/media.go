@@ -26,8 +26,8 @@ type Media struct {
 	Width int `json:"width,omitempty"`
 	// Image height in pixels
 	Height int `json:"height,omitempty"`
-	// Type of the media, can be image, video, or audio
-	Type media.Type `json:"type,omitempty"`
+	// Duration in seconds for video or audio
+	Duration *int `json:"duration,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the MediaQuery when eager-loading is set.
 	Edges        MediaEdges `json:"edges"`
@@ -57,9 +57,9 @@ func (*Media) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case media.FieldID, media.FieldWidth, media.FieldHeight:
+		case media.FieldID, media.FieldWidth, media.FieldHeight, media.FieldDuration:
 			values[i] = new(sql.NullInt64)
-		case media.FieldKey, media.FieldHash, media.FieldFormat, media.FieldType:
+		case media.FieldKey, media.FieldHash, media.FieldFormat:
 			values[i] = new(sql.NullString)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -112,11 +112,12 @@ func (m *Media) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				m.Height = int(value.Int64)
 			}
-		case media.FieldType:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field type", values[i])
+		case media.FieldDuration:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field duration", values[i])
 			} else if value.Valid {
-				m.Type = media.Type(value.String)
+				m.Duration = new(int)
+				*m.Duration = int(value.Int64)
 			}
 		default:
 			m.selectValues.Set(columns[i], values[i])
@@ -174,8 +175,10 @@ func (m *Media) String() string {
 	builder.WriteString("height=")
 	builder.WriteString(fmt.Sprintf("%v", m.Height))
 	builder.WriteString(", ")
-	builder.WriteString("type=")
-	builder.WriteString(fmt.Sprintf("%v", m.Type))
+	if v := m.Duration; v != nil {
+		builder.WriteString("duration=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

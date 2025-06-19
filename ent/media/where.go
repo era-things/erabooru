@@ -79,6 +79,11 @@ func Height(v int) predicate.Media {
 	return predicate.Media(sql.FieldEQ(FieldHeight, v))
 }
 
+// Duration applies equality check predicate on the "duration" field. It's identical to DurationEQ.
+func Duration(v int) predicate.Media {
+	return predicate.Media(sql.FieldEQ(FieldDuration, v))
+}
+
 // KeyEQ applies the EQ predicate on the "key" field.
 func KeyEQ(v string) predicate.Media {
 	return predicate.Media(sql.FieldEQ(FieldKey, v))
@@ -354,24 +359,54 @@ func HeightLTE(v int) predicate.Media {
 	return predicate.Media(sql.FieldLTE(FieldHeight, v))
 }
 
-// TypeEQ applies the EQ predicate on the "type" field.
-func TypeEQ(v Type) predicate.Media {
-	return predicate.Media(sql.FieldEQ(FieldType, v))
+// DurationEQ applies the EQ predicate on the "duration" field.
+func DurationEQ(v int) predicate.Media {
+	return predicate.Media(sql.FieldEQ(FieldDuration, v))
 }
 
-// TypeNEQ applies the NEQ predicate on the "type" field.
-func TypeNEQ(v Type) predicate.Media {
-	return predicate.Media(sql.FieldNEQ(FieldType, v))
+// DurationNEQ applies the NEQ predicate on the "duration" field.
+func DurationNEQ(v int) predicate.Media {
+	return predicate.Media(sql.FieldNEQ(FieldDuration, v))
 }
 
-// TypeIn applies the In predicate on the "type" field.
-func TypeIn(vs ...Type) predicate.Media {
-	return predicate.Media(sql.FieldIn(FieldType, vs...))
+// DurationIn applies the In predicate on the "duration" field.
+func DurationIn(vs ...int) predicate.Media {
+	return predicate.Media(sql.FieldIn(FieldDuration, vs...))
 }
 
-// TypeNotIn applies the NotIn predicate on the "type" field.
-func TypeNotIn(vs ...Type) predicate.Media {
-	return predicate.Media(sql.FieldNotIn(FieldType, vs...))
+// DurationNotIn applies the NotIn predicate on the "duration" field.
+func DurationNotIn(vs ...int) predicate.Media {
+	return predicate.Media(sql.FieldNotIn(FieldDuration, vs...))
+}
+
+// DurationGT applies the GT predicate on the "duration" field.
+func DurationGT(v int) predicate.Media {
+	return predicate.Media(sql.FieldGT(FieldDuration, v))
+}
+
+// DurationGTE applies the GTE predicate on the "duration" field.
+func DurationGTE(v int) predicate.Media {
+	return predicate.Media(sql.FieldGTE(FieldDuration, v))
+}
+
+// DurationLT applies the LT predicate on the "duration" field.
+func DurationLT(v int) predicate.Media {
+	return predicate.Media(sql.FieldLT(FieldDuration, v))
+}
+
+// DurationLTE applies the LTE predicate on the "duration" field.
+func DurationLTE(v int) predicate.Media {
+	return predicate.Media(sql.FieldLTE(FieldDuration, v))
+}
+
+// DurationIsNil applies the IsNil predicate on the "duration" field.
+func DurationIsNil() predicate.Media {
+	return predicate.Media(sql.FieldIsNull(FieldDuration))
+}
+
+// DurationNotNil applies the NotNil predicate on the "duration" field.
+func DurationNotNil() predicate.Media {
+	return predicate.Media(sql.FieldNotNull(FieldDuration))
 }
 
 // HasTags applies the HasEdge predicate on the "tags" edge.

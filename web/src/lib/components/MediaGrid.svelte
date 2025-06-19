@@ -29,7 +29,9 @@
 
 	async function load() {
 		try {
-			const url = query ? `${apiBase}/media?q=${encodeURIComponent(query)}` : `${apiBase}/media`;
+			const url = query
+				? `${apiBase}/media/previews?q=${encodeURIComponent(query)}`
+				: `${apiBase}/media/previews`;
 			const res = await fetch(url);
 			if (res.ok) {
 				const data = await res.json();

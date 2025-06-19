@@ -2,7 +2,7 @@
 	let fileInput: HTMLInputElement | null = null;
 	//const apiBase = import.meta.env.DEV ? 'http://localhost:8080' : '';
 	const apiBase = 'http://localhost/api';
-	const supportedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
+	export let supportedTypes: string[] = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
 
 	async function upload() {
 		const file = fileInput?.files?.[0];
