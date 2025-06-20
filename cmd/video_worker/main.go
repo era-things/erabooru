@@ -101,6 +101,16 @@ func main() {
 			}
 		}
 		format := probe.Format.FormatName
+		supported := []string{"mp4", "webm", "avi", "mkv"}
+		for _, f := range supported {
+			if strings.Contains(format, f) {
+				format = f
+				break
+			}
+		}
+		if idx := strings.Index(format, ","); idx != -1 {
+			format = format[:idx]
+		}
 
 		// ─── run ffmpeg, stream JPEG to stdout ──────────────────────────────
 		cmd := exec.Command("ffmpeg",
@@ -120,9 +130,10 @@ func main() {
 		}
 
 		// ─── upload directly to MinIO ───────────────────────────────────────
+		previewKey := strings.TrimSuffix(path.Base(p.Key), path.Ext(p.Key)) + ".jpg"
 		_, err = minioClient.PutPreviewJpeg(
 			r.Context(),
-			path.Base(p.Key),
+			previewKey,
 			stdout,
 		)
 
@@ -152,7 +163,7 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"preview_key": path.Base(p.Key),
+			"preview_key": previewKey,
 			"format":      format,
 			"width":       width,
 			"height":      height,
