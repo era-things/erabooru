@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path"
+	"strings"
 	"time"
 
 	"era/booru/ent"
@@ -48,15 +50,17 @@ func listCommon(videoBucket string, pictureBucket string) gin.HandlerFunc {
 
 		for i, mitem := range items {
 			format := mitem.Format
-			var bucket string
+			var bucket, key string
 			switch format {
 			case "mp4", "webm", "avi", "mkv":
 				bucket = videoBucket
+				key = strings.TrimSuffix(mitem.Key, path.Ext(mitem.Key)) + ".jpg"
 			default:
 				bucket = pictureBucket
+				key = mitem.Key
 			}
 
-			url := fmt.Sprintf("http://localhost/minio/%s/%s", bucket, mitem.Key)
+			url := fmt.Sprintf("http://localhost/minio/%s/%s", bucket, key)
 			out[i] = gin.H{
 				"id":     mitem.ID,
 				"url":    url,
@@ -95,13 +99,14 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 			tags[i] = t.Name
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"id":     item.ID,
-			"url":    url,
-			"width":  item.Width,
-			"height": item.Height,
-			"format": item.Format,
-			"size":   stat.Size,
-			"tags":   tags,
+			"id":       item.ID,
+			"url":      url,
+			"width":    item.Width,
+			"height":   item.Height,
+			"format":   item.Format,
+			"duration": item.Duration,
+			"size":     stat.Size,
+			"tags":     tags,
 		})
 	}
 }

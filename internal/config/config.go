@@ -21,6 +21,7 @@ type Config struct {
 	MinioPublicPrefix     string // e.g., "/minio"
 	BlevePath             string // path to Bleve index, e.g., "/data/bleve"
 	MinioSSL              bool
+	VideoWorkerURL        string // address of the video worker service
 }
 
 func Load() (*Config, error) {
@@ -42,6 +43,7 @@ func Load() (*Config, error) {
 		MinioPublicPrefix:     getEnv("MINIO_PUBLIC_PREFIX", "/minio"),         // e.g., "/minio" for Caddy reverse proxy
 		BlevePath:             getEnv("BLEVE_PATH", "/data/bleve"),
 		MinioSSL:              getEnv("MINIO_SSL", "false") == "true",
+		VideoWorkerURL:        getEnv("VIDEO_WORKER_URL", "http://video-worker:8080"),
 	}
 	return cfg, nil
 }

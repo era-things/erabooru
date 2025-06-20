@@ -110,14 +110,22 @@ func (c *Client) Watch(ctx context.Context, onObject func(ctx context.Context, o
 
 func (c *Client) WatchPictures(ctx context.Context, onObject func(ctx context.Context, object string)) {
 	c.Watch(ctx, func(ctx context.Context, object string) {
-		switch path.Ext(object) {
-		case ".jpg", ".jpeg", ".png", ".gif", ".webp":
-			log.Printf("new picture: %s", object)
-		default:
+		if !config.SupportedImageFormats[path.Ext(object)[1:]] {
 			log.Printf("skipping non-image object: %s", object)
 			return
 		}
+		log.Printf("new picture: %s", object)
+		onObject(ctx, object)
+	})
+}
 
+func (c *Client) WatchVideos(ctx context.Context, onObject func(ctx context.Context, object string)) {
+	c.Watch(ctx, func(ctx context.Context, object string) {
+		if !config.SupportedVideoFormats[path.Ext(object)[1:]] {
+			log.Printf("skipping non-video object: %s", object)
+			return
+		}
+		log.Printf("new video: %s", object)
 		onObject(ctx, object)
 	})
 }
