@@ -15,6 +15,7 @@ import (
 
 	"era/booru/internal/config"
 	"era/booru/internal/minio"
+
 	mc "github.com/minio/minio-go/v7"
 )
 
@@ -101,16 +102,15 @@ func main() {
 			}
 		}
 		format := probe.Format.FormatName
-		supported := []string{"mp4", "webm", "avi", "mkv"}
-		for _, f := range supported {
+
+		for f := range config.SupportedVideoFormats {
 			if strings.Contains(format, f) {
 				format = f
 				break
 			}
 		}
-		if idx := strings.Index(format, ","); idx != -1 {
-			format = format[:idx]
-		}
+		log.Printf("Processing video %s/%s: format=%s, width=%d, height=%d, duration=%d",
+			p.Bucket, p.Key, format, width, height, duration)
 
 		// ─── run ffmpeg, stream JPEG to stdout ──────────────────────────────
 		cmd := exec.Command("ffmpeg",

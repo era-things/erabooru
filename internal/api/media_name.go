@@ -1,7 +1,7 @@
 package api
 
 import (
-	case ".png", ".jpg", ".jpeg", ".gif", ".mp4", ".webm", ".avi", ".mkv":
+	"era/booru/internal/config"
 	"fmt"
 	"path/filepath"
 	"strings"
