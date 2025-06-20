@@ -87,10 +87,14 @@
 			<button class="rounded bg-red-500 px-4 py-2 text-white" on:click={remove}>Delete</button>
 		</div>
 
-		<div class="flex flex-1 items-center justify-center">
-			<!-- svelte-ignore a11y_missing_attribute -->
-			<img src={media.url} class="object-contain" style="max-width:75vw; max-height:75vh" />
-		</div>
+                <div class="flex flex-1 items-center justify-center">
+                        {#if ['mp4','webm','avi','mkv'].includes(media.format)}
+                                <video src={media.url} controls class="object-contain" style="max-width:75vw; max-height:75vh"></video>
+                        {:else}
+                                <!-- svelte-ignore a11y_missing_attribute -->
+                                <img src={media.url} class="object-contain" style="max-width:75vw; max-height:75vh" />
+                        {/if}
+                </div>
 	</div>
 	<div class="mt-4 flex justify-center">
 		<button class="rounded bg-blue-500 px-4 py-2 text-white" on:click={() => (edit = !edit)}

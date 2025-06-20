@@ -1,16 +1,21 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os/exec"
 	"path"
+	"strconv"
 	"strings"
 
 	"era/booru/internal/config"
 	"era/booru/internal/minio"
+	mc "github.com/minio/minio-go/v7"
 )
 
 type req struct {
@@ -29,7 +34,7 @@ func main() {
 		log.Fatalf("minio: %v", err)
 	}
 
-	http.HandleFunc("/thumb", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/process", func(w http.ResponseWriter, r *http.Request) {
 		var p req
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil || p.Key == "" {
 			http.Error(w, "bad json", http.StatusBadRequest)
@@ -48,6 +53,54 @@ func main() {
 			cfg.MinioInternalEndpoint,
 			strings.TrimPrefix(p.Bucket, "/"),
 			strings.TrimPrefix(p.Key, "/"))
+
+		// ─── probe metadata using ffprobe ─────────────────────────────
+		probeOut, err := exec.Command("ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", src).Output()
+		if err != nil {
+			logErr(w, "ffprobe", err)
+			return
+		}
+		var probe struct {
+			Streams []struct {
+				Width     int    `json:"width"`
+				Height    int    `json:"height"`
+				Duration  string `json:"duration"`
+				CodecType string `json:"codec_type"`
+			} `json:"streams"`
+			Format struct {
+				FormatName string `json:"format_name"`
+				Duration   string `json:"duration"`
+			} `json:"format"`
+		}
+		if err := json.Unmarshal(probeOut, &probe); err != nil {
+			logErr(w, "probe decode", err)
+			return
+		}
+		width, height := 0, 0
+		duration := 0
+		for _, s := range probe.Streams {
+			if s.CodecType == "video" {
+				if s.Width > width {
+					width = s.Width
+				}
+				if s.Height > height {
+					height = s.Height
+				}
+				if s.Duration != "" {
+					if f, err := strconv.ParseFloat(s.Duration, 64); err == nil {
+						if int(f+0.5) > duration {
+							duration = int(f + 0.5)
+						}
+					}
+				}
+			}
+		}
+		if duration == 0 && probe.Format.Duration != "" {
+			if f, err := strconv.ParseFloat(probe.Format.Duration, 64); err == nil {
+				duration = int(f + 0.5)
+			}
+		}
+		format := probe.Format.FormatName
 
 		// ─── run ffmpeg, stream JPEG to stdout ──────────────────────────────
 		cmd := exec.Command("ffmpeg",
@@ -83,8 +136,29 @@ func main() {
 			return
 		}
 
+		// ─── hash object ─────────────────────────────────────────────
+		obj, err := minioClient.GetObject(r.Context(), p.Bucket, p.Key, mc.GetObjectOptions{})
+		if err != nil {
+			logErr(w, "get object", err)
+			return
+		}
+		defer obj.Close()
+		h := sha256.New()
+		if _, err := io.Copy(h, obj); err != nil {
+			logErr(w, "hash", err)
+			return
+		}
+		hash := hex.EncodeToString(h.Sum(nil))
+
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"preview_key":%q}`, path.Base(p.Key))
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"preview_key": path.Base(p.Key),
+			"format":      format,
+			"width":       width,
+			"height":      height,
+			"duration":    duration,
+			"hash":        hash,
+		})
 	})
 
 	log.Fatal(http.ListenAndServe(":8080", nil))

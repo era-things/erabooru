@@ -121,3 +121,17 @@ func (c *Client) WatchPictures(ctx context.Context, onObject func(ctx context.Co
 		onObject(ctx, object)
 	})
 }
+
+func (c *Client) WatchVideos(ctx context.Context, onObject func(ctx context.Context, object string)) {
+	c.Watch(ctx, func(ctx context.Context, object string) {
+		switch path.Ext(object) {
+		case ".mp4", ".webm", ".avi", ".mkv":
+			log.Printf("new video: %s", object)
+		default:
+			log.Printf("skipping non-video object: %s", object)
+			return
+		}
+
+		onObject(ctx, object)
+	})
+}

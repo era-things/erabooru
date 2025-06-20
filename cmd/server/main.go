@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"era/booru/ent"
 	"era/booru/internal/api"
 	"era/booru/internal/config"
@@ -10,6 +12,7 @@ import (
 	"era/booru/internal/processing"
 	"era/booru/internal/search"
 	"io"
+	"net/http"
 
 	mc "github.com/minio/minio-go/v7"
 
@@ -50,7 +53,10 @@ func main() {
 
 	log.Println("Watching for new uploads")
 	go m.WatchPictures(ctx, func(ctx context.Context, object string) {
-		analyze(m, ctx, database, object)
+		analyzeImage(m, ctx, database, object)
+	})
+	go m.WatchVideos(ctx, func(ctx context.Context, object string) {
+		analyzeVideo(cfg, m, ctx, database, object)
 	})
 
 	r := gin.New()
@@ -66,7 +72,7 @@ func main() {
 
 }
 
-func analyze(m *minio.Client, ctx context.Context, db *ent.Client, object string) {
+func analyzeImage(m *minio.Client, ctx context.Context, db *ent.Client, object string) {
 	rc, err := m.GetObject(ctx, m.Bucket, object, mc.GetObjectOptions{})
 	if err != nil {
 		log.Printf("get object %s: %v", object, err)
@@ -96,5 +102,49 @@ func analyze(m *minio.Client, ctx context.Context, db *ent.Client, object string
 		log.Printf("create media: %v", err)
 	} else {
 		log.Printf("saved media %s", object)
+	}
+}
+
+func analyzeVideo(cfg *config.Config, m *minio.Client, ctx context.Context, db *ent.Client, object string) {
+	reqBody := struct {
+		Bucket string `json:"bucket"`
+		Key    string `json:"key"`
+	}{Bucket: m.Bucket, Key: object}
+
+	b, _ := json.Marshal(reqBody)
+	resp, err := http.Post(cfg.VideoWorkerURL+"/process", "application/json", bytes.NewReader(b))
+	if err != nil {
+		log.Printf("video worker request: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("video worker status: %s", resp.Status)
+		return
+	}
+	var out struct {
+		PreviewKey string `json:"preview_key"`
+		Format     string `json:"format"`
+		Width      int    `json:"width"`
+		Height     int    `json:"height"`
+		Duration   int    `json:"duration"`
+		Hash       string `json:"hash"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		log.Printf("decode video worker response: %v", err)
+		return
+	}
+
+	if _, err := db.Media.Create().
+		SetKey(object).
+		SetFormat(out.Format).
+		SetHash(out.Hash).
+		SetWidth(out.Width).
+		SetHeight(out.Height).
+		SetDuration(out.Duration).
+		Save(ctx); err != nil {
+		log.Printf("create video media: %v", err)
+	} else {
+		log.Printf("saved video %s", object)
 	}
 }
