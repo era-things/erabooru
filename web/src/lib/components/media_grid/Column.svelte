@@ -7,7 +7,7 @@
 <div class="flex flex-col gap-3">
 	{#each items as item, index (index)}
 		{#if typeof item === 'object' && ('src' in item || 'url' in item)}
-			<MediaCard id={item.id} src={item.url} alt={"media " + item.id} />
+			<MediaCard item={item}/>
 		{:else}
 			{item}
 		{/if}
