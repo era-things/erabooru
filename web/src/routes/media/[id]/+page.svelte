@@ -89,7 +89,12 @@
 
                 <div class="flex flex-1 items-center justify-center">
                         {#if ['mp4','webm','avi','mkv'].includes(media.format)}
-                                <video src={media.url} controls class="object-contain" style="max-width:75vw; max-height:75vh"></video>
+                                <!-- svelte-ignore a11y_media_has_caption -->
+                                <video 
+									controls loop playsinline
+									src={media.url} 
+									class="object-contain" 
+									style="max-width:75vw; max-height:75vh"></video>
                         {:else}
                                 <!-- svelte-ignore a11y_missing_attribute -->
                                 <img src={media.url} class="object-contain" style="max-width:75vw; max-height:75vh" />
