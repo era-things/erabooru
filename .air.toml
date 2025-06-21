@@ -6,9 +6,11 @@ tmp_dir = "tmp"
   bin = "./bin/erabooru"
   cmd = "go build -buildvcs=false -o ./bin/erabooru ./cmd/server"
   delay = 1000 # ms
-  exclude_dir = ["bin", "assets", "tmp", "vendor", "internal/assets", "ent", "web/node_modules", "web/build"]
+  exclude_dir = ["bin", "tmp", "internal/assets/build", "web", "web/node_modules", "web/build", "minio-data", "bleve-index"]
   exclude_file = []
   exclude_regex = [".*_test.go"]
+  include_dir = ["ent/schema", "internal", "cmd"]
+  include_file = [".env"]
   exclude_unchanged = true
   follow_symlink = false
   full_bin = ""
