@@ -1,11 +1,12 @@
 <script lang="ts">
 	import Column from './Column.svelte';
 	import { distributeVertically, distributeRoundRobin } from '$lib/masonryDistribution';
+	import type { MediaItem } from '$lib/types/media';
 
-	export let items: { height: number; width: number }[] = [];
+	export let items: MediaItem[] = [];
 	export let columnWidths: string[] = ['1fr', '1fr'];
 
-	let columns: unknown[][] = [];
+	let columns: MediaItem[][] = [];
 
 	/* simple round-robin distribution */
 	$: {

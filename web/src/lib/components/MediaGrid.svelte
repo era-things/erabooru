@@ -1,21 +1,12 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import Masonry from './media_grid/Masonry.svelte'; // the Masonry component from the previous example
-
-	interface MediaItem {
-		id: number;
-		url: string;
-		width: number;
-		height: number;
-	}
+	import type { MediaItem } from '$lib/types/media'; 
 
 	export let query: string = '';
 
-	/* Raw objects straight from the API */
+	/* Objects straight from the API */
 	let media: MediaItem[] = [];
-
-	/* Re-mapped to the shape Masonry / Column expect */
-	let photos: { src: string; alt: string; id: number; height: number; width: number }[] = [];
 
 	const apiBase = 'http://localhost/api';
 
@@ -26,7 +17,7 @@
 			screenWidth = window.innerWidth;
 		}
 	}
-
+	
 	async function load() {
 		try {
 			const url = query
@@ -36,13 +27,6 @@
 			if (res.ok) {
 				const data = await res.json();
 				media = data.media as MediaItem[];
-				photos = media.map((m) => ({
-					src: m.url,
-					alt: `media ${m.id}`,
-					id: m.id,
-					height: m.height,
-					width: m.width
-				}));
 			} else {
 				console.error('media fetch error', res.status, res.statusText);
 			}
@@ -89,4 +73,5 @@
 </script>
 
 <!-- Drop-in replacement for the old grid -->
-<Masonry items={photos} {columnWidths} />
+<Masonry items={media} {columnWidths} />
+

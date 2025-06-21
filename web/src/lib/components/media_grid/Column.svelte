@@ -1,12 +1,13 @@
 <script lang="ts">
 	import MediaCard from '../media/MediaCard.svelte';
-	export let items: unknown[] = [];
+	import type { MediaItem } from '$lib/types/media';
+	export let items: MediaItem[] = [];
 </script>
 
 <div class="flex flex-col gap-3">
 	{#each items as item, index (index)}
 		{#if typeof item === 'object' && ('src' in item || 'url' in item)}
-			<MediaCard id={item.id} src={item.src || item.url} alt={item.alt || ''} />
+			<MediaCard id={item.id} src={item.url} alt={"media " + item.id} />
 		{:else}
 			{item}
 		{/if}
