@@ -3,4 +3,5 @@ export interface MediaItem {
     url: string;
     width: number;
     height: number;
+    format: string;
 }

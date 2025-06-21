@@ -66,6 +66,7 @@ func listCommon(videoBucket string, pictureBucket string) gin.HandlerFunc {
 				"url":    url,
 				"width":  mitem.Width,
 				"height": mitem.Height,
+				"format": mitem.Format,
 			}
 		}
 		c.JSON(http.StatusOK, gin.H{"media": out})
