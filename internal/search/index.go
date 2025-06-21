@@ -92,7 +92,7 @@ func SearchMedia(expr string, limit int) ([]*ent.Media, error) {
 	for _, hit := range res.Hits {
 		var m ent.Media
 		b, err := json.Marshal(hit.Fields)
-		log.Printf("search hit: %s", string(b))
+		//log.Printf("search hit: %s", string(b))
 		if err != nil {
 			return nil, err
 		}
