@@ -12,6 +12,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"era/booru/internal/config"
 	"era/booru/internal/minio"
@@ -30,7 +31,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	minioClient, err := minio.New(cfg)
+	var minioClient *minio.Client
+	for range 10 {
+		minioClient, err = minio.New(cfg)
+		if err == nil {
+			break
+		}
+		log.Printf("minio: %v (retrying in 3s)", err)
+		time.Sleep(3 * time.Second)
+	}
 	if err != nil {
 		log.Fatalf("minio: %v", err)
 	}
