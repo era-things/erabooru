@@ -15,7 +15,7 @@
 
 	function search(event: Event) {
 		event.preventDefault();
-		goto(`/?q=${encodeURIComponent(q)}`);
+		goto(`/?q=${encodeURIComponent(q)}&page=1`);
 	}
 </script>
 
@@ -42,13 +42,13 @@
 			Upload
 		</a>
 		<form on:submit|preventDefault={search} class="mx-auto">
-			<input 
-				type="text" 
+			<input
+				type="text"
 				name="search"
 				placeholder="Search"
-				bind:value={q} 
-				class="rounded border px-2 py-1" 
-			 />
+				bind:value={q}
+				class="rounded border px-2 py-1"
+			/>
 		</form>
 	</nav>
 </div>

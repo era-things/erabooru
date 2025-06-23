@@ -75,13 +75,13 @@ func parseQuery(expr string) q.Query {
 
 // SearchMedia executes a query against the Bleve index and returns the matching
 // Media documents. It does not touch the Postgres database.
-func SearchMedia(expr string, limit int) ([]*ent.Media, error) {
+func SearchMedia(expr string, limit, offset int) ([]*ent.Media, error) {
 	if IDX == nil {
 		return nil, fmt.Errorf("index not open")
 	}
 	query := parseQuery(expr)
 	log.Printf("search query: %s", expr)
-	req := bleve.NewSearchRequestOptions(query, limit, 0, false)
+	req := bleve.NewSearchRequestOptions(query, limit, offset, false)
 	req.Fields = []string{"*"}
 	res, err := IDX.Search(req)
 	if err != nil {

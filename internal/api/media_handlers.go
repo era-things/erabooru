@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"era/booru/ent"
@@ -38,7 +39,13 @@ func listPreviewsHandler(cfg *config.Config) gin.HandlerFunc {
 func listCommon(videoBucket string, pictureBucket string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		q := c.Query("q")
-		items, err := search.SearchMedia(q, 50)
+		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+		if err != nil || page < 1 {
+			page = 1
+		}
+		const pageSize = 60
+		offset := (page - 1) * pageSize
+		items, err := search.SearchMedia(q, pageSize, offset)
 		if err != nil {
 			log.Printf("search media: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -79,7 +86,7 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 
 		item, err := db.Media.Query().Where(media.IDEQ(id)).WithTags().Only(c.Request.Context())
 		if err != nil {
-			log.Printf("get media %d: %v", id, err)
+			log.Printf("get media %s: %v", id, err)
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
@@ -162,7 +169,7 @@ func updateMediaTagsHandler(db *ent.Client) gin.HandlerFunc {
 		}
 
 		if _, err := db.Media.UpdateOneID(id).ClearTags().AddTagIDs(tagIDs...).Save(c.Request.Context()); err != nil {
-			log.Printf("update media tags %d: %v", id, err)
+			log.Printf("update media tags %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
@@ -184,7 +191,7 @@ func deleteMediaHandler(db *ent.Client, m *minio.Client) gin.HandlerFunc {
 		}
 
 		if err := db.Media.DeleteOneID(id).Exec(c.Request.Context()); err != nil {
-			log.Printf("delete media %d: %v", id, err)
+			log.Printf("delete media %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
