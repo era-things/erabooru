@@ -43,7 +43,10 @@
 			console.log('Uploading to:', data.url);
 			const up = await fetch(data.url, {
 				method: 'PUT',
-				body: file
+				body: file,
+				headers: {
+					'Content-Type': file.type || 'application/octet-stream'
+				}
 			});
 			if (!up.ok) {
 				alert('Upload failed');
@@ -65,7 +68,7 @@
 		const arrayBuffer = await file.arrayBuffer();
 		const uint8 = new Uint8Array(arrayBuffer);
 		const hash = await xxhash128(uint8)
-		return hash + '.' + file.name.split('.').pop();
+		return hash;
 	}
 </script>
 

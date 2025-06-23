@@ -93,7 +93,7 @@ func analyzeImage(m *minio.Client, ctx context.Context, db *ent.Client, object s
 	}
 
 	if _, err := db.Media.Create().
-		SetKey(object).
+		SetID(object).
 		SetFormat(metadata.Format).
 		SetWidth(metadata.Width).
 		SetHeight(metadata.Height).
@@ -135,7 +135,7 @@ func analyzeVideo(cfg *config.Config, m *minio.Client, ctx context.Context, db *
 	}
 
 	if _, err := db.Media.Create().
-		SetKey(object).
+		SetID(reqBody.Key).
 		SetFormat(out.Format).
 		SetWidth(out.Width).
 		SetHeight(out.Height).

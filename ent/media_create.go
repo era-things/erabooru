@@ -20,12 +20,6 @@ type MediaCreate struct {
 	hooks    []Hook
 }
 
-// SetKey sets the "key" field.
-func (mc *MediaCreate) SetKey(s string) *MediaCreate {
-	mc.mutation.SetKey(s)
-	return mc
-}
-
 // SetFormat sets the "format" field.
 func (mc *MediaCreate) SetFormat(s string) *MediaCreate {
 	mc.mutation.SetFormat(s)
@@ -55,6 +49,12 @@ func (mc *MediaCreate) SetNillableDuration(i *int) *MediaCreate {
 	if i != nil {
 		mc.SetDuration(*i)
 	}
+	return mc
+}
+
+// SetID sets the "id" field.
+func (mc *MediaCreate) SetID(s string) *MediaCreate {
+	mc.mutation.SetID(s)
 	return mc
 }
 
@@ -107,9 +107,6 @@ func (mc *MediaCreate) ExecX(ctx context.Context) {
 
 // check runs all checks and user-defined validators on the builder.
 func (mc *MediaCreate) check() error {
-	if _, ok := mc.mutation.Key(); !ok {
-		return &ValidationError{Name: "key", err: errors.New(`ent: missing required field "Media.key"`)}
-	}
 	if _, ok := mc.mutation.Format(); !ok {
 		return &ValidationError{Name: "format", err: errors.New(`ent: missing required field "Media.format"`)}
 	}
@@ -118,6 +115,11 @@ func (mc *MediaCreate) check() error {
 	}
 	if _, ok := mc.mutation.Height(); !ok {
 		return &ValidationError{Name: "height", err: errors.New(`ent: missing required field "Media.height"`)}
+	}
+	if v, ok := mc.mutation.ID(); ok {
+		if err := media.IDValidator(v); err != nil {
+			return &ValidationError{Name: "id", err: fmt.Errorf(`ent: validator failed for field "Media.id": %w`, err)}
+		}
 	}
 	return nil
 }
@@ -133,8 +135,13 @@ func (mc *MediaCreate) sqlSave(ctx context.Context) (*Media, error) {
 		}
 		return nil, err
 	}
-	id := _spec.ID.Value.(int64)
-	_node.ID = int(id)
+	if _spec.ID.Value != nil {
+		if id, ok := _spec.ID.Value.(string); ok {
+			_node.ID = id
+		} else {
+			return nil, fmt.Errorf("unexpected Media.ID type: %T", _spec.ID.Value)
+		}
+	}
 	mc.mutation.id = &_node.ID
 	mc.mutation.done = true
 	return _node, nil
@@ -143,11 +150,11 @@ func (mc *MediaCreate) sqlSave(ctx context.Context) (*Media, error) {
 func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 	var (
 		_node = &Media{config: mc.config}
-		_spec = sqlgraph.NewCreateSpec(media.Table, sqlgraph.NewFieldSpec(media.FieldID, field.TypeInt))
+		_spec = sqlgraph.NewCreateSpec(media.Table, sqlgraph.NewFieldSpec(media.FieldID, field.TypeString))
 	)
-	if value, ok := mc.mutation.Key(); ok {
-		_spec.SetField(media.FieldKey, field.TypeString, value)
-		_node.Key = value
+	if id, ok := mc.mutation.ID(); ok {
+		_node.ID = id
+		_spec.ID.Value = id
 	}
 	if value, ok := mc.mutation.Format(); ok {
 		_spec.SetField(media.FieldFormat, field.TypeString, value)
@@ -228,10 +235,6 @@ func (mcb *MediaCreateBulk) Save(ctx context.Context) ([]*Media, error) {
 					return nil, err
 				}
 				mutation.id = &nodes[i].ID
-				if specs[i].ID.Value != nil {
-					id := specs[i].ID.Value.(int64)
-					nodes[i].ID = int(id)
-				}
 				mutation.done = true
 				return nodes[i], nil
 			})

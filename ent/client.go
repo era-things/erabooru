@@ -269,7 +269,7 @@ func (c *MediaClient) UpdateOne(m *Media) *MediaUpdateOne {
 }
 
 // UpdateOneID returns an update builder for the given id.
-func (c *MediaClient) UpdateOneID(id int) *MediaUpdateOne {
+func (c *MediaClient) UpdateOneID(id string) *MediaUpdateOne {
 	mutation := newMediaMutation(c.config, OpUpdateOne, withMediaID(id))
 	return &MediaUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
@@ -286,7 +286,7 @@ func (c *MediaClient) DeleteOne(m *Media) *MediaDeleteOne {
 }
 
 // DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *MediaClient) DeleteOneID(id int) *MediaDeleteOne {
+func (c *MediaClient) DeleteOneID(id string) *MediaDeleteOne {
 	builder := c.Delete().Where(media.ID(id))
 	builder.mutation.id = &id
 	builder.mutation.op = OpDeleteOne
@@ -303,12 +303,12 @@ func (c *MediaClient) Query() *MediaQuery {
 }
 
 // Get returns a Media entity by its id.
-func (c *MediaClient) Get(ctx context.Context, id int) (*Media, error) {
+func (c *MediaClient) Get(ctx context.Context, id string) (*Media, error) {
 	return c.Query().Where(media.ID(id)).Only(ctx)
 }
 
 // GetX is like Get, but panics if an error occurs.
-func (c *MediaClient) GetX(ctx context.Context, id int) *Media {
+func (c *MediaClient) GetX(ctx context.Context, id string) *Media {
 	obj, err := c.Get(ctx, id)
 	if err != nil {
 		panic(err)

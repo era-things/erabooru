@@ -406,7 +406,7 @@ func (tq *TagQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Tag, err
 func (tq *TagQuery) loadMedia(ctx context.Context, query *MediaQuery, nodes []*Tag, init func(*Tag), assign func(*Tag, *Media)) error {
 	edgeIDs := make([]driver.Value, len(nodes))
 	byID := make(map[int]*Tag)
-	nids := make(map[int]map[*Tag]struct{})
+	nids := make(map[string]map[*Tag]struct{})
 	for i, node := range nodes {
 		edgeIDs[i] = node.ID
 		byID[node.ID] = node
@@ -439,7 +439,7 @@ func (tq *TagQuery) loadMedia(ctx context.Context, query *MediaQuery, nodes []*T
 			}
 			spec.Assign = func(columns []string, values []any) error {
 				outValue := int(values[0].(*sql.NullInt64).Int64)
-				inValue := int(values[1].(*sql.NullInt64).Int64)
+				inValue := values[1].(*sql.NullString).String
 				if nids[inValue] == nil {
 					nids[inValue] = map[*Tag]struct{}{byID[outValue]: {}}
 					return assign(columns[1:], values[1:])

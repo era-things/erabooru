@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"path"
+	"strings"
 	"time"
 
 	"era/booru/internal/config"
@@ -95,7 +96,7 @@ func (c *Client) PresignedGet(ctx context.Context, cfg *config.Config, object st
 }
 
 // Watch listens for new object created events and triggers analysis.
-func (c *Client) Watch(ctx context.Context, onObject func(ctx context.Context, object string)) {
+func (c *Client) Watch(ctx context.Context, onObject func(ctx context.Context, object string, contentType string)) {
 	ch := c.ListenBucketNotification(ctx, c.Bucket, "", "", []string{"s3:ObjectCreated:*"})
 	for notification := range ch {
 		if notification.Err != nil {
@@ -103,28 +104,34 @@ func (c *Client) Watch(ctx context.Context, onObject func(ctx context.Context, o
 			continue
 		}
 		for _, rec := range notification.Records {
-			go onObject(ctx, rec.S3.Object.Key)
+			go onObject(ctx, rec.S3.Object.Key, rec.S3.Object.ContentType)
 		}
 	}
 }
 
 func (c *Client) WatchPictures(ctx context.Context, onObject func(ctx context.Context, object string)) {
-	c.Watch(ctx, func(ctx context.Context, object string) {
-		if !config.SupportedImageFormats[path.Ext(object)[1:]] {
-			log.Printf("skipping non-image object: %s", object)
-			return
+	c.Watch(ctx, func(ctx context.Context, object string, contentType string) {
+		if contentType != "" {
+			if !strings.HasPrefix(contentType, "image/") {
+				log.Printf("skipping non-image object: %s (content-type: %s)", object, contentType)
+				return
+			}
 		}
+
 		log.Printf("new picture: %s", object)
 		onObject(ctx, object)
 	})
 }
 
 func (c *Client) WatchVideos(ctx context.Context, onObject func(ctx context.Context, object string)) {
-	c.Watch(ctx, func(ctx context.Context, object string) {
-		if !config.SupportedVideoFormats[path.Ext(object)[1:]] {
-			log.Printf("skipping non-video object: %s", object)
-			return
+	c.Watch(ctx, func(ctx context.Context, object string, contentType string) {
+		if contentType != "" {
+			if !strings.HasPrefix(contentType, "video/") {
+				log.Printf("skipping non-video object: %s (content-type: %s)", object, contentType)
+				return
+			}
 		}
+
 		log.Printf("new video: %s", object)
 		onObject(ctx, object)
 	})

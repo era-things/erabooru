@@ -10,8 +10,7 @@ import (
 var (
 	// MediaColumns holds the columns for the "media" table.
 	MediaColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "key", Type: field.TypeString, Unique: true},
+		{Name: "id", Type: field.TypeString, Unique: true},
 		{Name: "format", Type: field.TypeString},
 		{Name: "width", Type: field.TypeInt},
 		{Name: "height", Type: field.TypeInt},
@@ -37,7 +36,7 @@ var (
 	}
 	// MediaTagsColumns holds the columns for the "media_tags" table.
 	MediaTagsColumns = []*schema.Column{
-		{Name: "media_id", Type: field.TypeInt},
+		{Name: "media_id", Type: field.TypeString},
 		{Name: "tag_id", Type: field.TypeInt},
 	}
 	// MediaTagsTable holds the schema information for the "media_tags" table.

@@ -139,13 +139,13 @@ func IndexMedia(m *ent.Media) error {
 			doc.Tags[i] = t.Name
 		}
 	}
-	return IDX.Index(strconv.Itoa(m.ID), doc)
+	return IDX.Index(string(m.ID), doc)
 }
 
 // DeleteMedia removes the document from the Bleve index.
-func DeleteMedia(id int) error {
+func DeleteMedia(id string) error {
 	if IDX == nil {
 		return fmt.Errorf("index not open")
 	}
-	return IDX.Delete(strconv.Itoa(id))
+	return IDX.Delete(string(id))
 }

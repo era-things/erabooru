@@ -39,14 +39,14 @@ func (tc *TagCreate) SetID(i int) *TagCreate {
 }
 
 // AddMediumIDs adds the "media" edge to the Media entity by IDs.
-func (tc *TagCreate) AddMediumIDs(ids ...int) *TagCreate {
+func (tc *TagCreate) AddMediumIDs(ids ...string) *TagCreate {
 	tc.mutation.AddMediumIDs(ids...)
 	return tc
 }
 
 // AddMedia adds the "media" edges to the Media entity.
 func (tc *TagCreate) AddMedia(m ...*Media) *TagCreate {
-	ids := make([]int, len(m))
+	ids := make([]string, len(m))
 	for i := range m {
 		ids[i] = m[i].ID
 	}
@@ -146,7 +146,7 @@ func (tc *TagCreate) createSpec() (*Tag, *sqlgraph.CreateSpec) {
 			Columns: tag.MediaPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(media.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(media.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

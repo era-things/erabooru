@@ -107,8 +107,8 @@ func (mq *MediaQuery) FirstX(ctx context.Context) *Media {
 
 // FirstID returns the first Media ID from the query.
 // Returns a *NotFoundError when no Media ID was found.
-func (mq *MediaQuery) FirstID(ctx context.Context) (id int, err error) {
-	var ids []int
+func (mq *MediaQuery) FirstID(ctx context.Context) (id string, err error) {
+	var ids []string
 	if ids, err = mq.Limit(1).IDs(setContextOp(ctx, mq.ctx, ent.OpQueryFirstID)); err != nil {
 		return
 	}
@@ -120,7 +120,7 @@ func (mq *MediaQuery) FirstID(ctx context.Context) (id int, err error) {
 }
 
 // FirstIDX is like FirstID, but panics if an error occurs.
-func (mq *MediaQuery) FirstIDX(ctx context.Context) int {
+func (mq *MediaQuery) FirstIDX(ctx context.Context) string {
 	id, err := mq.FirstID(ctx)
 	if err != nil && !IsNotFound(err) {
 		panic(err)
@@ -158,8 +158,8 @@ func (mq *MediaQuery) OnlyX(ctx context.Context) *Media {
 // OnlyID is like Only, but returns the only Media ID in the query.
 // Returns a *NotSingularError when more than one Media ID is found.
 // Returns a *NotFoundError when no entities are found.
-func (mq *MediaQuery) OnlyID(ctx context.Context) (id int, err error) {
-	var ids []int
+func (mq *MediaQuery) OnlyID(ctx context.Context) (id string, err error) {
+	var ids []string
 	if ids, err = mq.Limit(2).IDs(setContextOp(ctx, mq.ctx, ent.OpQueryOnlyID)); err != nil {
 		return
 	}
@@ -175,7 +175,7 @@ func (mq *MediaQuery) OnlyID(ctx context.Context) (id int, err error) {
 }
 
 // OnlyIDX is like OnlyID, but panics if an error occurs.
-func (mq *MediaQuery) OnlyIDX(ctx context.Context) int {
+func (mq *MediaQuery) OnlyIDX(ctx context.Context) string {
 	id, err := mq.OnlyID(ctx)
 	if err != nil {
 		panic(err)
@@ -203,7 +203,7 @@ func (mq *MediaQuery) AllX(ctx context.Context) []*Media {
 }
 
 // IDs executes the query and returns a list of Media IDs.
-func (mq *MediaQuery) IDs(ctx context.Context) (ids []int, err error) {
+func (mq *MediaQuery) IDs(ctx context.Context) (ids []string, err error) {
 	if mq.ctx.Unique == nil && mq.path != nil {
 		mq.Unique(true)
 	}
@@ -215,7 +215,7 @@ func (mq *MediaQuery) IDs(ctx context.Context) (ids []int, err error) {
 }
 
 // IDsX is like IDs, but panics if an error occurs.
-func (mq *MediaQuery) IDsX(ctx context.Context) []int {
+func (mq *MediaQuery) IDsX(ctx context.Context) []string {
 	ids, err := mq.IDs(ctx)
 	if err != nil {
 		panic(err)
@@ -299,12 +299,12 @@ func (mq *MediaQuery) WithTags(opts ...func(*TagQuery)) *MediaQuery {
 // Example:
 //
 //	var v []struct {
-//		Key string `json:"key,omitempty"`
+//		Format string `json:"format,omitempty"`
 //		Count int `json:"count,omitempty"`
 //	}
 //
 //	client.Media.Query().
-//		GroupBy(media.FieldKey).
+//		GroupBy(media.FieldFormat).
 //		Aggregate(ent.Count()).
 //		Scan(ctx, &v)
 func (mq *MediaQuery) GroupBy(field string, fields ...string) *MediaGroupBy {
@@ -322,11 +322,11 @@ func (mq *MediaQuery) GroupBy(field string, fields ...string) *MediaGroupBy {
 // Example:
 //
 //	var v []struct {
-//		Key string `json:"key,omitempty"`
+//		Format string `json:"format,omitempty"`
 //	}
 //
 //	client.Media.Query().
-//		Select(media.FieldKey).
+//		Select(media.FieldFormat).
 //		Scan(ctx, &v)
 func (mq *MediaQuery) Select(fields ...string) *MediaSelect {
 	mq.ctx.Fields = append(mq.ctx.Fields, fields...)
@@ -405,7 +405,7 @@ func (mq *MediaQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Media,
 
 func (mq *MediaQuery) loadTags(ctx context.Context, query *TagQuery, nodes []*Media, init func(*Media), assign func(*Media, *Tag)) error {
 	edgeIDs := make([]driver.Value, len(nodes))
-	byID := make(map[int]*Media)
+	byID := make(map[string]*Media)
 	nids := make(map[int]map[*Media]struct{})
 	for i, node := range nodes {
 		edgeIDs[i] = node.ID
@@ -435,10 +435,10 @@ func (mq *MediaQuery) loadTags(ctx context.Context, query *TagQuery, nodes []*Me
 				if err != nil {
 					return nil, err
 				}
-				return append([]any{new(sql.NullInt64)}, values...), nil
+				return append([]any{new(sql.NullString)}, values...), nil
 			}
 			spec.Assign = func(columns []string, values []any) error {
-				outValue := int(values[0].(*sql.NullInt64).Int64)
+				outValue := values[0].(*sql.NullString).String
 				inValue := int(values[1].(*sql.NullInt64).Int64)
 				if nids[inValue] == nil {
 					nids[inValue] = map[*Media]struct{}{byID[outValue]: {}}
@@ -475,7 +475,7 @@ func (mq *MediaQuery) sqlCount(ctx context.Context) (int, error) {
 }
 
 func (mq *MediaQuery) querySpec() *sqlgraph.QuerySpec {
-	_spec := sqlgraph.NewQuerySpec(media.Table, media.Columns, sqlgraph.NewFieldSpec(media.FieldID, field.TypeInt))
+	_spec := sqlgraph.NewQuerySpec(media.Table, media.Columns, sqlgraph.NewFieldSpec(media.FieldID, field.TypeString))
 	_spec.From = mq.sql
 	if unique := mq.ctx.Unique; unique != nil {
 		_spec.Unique = *unique

@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os/exec"
-	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -139,7 +138,7 @@ func main() {
 		}
 
 		// ─── upload directly to MinIO ───────────────────────────────────────
-		previewKey := strings.TrimSuffix(path.Base(p.Key), path.Ext(p.Key)) + ".jpg"
+		previewKey := p.Key
 		_, err = minioClient.PutPreviewJpeg(
 			r.Context(),
 			previewKey,

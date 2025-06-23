@@ -33,8 +33,7 @@ type MediaMutation struct {
 	config
 	op            Op
 	typ           string
-	id            *int
-	key           *string
+	id            *string
 	format        *string
 	width         *int
 	addwidth      *int
@@ -71,7 +70,7 @@ func newMediaMutation(c config, op Op, opts ...mediaOption) *MediaMutation {
 }
 
 // withMediaID sets the ID field of the mutation.
-func withMediaID(id int) mediaOption {
+func withMediaID(id string) mediaOption {
 	return func(m *MediaMutation) {
 		var (
 			err   error
@@ -121,9 +120,15 @@ func (m MediaMutation) Tx() (*Tx, error) {
 	return tx, nil
 }
 
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of Media entities.
+func (m *MediaMutation) SetID(id string) {
+	m.id = &id
+}
+
 // ID returns the ID value in the mutation. Note that the ID is only available
 // if it was provided to the builder or after it was returned from the database.
-func (m *MediaMutation) ID() (id int, exists bool) {
+func (m *MediaMutation) ID() (id string, exists bool) {
 	if m.id == nil {
 		return
 	}
@@ -134,12 +139,12 @@ func (m *MediaMutation) ID() (id int, exists bool) {
 // That means, if the mutation is applied within a transaction with an isolation level such
 // as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
 // or updated by the mutation.
-func (m *MediaMutation) IDs(ctx context.Context) ([]int, error) {
+func (m *MediaMutation) IDs(ctx context.Context) ([]string, error) {
 	switch {
 	case m.op.Is(OpUpdateOne | OpDeleteOne):
 		id, exists := m.ID()
 		if exists {
-			return []int{id}, nil
+			return []string{id}, nil
 		}
 		fallthrough
 	case m.op.Is(OpUpdate | OpDelete):
@@ -147,42 +152,6 @@ func (m *MediaMutation) IDs(ctx context.Context) ([]int, error) {
 	default:
 		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
 	}
-}
-
-// SetKey sets the "key" field.
-func (m *MediaMutation) SetKey(s string) {
-	m.key = &s
-}
-
-// Key returns the value of the "key" field in the mutation.
-func (m *MediaMutation) Key() (r string, exists bool) {
-	v := m.key
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldKey returns the old "key" field's value of the Media entity.
-// If the Media object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *MediaMutation) OldKey(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldKey is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldKey requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldKey: %w", err)
-	}
-	return oldValue.Key, nil
-}
-
-// ResetKey resets all changes to the "key" field.
-func (m *MediaMutation) ResetKey() {
-	m.key = nil
 }
 
 // SetFormat sets the "format" field.
@@ -491,10 +460,7 @@ func (m *MediaMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *MediaMutation) Fields() []string {
-	fields := make([]string, 0, 5)
-	if m.key != nil {
-		fields = append(fields, media.FieldKey)
-	}
+	fields := make([]string, 0, 4)
 	if m.format != nil {
 		fields = append(fields, media.FieldFormat)
 	}
@@ -515,8 +481,6 @@ func (m *MediaMutation) Fields() []string {
 // schema.
 func (m *MediaMutation) Field(name string) (ent.Value, bool) {
 	switch name {
-	case media.FieldKey:
-		return m.Key()
 	case media.FieldFormat:
 		return m.Format()
 	case media.FieldWidth:
@@ -534,8 +498,6 @@ func (m *MediaMutation) Field(name string) (ent.Value, bool) {
 // database failed.
 func (m *MediaMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
 	switch name {
-	case media.FieldKey:
-		return m.OldKey(ctx)
 	case media.FieldFormat:
 		return m.OldFormat(ctx)
 	case media.FieldWidth:
@@ -553,13 +515,6 @@ func (m *MediaMutation) OldField(ctx context.Context, name string) (ent.Value, e
 // type.
 func (m *MediaMutation) SetField(name string, value ent.Value) error {
 	switch name {
-	case media.FieldKey:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetKey(v)
-		return nil
 	case media.FieldFormat:
 		v, ok := value.(string)
 		if !ok {
@@ -685,9 +640,6 @@ func (m *MediaMutation) ClearField(name string) error {
 // It returns an error if the field is not defined in the schema.
 func (m *MediaMutation) ResetField(name string) error {
 	switch name {
-	case media.FieldKey:
-		m.ResetKey()
-		return nil
 	case media.FieldFormat:
 		m.ResetFormat()
 		return nil
@@ -797,8 +749,8 @@ type TagMutation struct {
 	name          *string
 	_type         *tag.Type
 	clearedFields map[string]struct{}
-	media         map[int]struct{}
-	removedmedia  map[int]struct{}
+	media         map[string]struct{}
+	removedmedia  map[string]struct{}
 	clearedmedia  bool
 	done          bool
 	oldValue      func(context.Context) (*Tag, error)
@@ -982,9 +934,9 @@ func (m *TagMutation) ResetType() {
 }
 
 // AddMediumIDs adds the "media" edge to the Media entity by ids.
-func (m *TagMutation) AddMediumIDs(ids ...int) {
+func (m *TagMutation) AddMediumIDs(ids ...string) {
 	if m.media == nil {
-		m.media = make(map[int]struct{})
+		m.media = make(map[string]struct{})
 	}
 	for i := range ids {
 		m.media[ids[i]] = struct{}{}
@@ -1002,9 +954,9 @@ func (m *TagMutation) MediaCleared() bool {
 }
 
 // RemoveMediumIDs removes the "media" edge to the Media entity by IDs.
-func (m *TagMutation) RemoveMediumIDs(ids ...int) {
+func (m *TagMutation) RemoveMediumIDs(ids ...string) {
 	if m.removedmedia == nil {
-		m.removedmedia = make(map[int]struct{})
+		m.removedmedia = make(map[string]struct{})
 	}
 	for i := range ids {
 		delete(m.media, ids[i])
@@ -1013,7 +965,7 @@ func (m *TagMutation) RemoveMediumIDs(ids ...int) {
 }
 
 // RemovedMedia returns the removed IDs of the "media" edge to the Media entity.
-func (m *TagMutation) RemovedMediaIDs() (ids []int) {
+func (m *TagMutation) RemovedMediaIDs() (ids []string) {
 	for id := range m.removedmedia {
 		ids = append(ids, id)
 	}
@@ -1021,7 +973,7 @@ func (m *TagMutation) RemovedMediaIDs() (ids []int) {
 }
 
 // MediaIDs returns the "media" edge IDs in the mutation.
-func (m *TagMutation) MediaIDs() (ids []int) {
+func (m *TagMutation) MediaIDs() (ids []string) {
 	for id := range m.media {
 		ids = append(ids, id)
 	}

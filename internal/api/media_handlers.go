@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"path"
-	"strings"
 	"time"
 
 	"era/booru/ent"
@@ -50,14 +48,13 @@ func listCommon(videoBucket string, pictureBucket string) gin.HandlerFunc {
 
 		for i, mitem := range items {
 			format := mitem.Format
-			var bucket, key string
+			key := mitem.ID
+			var bucket string
 			switch format {
 			case "mp4", "webm", "avi", "mkv":
 				bucket = videoBucket
-				key = strings.TrimSuffix(mitem.Key, path.Ext(mitem.Key)) + ".jpg"
 			default:
 				bucket = pictureBucket
-				key = mitem.Key
 			}
 
 			url := fmt.Sprintf("http://localhost/minio/%s/%s", bucket, key)
@@ -87,14 +84,14 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 			return
 		}
 
-		stat, err := m.StatObject(c.Request.Context(), m.Bucket, item.Key, mc.StatObjectOptions{})
+		stat, err := m.StatObject(c.Request.Context(), m.Bucket, string(id), mc.StatObjectOptions{})
 		if err != nil {
-			log.Printf("stat object %s: %v", item.Key, err)
+			log.Printf("stat object %s: %v", string(id), err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 
-		url := fmt.Sprintf("http://localhost/minio/%s/%s", cfg.MinioBucket, item.Key)
+		url := fmt.Sprintf("http://localhost/minio/%s/%s", cfg.MinioBucket, string(id))
 		tags := make([]string, len(item.Edges.Tags))
 		for i, t := range item.Edges.Tags {
 			tags[i] = t.Name
@@ -180,14 +177,8 @@ func deleteMediaHandler(db *ent.Client, m *minio.Client) gin.HandlerFunc {
 			return
 		}
 
-		item, err := db.Media.Get(c.Request.Context(), id)
-		if err != nil {
-			c.AbortWithStatus(http.StatusNotFound)
-			return
-		}
-
-		if err := m.RemoveObject(c.Request.Context(), m.Bucket, item.Key, mc.RemoveObjectOptions{}); err != nil {
-			log.Printf("remove object %s: %v", item.Key, err)
+		if err := m.RemoveObject(c.Request.Context(), m.Bucket, string(id), mc.RemoveObjectOptions{}); err != nil {
+			log.Printf("remove object %s: %v", string(id), err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}

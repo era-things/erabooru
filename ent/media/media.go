@@ -12,8 +12,6 @@ const (
 	Label = "media"
 	// FieldID holds the string denoting the id field in the database.
 	FieldID = "id"
-	// FieldKey holds the string denoting the key field in the database.
-	FieldKey = "key"
 	// FieldFormat holds the string denoting the format field in the database.
 	FieldFormat = "format"
 	// FieldWidth holds the string denoting the width field in the database.
@@ -36,7 +34,6 @@ const (
 // Columns holds all SQL columns for media fields.
 var Columns = []string{
 	FieldID,
-	FieldKey,
 	FieldFormat,
 	FieldWidth,
 	FieldHeight,
@@ -59,17 +56,17 @@ func ValidColumn(column string) bool {
 	return false
 }
 
+var (
+	// IDValidator is a validator for the "id" field. It is called by the builders before save.
+	IDValidator func(string) error
+)
+
 // OrderOption defines the ordering options for the Media queries.
 type OrderOption func(*sql.Selector)
 
 // ByID orders the results by the id field.
 func ByID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldID, opts...).ToFunc()
-}
-
-// ByKey orders the results by the key field.
-func ByKey(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldKey, opts...).ToFunc()
 }
 
 // ByFormat orders the results by the format field.

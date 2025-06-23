@@ -15,9 +15,8 @@ import (
 type Media struct {
 	config `json:"-"`
 	// ID of the ent.
-	ID int `json:"id,omitempty"`
-	// MinIO object key: <xxhash64>_<file size>.<file format>
-	Key string `json:"key,omitempty"`
+	// xxhash128 hash of the file, used as a unique identifier
+	ID string `json:"id,omitempty"`
 	// File format such as png or jpg
 	Format string `json:"format,omitempty"`
 	// Image width in pixels
@@ -55,9 +54,9 @@ func (*Media) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case media.FieldID, media.FieldWidth, media.FieldHeight, media.FieldDuration:
+		case media.FieldWidth, media.FieldHeight, media.FieldDuration:
 			values[i] = new(sql.NullInt64)
-		case media.FieldKey, media.FieldFormat:
+		case media.FieldID, media.FieldFormat:
 			values[i] = new(sql.NullString)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -75,16 +74,10 @@ func (m *Media) assignValues(columns []string, values []any) error {
 	for i := range columns {
 		switch columns[i] {
 		case media.FieldID:
-			value, ok := values[i].(*sql.NullInt64)
-			if !ok {
-				return fmt.Errorf("unexpected type %T for field id", value)
-			}
-			m.ID = int(value.Int64)
-		case media.FieldKey:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field key", values[i])
+				return fmt.Errorf("unexpected type %T for field id", values[i])
 			} else if value.Valid {
-				m.Key = value.String
+				m.ID = value.String
 			}
 		case media.FieldFormat:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -152,9 +145,6 @@ func (m *Media) String() string {
 	var builder strings.Builder
 	builder.WriteString("Media(")
 	builder.WriteString(fmt.Sprintf("id=%v, ", m.ID))
-	builder.WriteString("key=")
-	builder.WriteString(m.Key)
-	builder.WriteString(", ")
 	builder.WriteString("format=")
 	builder.WriteString(m.Format)
 	builder.WriteString(", ")
