@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Masonry from './media_grid/Masonry.svelte'; // the Masonry component from the previous example
+	import Masonry from './media_grid/Masonry.svelte'; // Masonry component
 	import type { MediaItem } from '$lib/types/media';
+	import { PAGE_SIZE } from '$lib/constants';
 
 	const apiBase = 'http://localhost/api';
 
-	let { query = '', page = 1 } = $props();
+	let { query = '', page = 1, pageSize = PAGE_SIZE } = $props();
 	let lastQuery: string = $state('');
 	let lastPage: number = $state(1);
+	export let total: number = 0;
 
 	let media: MediaItem[] = $state([]);
 	let innerWidth = $state(0);
@@ -27,12 +29,13 @@
 	async function load() {
 		try {
 			const url = query
-				? `${apiBase}/media/previews?q=${encodeURIComponent(query)}&page=${page}`
-				: `${apiBase}/media/previews?page=${page}`;
+				? `${apiBase}/media/previews?q=${encodeURIComponent(query)}&page=${page}&page_size=${pageSize}`
+				: `${apiBase}/media/previews?page=${page}&page_size=${pageSize}`;
 			const res = await fetch(url);
 			if (res.ok) {
 				const data = await res.json();
 				media = data.media as MediaItem[];
+				total = data.total as number;
 			} else {
 				console.error('media fetch error', res.status, res.statusText);
 			}

@@ -43,14 +43,20 @@ func listCommon(videoBucket string, pictureBucket string) gin.HandlerFunc {
 		if err != nil || page < 1 {
 			page = 1
 		}
-		const pageSize = 60
-		offset := (page - 1) * pageSize
-		items, err := search.SearchMedia(q, pageSize, offset)
-		if err != nil {
-			log.Printf("search media: %v", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
+               pageSize, err := strconv.Atoi(c.DefaultQuery("page_size", "60"))
+               if err != nil || pageSize < 1 {
+                       pageSize = 60
+               }
+               if pageSize > 60 {
+                       pageSize = 60
+               }
+               offset := (page - 1) * pageSize
+               items, total, err := search.SearchMedia(q, pageSize, offset)
+               if err != nil {
+                       log.Printf("search media: %v", err)
+                       c.AbortWithStatus(http.StatusInternalServerError)
+                       return
+               }
 		out := make([]gin.H, len(items))
 
 		for i, mitem := range items {
@@ -73,8 +79,8 @@ func listCommon(videoBucket string, pictureBucket string) gin.HandlerFunc {
 				"format": mitem.Format,
 			}
 		}
-		c.JSON(http.StatusOK, gin.H{"media": out})
-	}
+               c.JSON(http.StatusOK, gin.H{"media": out, "total": total})
+       }
 }
 
 func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.HandlerFunc {

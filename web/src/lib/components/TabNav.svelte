@@ -7,6 +7,7 @@
 	import { page } from '$app/stores';
 	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
+	import { PAGE_SIZE } from '$lib/constants';
 
 	let q = '';
 	onMount(() => {
@@ -15,7 +16,7 @@
 
 	function search(event: Event) {
 		event.preventDefault();
-		goto(`/?q=${encodeURIComponent(q)}&page=1`);
+		goto(`/?q=${encodeURIComponent(q)}&page=1&page_size=${PAGE_SIZE}`);
 	}
 </script>
 
