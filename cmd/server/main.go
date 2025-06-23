@@ -95,8 +95,8 @@ func analyzeImage(m *minio.Client, ctx context.Context, db *ent.Client, object s
 	if _, err := db.Media.Create().
 		SetID(object).
 		SetFormat(metadata.Format).
-		SetWidth(metadata.Width).
-		SetHeight(metadata.Height).
+		SetWidth(int16(metadata.Width)).
+		SetHeight(int16(metadata.Height)).
 		Save(ctx); err != nil {
 		log.Printf("create media: %v", err)
 	} else {
@@ -137,9 +137,9 @@ func analyzeVideo(cfg *config.Config, m *minio.Client, ctx context.Context, db *
 	if _, err := db.Media.Create().
 		SetID(reqBody.Key).
 		SetFormat(out.Format).
-		SetWidth(out.Width).
-		SetHeight(out.Height).
-		SetDuration(out.Duration).
+		SetWidth(int16(out.Width)).
+		SetHeight(int16(out.Height)).
+		SetDuration(int16(out.Duration)).
 		Save(ctx); err != nil {
 		log.Printf("create video media: %v", err)
 	} else {
