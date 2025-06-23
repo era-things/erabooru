@@ -12,9 +12,9 @@ var (
 	MediaColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
 		{Name: "format", Type: field.TypeString},
-		{Name: "width", Type: field.TypeInt},
-		{Name: "height", Type: field.TypeInt},
-		{Name: "duration", Type: field.TypeInt, Nullable: true},
+		{Name: "width", Type: field.TypeInt16},
+		{Name: "height", Type: field.TypeInt16},
+		{Name: "duration", Type: field.TypeInt16, Nullable: true},
 	}
 	// MediaTable holds the schema information for the "media" table.
 	MediaTable = &schema.Table{

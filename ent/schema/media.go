@@ -22,13 +22,13 @@ func (Media) Fields() []ent.Field {
 		field.String("format").
 			Immutable().
 			Comment("File format such as png or jpg"),
-		field.Int("width").
+		field.Int16("width").
 			Immutable().
 			Comment("Image width in pixels"),
-		field.Int("height").
+		field.Int16("height").
 			Immutable().
 			Comment("Image height in pixels"),
-		field.Int("duration").
+		field.Int16("duration").
 			Optional().
 			Nillable().
 			Comment("Duration in seconds for video or audio"),

@@ -20,11 +20,11 @@ type Media struct {
 	// File format such as png or jpg
 	Format string `json:"format,omitempty"`
 	// Image width in pixels
-	Width int `json:"width,omitempty"`
+	Width int16 `json:"width,omitempty"`
 	// Image height in pixels
-	Height int `json:"height,omitempty"`
+	Height int16 `json:"height,omitempty"`
 	// Duration in seconds for video or audio
-	Duration *int `json:"duration,omitempty"`
+	Duration *int16 `json:"duration,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the MediaQuery when eager-loading is set.
 	Edges        MediaEdges `json:"edges"`
@@ -89,20 +89,20 @@ func (m *Media) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field width", values[i])
 			} else if value.Valid {
-				m.Width = int(value.Int64)
+				m.Width = int16(value.Int64)
 			}
 		case media.FieldHeight:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field height", values[i])
 			} else if value.Valid {
-				m.Height = int(value.Int64)
+				m.Height = int16(value.Int64)
 			}
 		case media.FieldDuration:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field duration", values[i])
 			} else if value.Valid {
-				m.Duration = new(int)
-				*m.Duration = int(value.Int64)
+				m.Duration = new(int16)
+				*m.Duration = int16(value.Int64)
 			}
 		default:
 			m.selectValues.Set(columns[i], values[i])

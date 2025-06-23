@@ -70,17 +70,17 @@ func Format(v string) predicate.Media {
 }
 
 // Width applies equality check predicate on the "width" field. It's identical to WidthEQ.
-func Width(v int) predicate.Media {
+func Width(v int16) predicate.Media {
 	return predicate.Media(sql.FieldEQ(FieldWidth, v))
 }
 
 // Height applies equality check predicate on the "height" field. It's identical to HeightEQ.
-func Height(v int) predicate.Media {
+func Height(v int16) predicate.Media {
 	return predicate.Media(sql.FieldEQ(FieldHeight, v))
 }
 
 // Duration applies equality check predicate on the "duration" field. It's identical to DurationEQ.
-func Duration(v int) predicate.Media {
+func Duration(v int16) predicate.Media {
 	return predicate.Media(sql.FieldEQ(FieldDuration, v))
 }
 
@@ -150,122 +150,122 @@ func FormatContainsFold(v string) predicate.Media {
 }
 
 // WidthEQ applies the EQ predicate on the "width" field.
-func WidthEQ(v int) predicate.Media {
+func WidthEQ(v int16) predicate.Media {
 	return predicate.Media(sql.FieldEQ(FieldWidth, v))
 }
 
 // WidthNEQ applies the NEQ predicate on the "width" field.
-func WidthNEQ(v int) predicate.Media {
+func WidthNEQ(v int16) predicate.Media {
 	return predicate.Media(sql.FieldNEQ(FieldWidth, v))
 }
 
 // WidthIn applies the In predicate on the "width" field.
-func WidthIn(vs ...int) predicate.Media {
+func WidthIn(vs ...int16) predicate.Media {
 	return predicate.Media(sql.FieldIn(FieldWidth, vs...))
 }
 
 // WidthNotIn applies the NotIn predicate on the "width" field.
-func WidthNotIn(vs ...int) predicate.Media {
+func WidthNotIn(vs ...int16) predicate.Media {
 	return predicate.Media(sql.FieldNotIn(FieldWidth, vs...))
 }
 
 // WidthGT applies the GT predicate on the "width" field.
-func WidthGT(v int) predicate.Media {
+func WidthGT(v int16) predicate.Media {
 	return predicate.Media(sql.FieldGT(FieldWidth, v))
 }
 
 // WidthGTE applies the GTE predicate on the "width" field.
-func WidthGTE(v int) predicate.Media {
+func WidthGTE(v int16) predicate.Media {
 	return predicate.Media(sql.FieldGTE(FieldWidth, v))
 }
 
 // WidthLT applies the LT predicate on the "width" field.
-func WidthLT(v int) predicate.Media {
+func WidthLT(v int16) predicate.Media {
 	return predicate.Media(sql.FieldLT(FieldWidth, v))
 }
 
 // WidthLTE applies the LTE predicate on the "width" field.
-func WidthLTE(v int) predicate.Media {
+func WidthLTE(v int16) predicate.Media {
 	return predicate.Media(sql.FieldLTE(FieldWidth, v))
 }
 
 // HeightEQ applies the EQ predicate on the "height" field.
-func HeightEQ(v int) predicate.Media {
+func HeightEQ(v int16) predicate.Media {
 	return predicate.Media(sql.FieldEQ(FieldHeight, v))
 }
 
 // HeightNEQ applies the NEQ predicate on the "height" field.
-func HeightNEQ(v int) predicate.Media {
+func HeightNEQ(v int16) predicate.Media {
 	return predicate.Media(sql.FieldNEQ(FieldHeight, v))
 }
 
 // HeightIn applies the In predicate on the "height" field.
-func HeightIn(vs ...int) predicate.Media {
+func HeightIn(vs ...int16) predicate.Media {
 	return predicate.Media(sql.FieldIn(FieldHeight, vs...))
 }
 
 // HeightNotIn applies the NotIn predicate on the "height" field.
-func HeightNotIn(vs ...int) predicate.Media {
+func HeightNotIn(vs ...int16) predicate.Media {
 	return predicate.Media(sql.FieldNotIn(FieldHeight, vs...))
 }
 
 // HeightGT applies the GT predicate on the "height" field.
-func HeightGT(v int) predicate.Media {
+func HeightGT(v int16) predicate.Media {
 	return predicate.Media(sql.FieldGT(FieldHeight, v))
 }
 
 // HeightGTE applies the GTE predicate on the "height" field.
-func HeightGTE(v int) predicate.Media {
+func HeightGTE(v int16) predicate.Media {
 	return predicate.Media(sql.FieldGTE(FieldHeight, v))
 }
 
 // HeightLT applies the LT predicate on the "height" field.
-func HeightLT(v int) predicate.Media {
+func HeightLT(v int16) predicate.Media {
 	return predicate.Media(sql.FieldLT(FieldHeight, v))
 }
 
 // HeightLTE applies the LTE predicate on the "height" field.
-func HeightLTE(v int) predicate.Media {
+func HeightLTE(v int16) predicate.Media {
 	return predicate.Media(sql.FieldLTE(FieldHeight, v))
 }
 
 // DurationEQ applies the EQ predicate on the "duration" field.
-func DurationEQ(v int) predicate.Media {
+func DurationEQ(v int16) predicate.Media {
 	return predicate.Media(sql.FieldEQ(FieldDuration, v))
 }
 
 // DurationNEQ applies the NEQ predicate on the "duration" field.
-func DurationNEQ(v int) predicate.Media {
+func DurationNEQ(v int16) predicate.Media {
 	return predicate.Media(sql.FieldNEQ(FieldDuration, v))
 }
 
 // DurationIn applies the In predicate on the "duration" field.
-func DurationIn(vs ...int) predicate.Media {
+func DurationIn(vs ...int16) predicate.Media {
 	return predicate.Media(sql.FieldIn(FieldDuration, vs...))
 }
 
 // DurationNotIn applies the NotIn predicate on the "duration" field.
-func DurationNotIn(vs ...int) predicate.Media {
+func DurationNotIn(vs ...int16) predicate.Media {
 	return predicate.Media(sql.FieldNotIn(FieldDuration, vs...))
 }
 
 // DurationGT applies the GT predicate on the "duration" field.
-func DurationGT(v int) predicate.Media {
+func DurationGT(v int16) predicate.Media {
 	return predicate.Media(sql.FieldGT(FieldDuration, v))
 }
 
 // DurationGTE applies the GTE predicate on the "duration" field.
-func DurationGTE(v int) predicate.Media {
+func DurationGTE(v int16) predicate.Media {
 	return predicate.Media(sql.FieldGTE(FieldDuration, v))
 }
 
 // DurationLT applies the LT predicate on the "duration" field.
-func DurationLT(v int) predicate.Media {
+func DurationLT(v int16) predicate.Media {
 	return predicate.Media(sql.FieldLT(FieldDuration, v))
 }
 
 // DurationLTE applies the LTE predicate on the "duration" field.
-func DurationLTE(v int) predicate.Media {
+func DurationLTE(v int16) predicate.Media {
 	return predicate.Media(sql.FieldLTE(FieldDuration, v))
 }
 

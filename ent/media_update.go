@@ -29,14 +29,14 @@ func (mu *MediaUpdate) Where(ps ...predicate.Media) *MediaUpdate {
 }
 
 // SetDuration sets the "duration" field.
-func (mu *MediaUpdate) SetDuration(i int) *MediaUpdate {
+func (mu *MediaUpdate) SetDuration(i int16) *MediaUpdate {
 	mu.mutation.ResetDuration()
 	mu.mutation.SetDuration(i)
 	return mu
 }
 
 // SetNillableDuration sets the "duration" field if the given value is not nil.
-func (mu *MediaUpdate) SetNillableDuration(i *int) *MediaUpdate {
+func (mu *MediaUpdate) SetNillableDuration(i *int16) *MediaUpdate {
 	if i != nil {
 		mu.SetDuration(*i)
 	}
@@ -44,7 +44,7 @@ func (mu *MediaUpdate) SetNillableDuration(i *int) *MediaUpdate {
 }
 
 // AddDuration adds i to the "duration" field.
-func (mu *MediaUpdate) AddDuration(i int) *MediaUpdate {
+func (mu *MediaUpdate) AddDuration(i int16) *MediaUpdate {
 	mu.mutation.AddDuration(i)
 	return mu
 }
@@ -133,13 +133,13 @@ func (mu *MediaUpdate) sqlSave(ctx context.Context) (n int, err error) {
 		}
 	}
 	if value, ok := mu.mutation.Duration(); ok {
-		_spec.SetField(media.FieldDuration, field.TypeInt, value)
+		_spec.SetField(media.FieldDuration, field.TypeInt16, value)
 	}
 	if value, ok := mu.mutation.AddedDuration(); ok {
-		_spec.AddField(media.FieldDuration, field.TypeInt, value)
+		_spec.AddField(media.FieldDuration, field.TypeInt16, value)
 	}
 	if mu.mutation.DurationCleared() {
-		_spec.ClearField(media.FieldDuration, field.TypeInt)
+		_spec.ClearField(media.FieldDuration, field.TypeInt16)
 	}
 	if mu.mutation.TagsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -207,14 +207,14 @@ type MediaUpdateOne struct {
 }
 
 // SetDuration sets the "duration" field.
-func (muo *MediaUpdateOne) SetDuration(i int) *MediaUpdateOne {
+func (muo *MediaUpdateOne) SetDuration(i int16) *MediaUpdateOne {
 	muo.mutation.ResetDuration()
 	muo.mutation.SetDuration(i)
 	return muo
 }
 
 // SetNillableDuration sets the "duration" field if the given value is not nil.
-func (muo *MediaUpdateOne) SetNillableDuration(i *int) *MediaUpdateOne {
+func (muo *MediaUpdateOne) SetNillableDuration(i *int16) *MediaUpdateOne {
 	if i != nil {
 		muo.SetDuration(*i)
 	}
@@ -222,7 +222,7 @@ func (muo *MediaUpdateOne) SetNillableDuration(i *int) *MediaUpdateOne {
 }
 
 // AddDuration adds i to the "duration" field.
-func (muo *MediaUpdateOne) AddDuration(i int) *MediaUpdateOne {
+func (muo *MediaUpdateOne) AddDuration(i int16) *MediaUpdateOne {
 	muo.mutation.AddDuration(i)
 	return muo
 }
@@ -341,13 +341,13 @@ func (muo *MediaUpdateOne) sqlSave(ctx context.Context) (_node *Media, err error
 		}
 	}
 	if value, ok := muo.mutation.Duration(); ok {
-		_spec.SetField(media.FieldDuration, field.TypeInt, value)
+		_spec.SetField(media.FieldDuration, field.TypeInt16, value)
 	}
 	if value, ok := muo.mutation.AddedDuration(); ok {
-		_spec.AddField(media.FieldDuration, field.TypeInt, value)
+		_spec.AddField(media.FieldDuration, field.TypeInt16, value)
 	}
 	if muo.mutation.DurationCleared() {
-		_spec.ClearField(media.FieldDuration, field.TypeInt)
+		_spec.ClearField(media.FieldDuration, field.TypeInt16)
 	}
 	if muo.mutation.TagsCleared() {
 		edge := &sqlgraph.EdgeSpec{

@@ -27,25 +27,25 @@ func (mc *MediaCreate) SetFormat(s string) *MediaCreate {
 }
 
 // SetWidth sets the "width" field.
-func (mc *MediaCreate) SetWidth(i int) *MediaCreate {
+func (mc *MediaCreate) SetWidth(i int16) *MediaCreate {
 	mc.mutation.SetWidth(i)
 	return mc
 }
 
 // SetHeight sets the "height" field.
-func (mc *MediaCreate) SetHeight(i int) *MediaCreate {
+func (mc *MediaCreate) SetHeight(i int16) *MediaCreate {
 	mc.mutation.SetHeight(i)
 	return mc
 }
 
 // SetDuration sets the "duration" field.
-func (mc *MediaCreate) SetDuration(i int) *MediaCreate {
+func (mc *MediaCreate) SetDuration(i int16) *MediaCreate {
 	mc.mutation.SetDuration(i)
 	return mc
 }
 
 // SetNillableDuration sets the "duration" field if the given value is not nil.
-func (mc *MediaCreate) SetNillableDuration(i *int) *MediaCreate {
+func (mc *MediaCreate) SetNillableDuration(i *int16) *MediaCreate {
 	if i != nil {
 		mc.SetDuration(*i)
 	}
@@ -161,15 +161,15 @@ func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 		_node.Format = value
 	}
 	if value, ok := mc.mutation.Width(); ok {
-		_spec.SetField(media.FieldWidth, field.TypeInt, value)
+		_spec.SetField(media.FieldWidth, field.TypeInt16, value)
 		_node.Width = value
 	}
 	if value, ok := mc.mutation.Height(); ok {
-		_spec.SetField(media.FieldHeight, field.TypeInt, value)
+		_spec.SetField(media.FieldHeight, field.TypeInt16, value)
 		_node.Height = value
 	}
 	if value, ok := mc.mutation.Duration(); ok {
-		_spec.SetField(media.FieldDuration, field.TypeInt, value)
+		_spec.SetField(media.FieldDuration, field.TypeInt16, value)
 		_node.Duration = &value
 	}
 	if nodes := mc.mutation.TagsIDs(); len(nodes) > 0 {
