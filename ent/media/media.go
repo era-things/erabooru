@@ -14,8 +14,6 @@ const (
 	FieldID = "id"
 	// FieldKey holds the string denoting the key field in the database.
 	FieldKey = "key"
-	// FieldHash holds the string denoting the hash field in the database.
-	FieldHash = "hash"
 	// FieldFormat holds the string denoting the format field in the database.
 	FieldFormat = "format"
 	// FieldWidth holds the string denoting the width field in the database.
@@ -39,7 +37,6 @@ const (
 var Columns = []string{
 	FieldID,
 	FieldKey,
-	FieldHash,
 	FieldFormat,
 	FieldWidth,
 	FieldHeight,
@@ -73,11 +70,6 @@ func ByID(opts ...sql.OrderTermOption) OrderOption {
 // ByKey orders the results by the key field.
 func ByKey(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldKey, opts...).ToFunc()
-}
-
-// ByHash orders the results by the hash field.
-func ByHash(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldHash, opts...).ToFunc()
 }
 
 // ByFormat orders the results by the format field.

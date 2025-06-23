@@ -35,7 +35,6 @@ type MediaMutation struct {
 	typ           string
 	id            *int
 	key           *string
-	hash          *string
 	format        *string
 	width         *int
 	addwidth      *int
@@ -184,42 +183,6 @@ func (m *MediaMutation) OldKey(ctx context.Context) (v string, err error) {
 // ResetKey resets all changes to the "key" field.
 func (m *MediaMutation) ResetKey() {
 	m.key = nil
-}
-
-// SetHash sets the "hash" field.
-func (m *MediaMutation) SetHash(s string) {
-	m.hash = &s
-}
-
-// Hash returns the value of the "hash" field in the mutation.
-func (m *MediaMutation) Hash() (r string, exists bool) {
-	v := m.hash
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldHash returns the old "hash" field's value of the Media entity.
-// If the Media object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *MediaMutation) OldHash(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldHash is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldHash requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldHash: %w", err)
-	}
-	return oldValue.Hash, nil
-}
-
-// ResetHash resets all changes to the "hash" field.
-func (m *MediaMutation) ResetHash() {
-	m.hash = nil
 }
 
 // SetFormat sets the "format" field.
@@ -528,12 +491,9 @@ func (m *MediaMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *MediaMutation) Fields() []string {
-	fields := make([]string, 0, 6)
+	fields := make([]string, 0, 5)
 	if m.key != nil {
 		fields = append(fields, media.FieldKey)
-	}
-	if m.hash != nil {
-		fields = append(fields, media.FieldHash)
 	}
 	if m.format != nil {
 		fields = append(fields, media.FieldFormat)
@@ -557,8 +517,6 @@ func (m *MediaMutation) Field(name string) (ent.Value, bool) {
 	switch name {
 	case media.FieldKey:
 		return m.Key()
-	case media.FieldHash:
-		return m.Hash()
 	case media.FieldFormat:
 		return m.Format()
 	case media.FieldWidth:
@@ -578,8 +536,6 @@ func (m *MediaMutation) OldField(ctx context.Context, name string) (ent.Value, e
 	switch name {
 	case media.FieldKey:
 		return m.OldKey(ctx)
-	case media.FieldHash:
-		return m.OldHash(ctx)
 	case media.FieldFormat:
 		return m.OldFormat(ctx)
 	case media.FieldWidth:
@@ -603,13 +559,6 @@ func (m *MediaMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetKey(v)
-		return nil
-	case media.FieldHash:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetHash(v)
 		return nil
 	case media.FieldFormat:
 		v, ok := value.(string)
@@ -738,9 +687,6 @@ func (m *MediaMutation) ResetField(name string) error {
 	switch name {
 	case media.FieldKey:
 		m.ResetKey()
-		return nil
-	case media.FieldHash:
-		m.ResetHash()
 		return nil
 	case media.FieldFormat:
 		m.ResetFormat()

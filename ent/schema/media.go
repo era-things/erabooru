@@ -16,11 +16,8 @@ func (Media) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("key").
 			Immutable().
-			Comment("MinIO object key"),
-		field.String("hash").
-			Unique().
-			Immutable().
-			Comment("Hash of the media file, used for deduplication"),
+			Comment("MinIO object key: <xxhash64>_<file size>.<file format>").
+			Unique(),
 		field.String("format").
 			Immutable().
 			Comment("File format such as png or jpg"),

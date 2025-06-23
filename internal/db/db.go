@@ -23,6 +23,8 @@ func New(cfg *config.Config) (*ent.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Auto migrate if we are in dev mode
 	opts := []schema.MigrateOption{}
 	if cfg.DevMode {
 		opts = append(opts,
@@ -30,6 +32,7 @@ func New(cfg *config.Config) (*ent.Client, error) {
 			migrate.WithDropIndex(true),
 		)
 	}
+
 	if err := client.Schema.Create(context.Background(), opts...); err != nil {
 		return nil, err
 	}

@@ -11,8 +11,7 @@ var (
 	// MediaColumns holds the columns for the "media" table.
 	MediaColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "key", Type: field.TypeString},
-		{Name: "hash", Type: field.TypeString, Unique: true},
+		{Name: "key", Type: field.TypeString, Unique: true},
 		{Name: "format", Type: field.TypeString},
 		{Name: "width", Type: field.TypeInt},
 		{Name: "height", Type: field.TypeInt},

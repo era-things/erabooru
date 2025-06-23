@@ -26,12 +26,6 @@ func (mc *MediaCreate) SetKey(s string) *MediaCreate {
 	return mc
 }
 
-// SetHash sets the "hash" field.
-func (mc *MediaCreate) SetHash(s string) *MediaCreate {
-	mc.mutation.SetHash(s)
-	return mc
-}
-
 // SetFormat sets the "format" field.
 func (mc *MediaCreate) SetFormat(s string) *MediaCreate {
 	mc.mutation.SetFormat(s)
@@ -116,9 +110,6 @@ func (mc *MediaCreate) check() error {
 	if _, ok := mc.mutation.Key(); !ok {
 		return &ValidationError{Name: "key", err: errors.New(`ent: missing required field "Media.key"`)}
 	}
-	if _, ok := mc.mutation.Hash(); !ok {
-		return &ValidationError{Name: "hash", err: errors.New(`ent: missing required field "Media.hash"`)}
-	}
 	if _, ok := mc.mutation.Format(); !ok {
 		return &ValidationError{Name: "format", err: errors.New(`ent: missing required field "Media.format"`)}
 	}
@@ -157,10 +148,6 @@ func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 	if value, ok := mc.mutation.Key(); ok {
 		_spec.SetField(media.FieldKey, field.TypeString, value)
 		_node.Key = value
-	}
-	if value, ok := mc.mutation.Hash(); ok {
-		_spec.SetField(media.FieldHash, field.TypeString, value)
-		_node.Hash = value
 	}
 	if value, ok := mc.mutation.Format(); ok {
 		_spec.SetField(media.FieldFormat, field.TypeString, value)

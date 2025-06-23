@@ -16,10 +16,8 @@ type Media struct {
 	config `json:"-"`
 	// ID of the ent.
 	ID int `json:"id,omitempty"`
-	// MinIO object key
+	// MinIO object key: <xxhash64>_<file size>.<file format>
 	Key string `json:"key,omitempty"`
-	// Hash of the media file, used for deduplication
-	Hash string `json:"hash,omitempty"`
 	// File format such as png or jpg
 	Format string `json:"format,omitempty"`
 	// Image width in pixels
@@ -59,7 +57,7 @@ func (*Media) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case media.FieldID, media.FieldWidth, media.FieldHeight, media.FieldDuration:
 			values[i] = new(sql.NullInt64)
-		case media.FieldKey, media.FieldHash, media.FieldFormat:
+		case media.FieldKey, media.FieldFormat:
 			values[i] = new(sql.NullString)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -87,12 +85,6 @@ func (m *Media) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field key", values[i])
 			} else if value.Valid {
 				m.Key = value.String
-			}
-		case media.FieldHash:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field hash", values[i])
-			} else if value.Valid {
-				m.Hash = value.String
 			}
 		case media.FieldFormat:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -162,9 +154,6 @@ func (m *Media) String() string {
 	builder.WriteString(fmt.Sprintf("id=%v, ", m.ID))
 	builder.WriteString("key=")
 	builder.WriteString(m.Key)
-	builder.WriteString(", ")
-	builder.WriteString("hash=")
-	builder.WriteString(m.Hash)
 	builder.WriteString(", ")
 	builder.WriteString("format=")
 	builder.WriteString(m.Format)
