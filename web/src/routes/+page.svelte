@@ -6,10 +6,10 @@
 	import { PAGE_SIZE } from '$lib/constants';
 
 	const q = page.url.searchParams.get('q') ?? '';
-	let currentPage = Number(page.url.searchParams.get('page') || '1');
+	let currentPage = $state(Number(page.url.searchParams.get('page') || '1'));
 	const pageSize = Number(page.url.searchParams.get('page_size') || PAGE_SIZE);
-	let total = 0;
-	$: totalPages = Math.ceil(total / pageSize);
+	let total = $state(0);
+	let totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
 
 	function prev() {
 		if (currentPage > 1) {

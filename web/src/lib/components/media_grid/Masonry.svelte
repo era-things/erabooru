@@ -3,18 +3,16 @@
 	import { distributeVertically, distributeRoundRobin } from '$lib/masonryDistribution';
 	import type { MediaItem } from '$lib/types/media';
 
-	export let items: MediaItem[] = [];
-	export let columnWidths: string[] = ['1fr', '1fr'];
+	let { items = [], columnWidths = ['1fr', '1fr'] } = $props<{
+		items: MediaItem[];
+		columnWidths: string[];
+	}>();
 
-	let columns: MediaItem[][] = [];
-
-	/* simple round-robin distribution */
-	$: {
-		columns =
-			items.length > columnWidths.length
-				? distributeVertically(items, columnWidths.length)
-				: distributeRoundRobin(items, columnWidths.length);
-	}
+	let columns = $derived(
+		items.length > columnWidths.length
+			? distributeVertically(items, columnWidths.length)
+			: distributeRoundRobin(items, columnWidths.length)
+	);
 </script>
 
 <div class="grid gap-3" style="grid-template-columns:{columnWidths.join(' ')}">

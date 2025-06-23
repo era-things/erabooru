@@ -9,7 +9,7 @@
 	import { onMount } from 'svelte';
 	import { PAGE_SIZE } from '$lib/constants';
 
-	let q = '';
+	let q = $state('');
 	onMount(() => {
 		q = get(page).url.searchParams.get('q') ?? '';
 	});
