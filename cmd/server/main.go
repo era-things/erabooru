@@ -95,7 +95,6 @@ func analyzeImage(m *minio.Client, ctx context.Context, db *ent.Client, object s
 	if _, err := db.Media.Create().
 		SetKey(object).
 		SetFormat(metadata.Format).
-		SetHash(metadata.Hash).
 		SetWidth(metadata.Width).
 		SetHeight(metadata.Height).
 		Save(ctx); err != nil {
@@ -138,7 +137,6 @@ func analyzeVideo(cfg *config.Config, m *minio.Client, ctx context.Context, db *
 	if _, err := db.Media.Create().
 		SetKey(object).
 		SetFormat(out.Format).
-		SetHash(out.Hash).
 		SetWidth(out.Width).
 		SetHeight(out.Height).
 		SetDuration(out.Duration).
