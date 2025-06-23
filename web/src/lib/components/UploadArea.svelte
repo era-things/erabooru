@@ -4,7 +4,7 @@
 	let fileInput: HTMLInputElement | null = $state(null);
 	//const apiBase = import.meta.env.DEV ? 'http://localhost:8080' : '';
 	const apiBase = 'http://localhost/api';
-	export let supportedTypes: string[] = [
+	const supportedTypes: string[] = [
 		'image/png',
 		'image/jpeg',
 		'image/jpg',

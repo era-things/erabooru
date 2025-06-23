@@ -2,14 +2,15 @@
 	/**
 	 * Page currently shown so we can highlight the active tab
 	 */
-	export let active: 'media' | 'upload' = 'media';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
 	import { PAGE_SIZE } from '$lib/constants';
 
-	let q = $state('');
+	let q: string = $state('');
+	let active: 'media' | 'upload' = $props();
+
 	onMount(() => {
 		q = get(page).url.searchParams.get('q') ?? '';
 	});

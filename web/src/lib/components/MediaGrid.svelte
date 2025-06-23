@@ -6,10 +6,9 @@
 
 	const apiBase = 'http://localhost/api';
 
-	let { query = '', page = 1, pageSize = PAGE_SIZE } = $props();
+	let { query = '', page = 1, pageSize = Number(PAGE_SIZE), total = $bindable(0) } = $props();
 	let lastQuery: string = $state('');
 	let lastPage: number = $state(1);
-	export let total: number = 0;
 
 	let media: MediaItem[] = $state([]);
 	let innerWidth = $state(0);
