@@ -22,6 +22,7 @@ type Config struct {
 	BlevePath             string // path to Bleve index, e.g., "/data/bleve"
 	MinioSSL              bool
 	VideoWorkerURL        string // address of the video worker service
+	DevMode               bool   // enable development features like auto migration
 }
 
 func Load() (*Config, error) {
@@ -44,6 +45,7 @@ func Load() (*Config, error) {
 		BlevePath:             getEnv("BLEVE_PATH", "/data/bleve"),
 		MinioSSL:              getEnv("MINIO_SSL", "false") == "true",
 		VideoWorkerURL:        getEnv("VIDEO_WORKER_URL", "http://video-worker:8080"),
+		DevMode:               getEnv("DEV_MODE", "false") == "true",
 	}
 	return cfg, nil
 }
