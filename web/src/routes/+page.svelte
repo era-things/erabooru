@@ -8,9 +8,8 @@
     const q = $derived(page.url.searchParams.get('q') ?? '');
     let currentPage = $derived(Number(page.url.searchParams.get('page') || '1'));
     const pageSize = $derived(Number(page.url.searchParams.get('page_size') || PAGE_SIZE));
-    let total = $state(0);
+    let total = $state(1);
     let totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
-
 
 	function prev() {
 		if (currentPage > 1) {

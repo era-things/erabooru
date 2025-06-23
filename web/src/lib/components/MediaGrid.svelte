@@ -6,7 +6,7 @@
 
 	const apiBase = 'http://localhost/api';
 
-	let { query = '', page = 1, pageSize = Number(PAGE_SIZE), total = $bindable(0) } = $props();
+	let { query = '', page = 1, pageSize = Number(PAGE_SIZE), total = $bindable(1) } = $props();
 	let lastQuery: string = $state('');
 	let lastPage: number = $state(1);
 
@@ -34,7 +34,7 @@
 			if (res.ok) {
 				const data = await res.json();
 				media = data.media as MediaItem[];
-				total = data.total as number;
+				total = data.total??1 as number;
 			} else {
 				console.error('media fetch error', res.status, res.statusText);
 			}
