@@ -1,5 +1,5 @@
 <script lang="ts">
-	import xxhash from "xxhash-wasm";
+	import { xxhash128 }from "hash-wasm";
 
 	let fileInput: HTMLInputElement | null = null;
 	//const apiBase = import.meta.env.DEV ? 'http://localhost:8080' : '';
@@ -62,13 +62,10 @@
 	}
 
 	async function getUploadName(file: File): Promise<string> {
-		const hasher = await xxhash();
 		const arrayBuffer = await file.arrayBuffer();
 		const uint8 = new Uint8Array(arrayBuffer);
-		const hash = hasher.h64Raw(uint8).toString(16);
-
-		//add file size to reduce chances of hash collision
-		return hash + '_' + file.size + '.' + file.name.split('.').pop();
+		const hash = await xxhash128(uint8)
+		return hash + '.' + file.name.split('.').pop();
 	}
 </script>
 
