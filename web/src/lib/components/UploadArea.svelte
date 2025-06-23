@@ -1,4 +1,6 @@
 <script lang="ts">
+	import xxhash from "xxhash-wasm";
+
 	let fileInput: HTMLInputElement | null = null;
 	//const apiBase = import.meta.env.DEV ? 'http://localhost:8080' : '';
 	const apiBase = 'http://localhost/api';
@@ -23,10 +25,12 @@
 			return;
 		}
 
+		const uploadName = await getUploadName(file);
+
 		const res = await fetch(`${apiBase}/media/upload-url`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ filename: file.name })
+			body: JSON.stringify({ filename: uploadName })
 		});
 		if (!res.ok) {
 			console.warn(`Failed to get upload URL: ${res.status} ${res.statusText}`);
@@ -55,6 +59,16 @@
 
 	function trigger() {
 		fileInput?.click();
+	}
+
+	async function getUploadName(file: File): Promise<string> {
+		const hasher = await xxhash();
+		const arrayBuffer = await file.arrayBuffer();
+		const uint8 = new Uint8Array(arrayBuffer);
+		const hash = hasher.h64Raw(uint8).toString(16);
+
+		//add file size to reduce chances of hash collision
+		return hash + '_' + file.size + '.' + file.name.split('.').pop();
 	}
 </script>
 

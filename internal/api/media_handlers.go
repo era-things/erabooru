@@ -123,20 +123,13 @@ func uploadURLHandler(m *minio.Client, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		object, err := CreateMediaName(body.Filename)
-		if err != nil {
-			log.Printf("create media name: %v", err)
-			c.AbortWithStatus(http.StatusBadRequest)
-			return
-		}
-
-		url, err := m.PresignedPut(c.Request.Context(), cfg, object, time.Minute*15)
+		url, err := m.PresignedPut(c.Request.Context(), cfg, body.Filename, time.Minute*15)
 		if err != nil {
 			log.Printf("presign: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"url": url, "object": object})
+		c.JSON(http.StatusOK, gin.H{"url": url, "object": body.Filename})
 	}
 }
 
