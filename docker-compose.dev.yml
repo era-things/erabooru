@@ -13,6 +13,7 @@ services:
     command: ./scripts/dev.sh
     environment:
       - BLEVE_PATH=/data/bleve
+      - DEV_MODE=true
     volumes:
       - .:/app                      
       - bleve-index:/data/bleve

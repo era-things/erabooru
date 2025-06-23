@@ -6,9 +6,11 @@ import (
 
 	"era/booru/ent"
 	"era/booru/ent/hook"
+	"era/booru/ent/migrate"
 	_ "era/booru/ent/runtime"
 	"era/booru/internal/config"
 
+	"entgo.io/ent/dialect/sql/schema"
 	_ "github.com/lib/pq"
 )
 
@@ -21,7 +23,14 @@ func New(cfg *config.Config) (*ent.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := client.Schema.Create(context.Background()); err != nil {
+	opts := []schema.MigrateOption{}
+	if cfg.DevMode {
+		opts = append(opts,
+			migrate.WithDropColumn(true),
+			migrate.WithDropIndex(true),
+		)
+	}
+	if err := client.Schema.Create(context.Background(), opts...); err != nil {
 		return nil, err
 	}
 	client.Media.Use(hook.SyncBleve())
