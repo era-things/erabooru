@@ -2,20 +2,22 @@
 	/**
 	 * Page currently shown so we can highlight the active tab
 	 */
-	export let active: 'media' | 'upload' = 'media';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
+	import { PAGE_SIZE } from '$lib/constants';
 
-	let q = '';
+	let q: string = $state('');
+	let active: 'media' | 'upload' = $props();
+
 	onMount(() => {
 		q = get(page).url.searchParams.get('q') ?? '';
 	});
 
 	function search(event: Event) {
 		event.preventDefault();
-		goto(`/?q=${encodeURIComponent(q)}`);
+		goto(`/?q=${encodeURIComponent(q)}&page=1&page_size=${PAGE_SIZE}`);
 	}
 </script>
 
@@ -42,13 +44,13 @@
 			Upload
 		</a>
 		<form on:submit|preventDefault={search} class="mx-auto">
-			<input 
-				type="text" 
+			<input
+				type="text"
 				name="search"
 				placeholder="Search"
-				bind:value={q} 
-				class="rounded border px-2 py-1" 
-			 />
+				bind:value={q}
+				class="rounded border px-2 py-1"
+			/>
 		</form>
 	</nav>
 </div>

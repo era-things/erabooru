@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { xxhash128 }from "hash-wasm";
+	import { xxhash128 } from 'hash-wasm';
 
-	let fileInput: HTMLInputElement | null = null;
+	let fileInput: HTMLInputElement | null = $state(null);
 	//const apiBase = import.meta.env.DEV ? 'http://localhost:8080' : '';
 	const apiBase = 'http://localhost/api';
-       export let supportedTypes: string[] = [
-               'image/png',
-               'image/jpeg',
-               'image/jpg',
-               'image/gif',
-               'video/mp4',
-               'video/webm',
-               'video/x-msvideo',
-               'video/x-matroska'
-       ];
+	const supportedTypes: string[] = [
+		'image/png',
+		'image/jpeg',
+		'image/jpg',
+		'image/gif',
+		'video/mp4',
+		'video/webm',
+		'video/x-msvideo',
+		'video/x-matroska'
+	];
 
 	async function upload() {
 		const file = fileInput?.files?.[0];
@@ -67,7 +67,7 @@
 	async function getUploadName(file: File): Promise<string> {
 		const arrayBuffer = await file.arrayBuffer();
 		const uint8 = new Uint8Array(arrayBuffer);
-		const hash = await xxhash128(uint8)
+		const hash = await xxhash128(uint8);
 		return hash;
 	}
 </script>

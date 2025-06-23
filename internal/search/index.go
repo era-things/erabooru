@@ -75,33 +75,33 @@ func parseQuery(expr string) q.Query {
 
 // SearchMedia executes a query against the Bleve index and returns the matching
 // Media documents. It does not touch the Postgres database.
-func SearchMedia(expr string, limit int) ([]*ent.Media, error) {
-	if IDX == nil {
-		return nil, fmt.Errorf("index not open")
+func SearchMedia(expr string, limit, offset int) ([]*ent.Media, int, error) {
+        if IDX == nil {
+                return nil, 0, fmt.Errorf("index not open")
 	}
 	query := parseQuery(expr)
 	log.Printf("search query: %s", expr)
-	req := bleve.NewSearchRequestOptions(query, limit, 0, false)
+	req := bleve.NewSearchRequestOptions(query, limit, offset, false)
 	req.Fields = []string{"*"}
-	res, err := IDX.Search(req)
-	if err != nil {
-		return nil, err
+        res, err := IDX.Search(req)
+        if err != nil {
+                return nil, 0, err
 	}
 	items := make([]*ent.Media, 0, len(res.Hits))
 
-	for _, hit := range res.Hits {
+        for _, hit := range res.Hits {
 		var m ent.Media
 		b, err := json.Marshal(hit.Fields)
 		//log.Printf("search hit: %s", string(b))
-		if err != nil {
-			return nil, err
+                if err != nil {
+                        return nil, 0, err
 		}
-		if err := json.Unmarshal(b, &m); err != nil {
-			return nil, err
+                if err := json.Unmarshal(b, &m); err != nil {
+                        return nil, 0, err
 		}
 		items = append(items, &m)
-	}
-	return items, nil
+        }
+        return items, int(res.Total), nil
 }
 
 var IDX bleve.Index // global handle
