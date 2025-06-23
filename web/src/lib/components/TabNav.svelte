@@ -43,7 +43,7 @@
 		>
 			Upload
 		</a>
-		<form on:submit|preventDefault={search} class="mx-auto">
+		<form onsubmit={search} class="mx-auto">
 			<input
 				type="text"
 				name="search"
