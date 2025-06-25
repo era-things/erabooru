@@ -7,6 +7,7 @@ import (
 	_ "image/png"
 	"io"
 	"log"
+	"net/http"
 	"path"
 	"strings"
 	"time"
@@ -71,7 +72,9 @@ func (c *Client) PutPreviewJpeg(ctx context.Context, object string, reader io.Re
 
 // PresignedPut returns a presigned URL for uploading an object.
 func (c *Client) PresignedPut(ctx context.Context, cfg *config.Config, object string, expiry time.Duration) (string, error) {
-	u, err := c.PresignedPutObject(ctx, c.Bucket, object, expiry)
+	extra := http.Header{}
+	extra.Set("If-None-Match", "*")
+	u, err := c.PresignHeader(ctx, http.MethodPut, c.Bucket, object, expiry, nil, extra)
 	if err != nil {
 		return "", err
 	}

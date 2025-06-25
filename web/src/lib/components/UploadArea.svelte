@@ -45,20 +45,25 @@
 				method: 'PUT',
 				body: file,
 				headers: {
-					'Content-Type': file.type || 'application/octet-stream'
+					'Content-Type': file.type || 'application/octet-stream',
+					'If-None-Match': '*' 
 				}
 			});
-			if (!up.ok) {
-				alert('Upload failed');
-			} else {
-				alert('Upload successful');
-			}
-		} catch (error) {
-			console.error('Upload error:', error);
-		}
+            if (up.ok) {
+                alert('Upload successful');
+            } else if (up.status === 412) {
+                // 412 Precondition Failed = duplicate file
+                alert('File already exists (duplicate detected)');
+            } else {
+                alert(`Upload failed: ${up.status} ${up.statusText}`);
+            }
+        } catch (error) {
+            console.error('Upload error:', error);
+            alert('Upload failed due to network error');
+        }
 
-		fileInput!.value = '';
-	}
+        fileInput!.value = '';
+    }
 
 	function trigger() {
 		fileInput?.click();
@@ -74,8 +79,8 @@
 
 <div
 	class="cursor-pointer rounded border-2 border-dashed border-gray-300 p-8 text-center"
-	on:click={trigger}
-	on:keydown={(e) => e.key === 'Enter' && trigger()}
+	onclick={trigger}
+	onkeydown={(e) => e.key === 'Enter' && trigger()}
 	role="button"
 	aria-label="Upload file"
 	tabindex="0"
@@ -86,6 +91,6 @@
 		accept={supportedTypes.join(', ')}
 		class="hidden"
 		bind:this={fileInput}
-		on:change={upload}
+		onchange={upload}
 	/>
 </div>
