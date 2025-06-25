@@ -1,7 +1,7 @@
 <script lang="ts">
     import MediaCard from '../media/MediaCard.svelte';
     import type { MediaItem } from '$lib/types/media';
-    import { ElementRect } from "runed";
+    import { ElementSize } from "runed";
     import { browser } from '$app/environment';
 
     let { 
@@ -15,7 +15,7 @@
     }>();
 
     let el = $state<HTMLElement>();
-    const rect = new ElementRect(() => el);
+    const rect = new ElementSize(() => el);
 
 	let verticalSize = $derived.by(() => {
 		if (!browser || !rect.current) return 0;
