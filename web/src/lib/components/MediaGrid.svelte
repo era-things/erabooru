@@ -13,6 +13,7 @@
 	let media: MediaItem[] = $state([]);
 	let innerWidth = $state(0);
 	let mounted = $state(false);
+	let scrollY = $state(0);
 
 	let columnCount = $derived(Math.max(Math.floor(innerWidth / 300), 2));
 	let columnWidths = $derived(Array(columnCount).fill('1fr'));
@@ -51,6 +52,6 @@
 	});
 </script>
 
-<svelte:window bind:innerWidth />
+<svelte:window bind:innerWidth bind:scrollY />
 
-<Masonry items={media} {columnWidths} />
+<Masonry items={media} {columnWidths} scrollPosition={scrollY} />
