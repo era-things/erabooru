@@ -26,14 +26,13 @@ import (
 func main() {
 	log.Println("Loading config...")
 	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("error loading configuration: %v", err)
+	}
 
 	log.Println("Opening Bleve index...")
 	if err := search.OpenOrCreate(cfg.BlevePath); err != nil {
 		log.Fatalf("error initializing search index: %v", err)
-	}
-
-	if err != nil {
-		log.Fatalf("error loading configuration: %v", err)
 	}
 
 	log.Printf("Initializing MinIO client for bucket '%s'", cfg.MinioBucket)

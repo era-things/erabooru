@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -30,29 +31,30 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		DBHost:                getEnv("POSTGRES_HOST", "localhost"),
-		DBPort:                getEnv("POSTGRES_PORT", "5432"),
-		DBUser:                getEnv("POSTGRES_USER", "booru"),
-		DBPassword:            getEnv("POSTGRES_PASSWORD", "booru"),
-		DBName:                getEnv("POSTGRES_DB", "booru"),
-		MinioUser:             getEnv("MINIO_ROOT_USER", "minio"),
-		MinioPassword:         getEnv("MINIO_ROOT_PASSWORD", "minio123"),
-		MinioBucket:           getEnv("MINIO_BUCKET", "boorubucket"),
-		PreviewBucket:         getEnv("MINIO_PREVIEW_BUCKET", "previews"),
-		MinioInternalEndpoint: getEnv("MINIO_INTERNAL_ENDPOINT", "minio:9000"), // for SDK connection
-		MinioPublicHost:       getEnv("MINIO_PUBLIC_HOST", "localhost:9000"),   // for browser-facing host
-		MinioPublicPrefix:     getEnv("MINIO_PUBLIC_PREFIX", "/minio"),         // e.g., "/minio" for Caddy reverse proxy
-		BlevePath:             getEnv("BLEVE_PATH", "/data/bleve"),
-		MinioSSL:              getEnv("MINIO_SSL", "false") == "true",
-		VideoWorkerURL:        getEnv("VIDEO_WORKER_URL", "http://video-worker:8080"),
-		DevMode:               getEnv("DEV_MODE", "false") == "true",
+		DBHost:                getEnv("POSTGRES_HOST"),
+		DBPort:                getEnv("POSTGRES_PORT"),
+		DBUser:                getEnv("POSTGRES_USER"),
+		DBPassword:            getEnv("POSTGRES_PASSWORD"),
+		DBName:                getEnv("POSTGRES_DB"),
+		MinioUser:             getEnv("MINIO_ROOT_USER"),
+		MinioPassword:         getEnv("MINIO_ROOT_PASSWORD"),
+		MinioBucket:           getEnv("MINIO_BUCKET"),
+		PreviewBucket:         getEnv("MINIO_PREVIEW_BUCKET"),
+		MinioInternalEndpoint: getEnv("MINIO_INTERNAL_ENDPOINT"), // for SDK connection
+		MinioPublicHost:       getEnv("MINIO_PUBLIC_HOST"),       // for browser-facing host
+		MinioPublicPrefix:     getEnv("MINIO_PUBLIC_PREFIX"),     // e.g., "/minio" for Caddy reverse proxy
+		BlevePath:             getEnv("BLEVE_PATH"),
+		MinioSSL:              getEnv("MINIO_SSL") == "true",
+		VideoWorkerURL:        getEnv("VIDEO_WORKER_URL"),
+		DevMode:               getEnv("DEV_MODE") == "true",
 	}
 	return cfg, nil
 }
 
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+func getEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		panic(fmt.Sprintf("required environment variable %s is not set", key))
 	}
-	return fallback
+	return v
 }
