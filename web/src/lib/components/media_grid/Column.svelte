@@ -17,13 +17,6 @@
     let el = $state<HTMLElement>();
     const rect = new ElementSize(() => el);
 
-	let verticalSize = $derived.by(() => {
-		if (!browser || !rect.current) return 0;
-
-		return rect.height;
-	});
-
-	$inspect(verticalSize);
 
     // Calculate transform for bottom alignment effect
     let transform = $derived.by(() => {
