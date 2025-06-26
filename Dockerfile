@@ -18,6 +18,9 @@ RUN rm -rf internal/assets/build
 COPY --from=ui-build /src/web/build ./internal/assets/build
 RUN CGO_ENABLED=0 go build -o /erabooru ./cmd/server
 
+# Create the data directory structure in build stage
+RUN mkdir -p /tmp/data/bleve && chown -R 65532:65532 /tmp/data
+
 # ----- dev stage with Vite HMR -----
 FROM golang:1.24-bookworm AS dev
 RUN apt-get update && apt-get install -y curl && \
@@ -38,7 +41,7 @@ CMD ["go", "run", "./cmd/server"]
 FROM gcr.io/distroless/base-debian12 AS prod
 WORKDIR /
 COPY --from=server-build /erabooru /erabooru
-RUN mkdir -p /data/bleve && chown -R nonroot:nonroot /data
+COPY --from=server-build /tmp/data /data
 ENV BLEVE_PATH=/data/bleve
 USER nonroot:nonroot
 EXPOSE 8080
