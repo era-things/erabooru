@@ -53,6 +53,11 @@ if [[ ! -f .env ]]; then
     echo "✅ Created .env file"
 fi
 
+echo "→ Verifying .env file contents..."
+echo "POSTGRES_HOST from .env: $(grep POSTGRES_HOST .env || echo 'NOT FOUND')"
+echo "MINIO_ROOT_USER from .env: $(grep MINIO_ROOT_USER .env || echo 'NOT FOUND')"
+
+
 # ────────────────────────────────────────────────────────────────
 # 2. Download compose files
 # ────────────────────────────────────────────────────────────────
@@ -83,6 +88,7 @@ if docker compose -f docker-compose.yml -f docker-compose.pull.yml ps | grep -q 
     echo "   docker compose logs"
 else
     cat <<EOF
+    
 
 🟢 EraBooru is running!
 
@@ -96,3 +102,7 @@ Update later:
 
 EOF
 fi
+
+echo "→ Checking container environment..."
+sleep 5
+echo "Container POSTGRES_HOST: $(docker compose -f docker-compose.yml -f docker-compose.pull.yml exec app printenv POSTGRES_HOST 2>/dev/null || echo 'NOT SET')"
