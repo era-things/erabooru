@@ -1,5 +1,6 @@
 // Root layout-module — runs at build time, never in the browser
 export const prerender = true;
+export const ssr = false;
 
 /*
  * ── optional extras you can add later ─────────────────────────
