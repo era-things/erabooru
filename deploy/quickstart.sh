@@ -51,6 +51,10 @@ if [[ ! -f .env ]]; then
     echo "→ Creating .env file..."
     download_file "https://raw.githubusercontent.com/era-things/erabooru/main/.env.example" ".env"
     echo "✅ Created .env file"
+    
+    # Debug: Check immediately after download
+    echo "→ DEBUG: .env content immediately after download:"
+    grep -E "(POSTGRES_HOST|MINIO_ROOT_USER)" .env || echo "NOT FOUND"
 fi
 
 echo "→ Verifying .env file contents..."
