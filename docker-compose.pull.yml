@@ -1,0 +1,21 @@
+# docker-compose.prod.yml – only the diffs from the base file
+services:
+  app:
+    image: ghcr.io/era-things/erabooru-api:edge
+    build: null        # ← override “build:” away
+    depends_on:        # keep original deps
+      - db
+      - minio
+    volumes:
+      - bleve-index:/data/bleve    # named vol so any path works
+
+  video-worker:
+    image: ghcr.io/era-things/erabooru-video:edge
+    build: null
+
+  caddy:
+    ports:
+      - "80:80"        # publish only the HTTP port; TLS later
+
+volumes:
+  bleve-index:
