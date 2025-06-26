@@ -1,0 +1,103 @@
+# .github/workflows/ci-build-and-push.yml
+name: ci-build-and-push
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:            # allow the default GITHUB_TOKEN to push images
+  contents: read
+  packages: write
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+
+    env:                 # values that never change during the job
+      REGISTRY: ghcr.io
+      IMAGE_PREFIX: ${{ github.repository_owner }}/erabooru   # ghcr.io/<owner>/erabooru
+
+    steps:
+    # --------------------------------------------------------------
+    # 0) derive a 7-char commit id that later steps can reference
+    # --------------------------------------------------------------
+    - name: Set SHORT_SHA env var
+      id: vars
+      run: |
+        echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+    # --------------------------------------------------------------
+    # 1) checkout source
+    # --------------------------------------------------------------
+    - uses: actions/checkout@v4
+
+    # --------------------------------------------------------------
+    # 2) quality gates
+    # --------------------------------------------------------------
+    - name: Go vet & test
+      run: |
+        go vet ./...
+        go test ./...
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: npm
+        cache-dependency-path: web/package-lock.json
+
+    - name: Front-end check
+      run: |
+        cd web
+        npm ci
+        npm run check
+        npm run build
+
+    # --------------------------------------------------------------
+    # 3) multi-arch build tool-chain
+    # --------------------------------------------------------------
+    - uses: docker/setup-qemu-action@v3    # drop if you only need amd64
+    - uses: docker/setup-buildx-action@v3  # BuildKit driver
+
+    # --------------------------------------------------------------
+    # 4) log in to GHCR (token is injected automatically)
+    # --------------------------------------------------------------
+    - uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    # --------------------------------------------------------------
+    # 5) build & push API image
+    # --------------------------------------------------------------
+    - name: Build + push API
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: ./Dockerfile
+        target: prod
+        platforms: linux/amd64,linux/arm64   # adjust if ARM isn’t needed
+        push: ${{ github.event_name != 'pull_request' }} # don’t push from fork PRs
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-api:${{ env.SHORT_SHA }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-api:edge
+        cache-from: type=gha
+        cache-to:   type=gha,mode=max
+
+    # --------------------------------------------------------------
+    # 6) build & push video-worker image
+    # --------------------------------------------------------------
+    - name: Build + push video-worker
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: cmd/video_worker/Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-video:${{ env.SHORT_SHA }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-video:edge
+        cache-from: type=gha
+        cache-to:   type=gha,mode=max
