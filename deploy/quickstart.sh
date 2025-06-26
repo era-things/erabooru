@@ -64,6 +64,15 @@ download_file "https://raw.githubusercontent.com/era-things/erabooru/main/Caddyf
 # ────────────────────────────────────────────────────────────────
 # 3. Start services
 # ────────────────────────────────────────────────────────────────
+# Create bleve index directory with correct permissions
+echo "→ Setting up Bleve index directory..."
+mkdir -p bleve-index
+sudo chown -R 65532:65532 bleve-index || {
+    echo "⚠️  Could not set ownership with sudo, trying with current user..."
+    # Fallback: just ensure directory exists
+    chmod 755 bleve-index
+}
+
 echo "→ Pulling container images..."
 docker compose -f docker-compose.yml -f docker-compose.pull.yml pull
 

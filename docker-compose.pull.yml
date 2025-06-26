@@ -7,7 +7,7 @@ services:
       - db
       - minio
     volumes:
-      - bleve-index:/data/bleve    # named vol so any path works
+      - ./bleve-index:/data/bleve     # named vol so any path works
 
   video-worker:
     image: ghcr.io/era-things/erabooru-video:edge
@@ -16,6 +16,3 @@ services:
   caddy:
     ports:
       - "80:80"        # publish only the HTTP port; TLS later
-
-volumes:
-  bleve-index:
