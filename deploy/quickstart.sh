@@ -50,12 +50,7 @@ download_file() {
 if [[ ! -f .env ]]; then
     echo "→ Creating .env file..."
     download_file "https://raw.githubusercontent.com/era-things/erabooru/main/.env.example" ".env"
-    echo
-    echo "⚙️  Please edit $DEST/.env to set passwords and configuration."
-    echo "   Required: POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD"
-    echo ""
-    echo "   Then run this script again to start EraBooru."
-    exit 0
+    echo "✅ Created .env file"
 fi
 
 # ────────────────────────────────────────────────────────────────
@@ -97,7 +92,7 @@ else
 • Stop          → docker compose down
 
 Update later:
-  cd $DEST && ./quickstart.sh
+  cd $DEST && curl -fsSL https://raw.githubusercontent.com/era-things/erabooru/main/deploy/quickstart.sh | bash
 
 EOF
 fi
