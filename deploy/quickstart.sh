@@ -92,13 +92,36 @@ docker compose -f docker-compose.yml -f docker-compose.pull.yml pull
 echo "→ Starting erabooru..."
 docker compose -f docker-compose.yml -f docker-compose.pull.yml up -d
 
-echo "→ Waiting for services..."
-sleep 10
+# Wait longer and check if containers are actually ready
+echo "→ Waiting for services to initialize..."
+sleep 15  # Increased from 10
+
+# Wait for app container to be actually ready
+echo "→ Checking if app container is ready..."
+for i in {1..30}; do
+    if docker compose -f docker-compose.yml -f docker-compose.pull.yml exec -T app env | grep -q "POSTGRES_HOST=db"; then
+        echo "✅ App container is ready"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "⚠️  App container taking longer than expected to load configuration"
+        echo "   This is normal on Windows. Restarting app container..."
+        docker compose -f docker-compose.yml -f docker-compose.pull.yml restart app
+        sleep 10
+        break
+    fi
+    sleep 1
+done
 
 # ────────────────────────────────────────────────────────────────
 # 4. Show status
 # ────────────────────────────────────────────────────────────────
-IP=$(hostname -I | awk '{print $1}' || echo "localhost")
+# Cross-platform IP detection
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    IP="localhost"
+else
+    IP=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
+fi
 
 if docker compose -f docker-compose.yml -f docker-compose.pull.yml ps | grep -q "Exit"; then
     echo "❌ Some services failed to start. Check logs with:"
