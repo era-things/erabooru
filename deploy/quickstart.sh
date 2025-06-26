@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-#  EraBooru quick-start
+#  erabooru quick-start
 #
 #  curl -fsSL https://raw.githubusercontent.com/era-things/erabooru/main/deploy/quickstart.sh | bash
 #
@@ -8,7 +8,7 @@ set -euo pipefail
 
 DEST=${BOORU_HOME:-"$HOME/erabooru"}
 
-echo "🚀 EraBooru Quick Start"
+echo "erabooru quick start"
 echo "→ Using directory: $DEST"
 
 # Check dependencies
@@ -50,9 +50,15 @@ download_file() {
 if [[ ! -f .env ]]; then
     echo "→ Creating .env file..."
     download_file "https://raw.githubusercontent.com/era-things/erabooru/main/.env.example" ".env"
+    
+    # Ensure Unix line endings (important for Windows)
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+        sed -i 's/\r$//' .env
+    fi
+    
     echo "✅ Created .env file"
 else
-    echo "→ using existing .env file."
+    echo "→ Using existing .env file."
 fi
 
 echo "→ Verifying .env file contents..."
@@ -83,7 +89,7 @@ sudo chown -R 65532:65532 bleve-index || {
 echo "→ Pulling container images..."
 docker compose -f docker-compose.yml -f docker-compose.pull.yml pull
 
-echo "→ Starting EraBooru..."
+echo "→ Starting erabooru..."
 docker compose -f docker-compose.yml -f docker-compose.pull.yml up -d
 
 echo "→ Waiting for services..."
@@ -101,7 +107,7 @@ else
     cat <<EOF
     
 
-🟢 EraBooru is running!
+🟢 erabooru is running!
 
 • Main app       → http://$IP
 • MinIO console  → http://$IP/minio
@@ -113,7 +119,3 @@ Update later:
 
 EOF
 fi
-
-echo "→ Checking container environment..."
-sleep 5
-echo "Container POSTGRES_HOST: $(docker compose -f docker-compose.yml -f docker-compose.pull.yml exec app printenv POSTGRES_HOST 2>/dev/null || echo 'NOT SET')"
