@@ -3,11 +3,6 @@ services:
   app:
     image: ghcr.io/era-things/erabooru-api:latest
     build: null       
-    env_file:          
-      - .env
-    depends_on:        # keep original deps
-      - db
-      - minio
     volumes:
       - ./bleve-index:/data/bleve     # named vol so any path works
 
