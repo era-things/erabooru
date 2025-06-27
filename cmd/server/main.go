@@ -67,7 +67,7 @@ func main() {
 
 	log.Println("Starting Gin server on :8080")
 	r.Run(":8080")
-	log.Printf("Server running on http://localhost:8080")
+	log.Printf("Server running on :8080")
 
 }
 
