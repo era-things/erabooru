@@ -2,8 +2,8 @@
 	import { xxhash128 } from 'hash-wasm';
 
 	let fileInput: HTMLInputElement | null = $state(null);
-	//const apiBase = import.meta.env.DEV ? 'http://localhost:8080' : '';
-	const apiBase = 'http://localhost/api';
+	import { apiBase } from '$lib/config';
+
 	const supportedTypes: string[] = [
 		'image/png',
 		'image/jpeg',
@@ -27,14 +27,14 @@
 
 		const uploadName = await getUploadName(file);
 
-		const res = await fetch(`${apiBase}/media/upload-url`, {
+		const res = await fetch(`/api/media/upload-url`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ filename: uploadName })
 		});
 		if (!res.ok) {
 			console.warn(`Failed to get upload URL: ${res.status} ${res.statusText}`);
-			alert(`Failed to get upload URL from ${apiBase}/media/upload-url`);
+			alert(`Failed to get upload URL from /api/media/upload-url`);
 			return;
 		}
 

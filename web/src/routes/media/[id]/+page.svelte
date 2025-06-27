@@ -4,6 +4,7 @@
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import TabNav from '$lib/components/TabNav.svelte';
+	import { apiBase } from '$lib/config';
 
 	interface MediaDetail {
 		id: number;
@@ -18,7 +19,6 @@
 	let media: MediaDetail | null = null;
 	let tagsInput = '';
 	let edit = false;
-	const apiBase = 'http://localhost/api';
 
 	onMount(async () => {
 		const id = get(page).params.id;
