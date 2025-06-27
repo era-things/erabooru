@@ -27,7 +27,7 @@
 
 		const uploadName = await getUploadName(file);
 
-		const res = await fetch(`/api/media/upload-url`, {
+		const res = await fetch(`${apiBase}/media/upload-url`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ filename: uploadName })

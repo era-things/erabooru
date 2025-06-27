@@ -1,4 +1,4 @@
-http://localhost {
+:80 {
     handle /api/* {
         reverse_proxy app:8080
     }
@@ -11,6 +11,9 @@ http://localhost {
         }
     }
 
+    handle /* {
+        reverse_proxy app:8080
+    }
 
     respond "Not Found" 404
 }
