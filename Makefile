@@ -17,9 +17,15 @@ dev:
 
 .PHONY: prod
 prod:
-	docker-compose build app
-	docker-compose up -d app
+	docker-compose build app video-worker
+	docker-compose up
+	@echo "🟢  Production services up  |  Access → http://localhost"
 
+.PHONY: prod-pull
+prod-pull:
+	docker-compose -f docker-compose.yml -f docker-compose.pull.yml pull
+	docker-compose -f docker-compose.yml -f docker-compose.pull.yml up
+	@echo "🟢  Production services up  |  Access → http://localhost"
 # ──────────────────────────────────────────
 # BACK-END  (Go + Ent)
 # ──────────────────────────────────────────

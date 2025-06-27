@@ -36,6 +36,13 @@ services:
         mc mb --ignore-existing local/previews
         mc anonymous set download local/previews
       "
+  
+  bleve-init:
+    image: alpine:3.20
+    volumes:
+      - ./bleve-index:/data/bleve
+    command: ["sh", "-c", "mkdir -p /data/bleve && chown -R 65532:65532 /data/bleve && chmod -R 755 /data/bleve"]
+    user: root
 
   caddy:
     image: caddy:2
@@ -59,8 +66,10 @@ services:
       - db
       - minio
       - caddy
+      - bleve-init
     ports:
       - "8080:8080"
+      
   video-worker:
     image: booru:video-worker
     build:
