@@ -77,56 +77,11 @@ download_file "https://raw.githubusercontent.com/era-things/erabooru/main/Caddyf
 # ────────────────────────────────────────────────────────────────
 # 3. Start services
 # ────────────────────────────────────────────────────────────────
-# Create bleve index directory with correct permissions
-echo "→ Setting up Bleve index directory..."
-mkdir -p bleve-index
-if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-    # sudo is available and works
-    echo "→ Setting ownership with sudo..."
-    sudo chown -R 65532:65532 bleve-index
-elif [[ $(id -u) -eq 0 ]]; then
-    # Running as root
-    echo "→ Setting ownership as root..."
-    chown -R 65532:65532 bleve-index
-else
-    # No sudo available or not root - use alternative approach
-    echo "⚠️  No sudo available. Using alternative permissions approach..."
-    
-    # Make directory world-writable as fallback
-    chmod 777 bleve-index
-    
-    # Try to create the index with current user first, then fix ownership in container
-    echo "→ Will fix permissions after container starts..."
-    NEED_PERMISSION_FIX=true
-fi
-
 echo "→ Pulling container images..."
 docker compose -f docker-compose.yml -f docker-compose.pull.yml pull
 
 echo "→ Starting erabooru..."
 docker compose -f docker-compose.yml -f docker-compose.pull.yml up -d
-
-# Wait longer and check if containers are actually ready
-echo "→ Waiting for services to initialize..."
-sleep 15  # Increased from 10
-
-# Fix permissions if needed
-if [[ "${NEED_PERMISSION_FIX:-false}" == "true" ]]; then
-    echo "→ Fixing Bleve index permissions in container..."
-    
-    # Stop app temporarily
-    docker compose -f docker-compose.yml -f docker-compose.pull.yml stop app
-    
-    # Run a temporary container to fix permissions
-    docker compose -f docker-compose.yml -f docker-compose.pull.yml run --rm --user root app sh -c "
-        chown -R 65532:65532 /data/bleve
-        chmod -R 755 /data/bleve
-    " || echo "⚠️  Could not fix permissions in container"
-    
-    # Start app again
-    docker compose -f docker-compose.yml -f docker-compose.pull.yml start app
-    sleep 5
-fi
 
 # ────────────────────────────────────────────────────────────────
 # 4. Show status
@@ -148,7 +103,6 @@ else
 🟢 erabooru is running!
 
 • Main app       → http://$IP
-• MinIO console  → http://$IP/minio
 • Logs          → docker compose logs
 • Stop          → docker compose down
 
