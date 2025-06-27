@@ -21,3 +21,13 @@ func CORSMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+func GinLogger() gin.HandlerFunc {
+	skipPaths := []string{
+		"/health",
+	}
+
+	return gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: skipPaths,
+	})
+}

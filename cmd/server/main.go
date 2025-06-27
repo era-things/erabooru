@@ -59,7 +59,13 @@ func main() {
 	})
 
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery(), api.CORSMiddleware())
+	r.Use(api.GinLogger(), gin.Recovery(), api.CORSMiddleware())
+
+	// Add health check endpoint
+	r.GET("/health", func(c *gin.Context) {
+		// 204 No Content response
+		c.Status(http.StatusNoContent)
+	})
 
 	// Register API routes
 	api.RegisterMediaRoutes(r, database, m, cfg)
