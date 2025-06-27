@@ -128,18 +128,17 @@ if [[ "${NEED_PERMISSION_FIX:-false}" == "true" ]]; then
     sleep 5
 fi
 
-# Wait for app container to be actually ready
-echo "→ Checking if app container is ready..."
+# Wait for app to respond to HTTP requests
+echo "→ Waiting for app to be ready..."
 for i in {1..15}; do
-    if docker compose -f docker-compose.yml -f docker-compose.pull.yml exec -T app env | grep -q "POSTGRES_HOST=db"; then
-        echo "✅ App container is ready"
+    if curl -s http://localhost/ >/dev/null 2>&1; then
+        echo "✅ App is ready"
         break
     fi
     if [ $i -eq 15 ]; then
-        echo "⚠️  App container taking longer than expected to load configuration"
-        echo "   This is normal on Windows. Restarting app container..."
+        echo "⚠️  App taking longer than expected. Restarting..."
         docker compose -f docker-compose.yml -f docker-compose.pull.yml restart app
-        sleep 10
+        sleep 5
         break
     fi
     sleep 2
