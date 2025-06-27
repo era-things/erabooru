@@ -1,15 +1,21 @@
-# docker-compose.prod.yml – only the diffs from the base file
+# docker-compose.pull.yml
 services:
   app:
     image: ghcr.io/era-things/erabooru-api:latest
     build: null       
     env_file:          
       - .env
-    depends_on:        # keep original deps
-      - db
-      - minio
+    depends_on:        
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      caddy:
+        condition: service_started
+      bleve-init:
+        condition: service_completed_successfully
     volumes:
-      - ./bleve-index:/data/bleve     # named vol so any path works
+      - ./bleve-index:/data/bleve
 
   video-worker:
     image: ghcr.io/era-things/erabooru-video:latest
@@ -17,4 +23,4 @@ services:
 
   caddy:
     ports:
-      - "80:80"        # publish only the HTTP port; TLS later
+      - "80:80"
