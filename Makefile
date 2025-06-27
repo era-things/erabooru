@@ -3,7 +3,6 @@
 # ──────────────────────────────────────────
 GO        ?= go
 WEB_DIR   ?= web
-ASSET_DIR ?= internal/assets
 BIN_DIR   ?= bin
 
 
@@ -12,33 +11,33 @@ BIN_DIR   ?= bin
 # ──────────────────────────────────────────
 .PHONY: setup-env
 setup-env:
-    @if [ ! -f .env ]; then \
-        echo "→ Creating .env file from .env.example..."; \
-        cp .env.example .env; \
-        echo "✅ Created .env file. You may want to edit it before continuing."; \
-    fi
+	@if [ ! -f .env ]; then \
+		echo "→ Creating .env file from .env.example..."; \
+		cp .env.example .env; \
+		echo "✅ Created .env file. You may want to edit it before continuing."; \
+	fi
 
 .PHONY: prepare
 prepare: setup-env
-    @echo "→ Installing frontend dependencies..."
-    cd $(WEB_DIR) && npm install
-    @echo "→ Downloading Go modules..."
-    $(GO) mod download
-    @echo "→ Generating Ent schema..."
-    $(GO) generate ./ent
-    @echo "✅ All dependencies installed and schemas generated"
-    @echo ""
-    @echo "🟢 Ready for development! You can now run:"
-    @echo "   make dev    # Start development servers"
-    @echo "   make prod   # Build and start production"
+	@echo "→ Installing frontend dependencies..."
+	cd $(WEB_DIR) && npm install
+	@echo "→ Downloading Go modules..."
+	$(GO) mod download
+	@echo "→ Generating Ent schema..."
+	$(GO) generate ./ent
+	@echo "✅ All dependencies installed and schemas generated"
+	@echo ""
+	@echo "🟢 Ready for development! You can now run:"
+	@echo "   make dev    # Start development servers"
+	@echo "   make prod   # Build and start production"
 
 # ──────────────────────────────────────────
 # BUILD
 # ──────────────────────────────────────────
 .PHONY: dev
 dev: setup-env
-    docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build --remove-orphans
-    @echo "🟢  Dev services up  |  API → http://localhost:8080  UI (vite) → http://localhost:5173"
+	docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build --remove-orphans
+	@echo "🟢  Dev services up  |  API → http://localhost:8080  UI (vite) → http://localhost:5173"
 
 .PHONY: prod
 prod:
@@ -70,11 +69,11 @@ test:
 # ──────────────────────────────────────────
 .PHONY: clean
 clean:
-    rm -rf $(BIN_DIR) $(ASSET_DIR)/build $(WEB_DIR)/.svelte-kit/output
-    @echo "🧹  Cleaned build artifacts"
+	rm -rf $(BIN_DIR) $(WEB_DIR)/.svelte-kit/output
+	@echo "🧹  Cleaned build artifacts"
 
 .PHONY: clean-all
 clean-all: clean
-    docker-compose down -v
-    sudo rm -rf bleve-index minio-data
-    @echo "🧹  Cleaned everything including Docker volumes"
+	docker-compose down -v
+	sudo rm -rf bleve-index minio-data
+	@echo "🧹  Cleaned everything including Docker volumes"
