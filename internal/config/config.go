@@ -40,9 +40,9 @@ func Load() (*Config, error) {
 		MinioPassword:         getEnv("MINIO_ROOT_PASSWORD"),
 		MinioBucket:           getEnv("MINIO_BUCKET"),
 		PreviewBucket:         getEnv("MINIO_PREVIEW_BUCKET"),
-		MinioInternalEndpoint: getEnv("MINIO_INTERNAL_ENDPOINT"), // for SDK connection
-		MinioPublicHost:       getEnv("MINIO_PUBLIC_HOST"),       // for browser-facing host
-		MinioPublicPrefix:     getEnv("MINIO_PUBLIC_PREFIX"),     // e.g., "/minio" for Caddy reverse proxy
+		MinioInternalEndpoint: getEnv("MINIO_INTERNAL_ENDPOINT"),        // for SDK connection
+		MinioPublicHost:       getEnvOrDefault("MINIO_PUBLIC_HOST", ""), // for browser-facing host
+		MinioPublicPrefix:     getEnv("MINIO_PUBLIC_PREFIX"),            // e.g., "/minio" for Caddy reverse proxy
 		BlevePath:             getEnv("BLEVE_PATH"),
 		MinioSSL:              getEnv("MINIO_SSL") == "true",
 		VideoWorkerURL:        getEnv("VIDEO_WORKER_URL"),
@@ -55,6 +55,14 @@ func getEnv(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
 		panic(fmt.Sprintf("required environment variable %s is not set", key))
+	}
+	return v
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultValue
 	}
 	return v
 }

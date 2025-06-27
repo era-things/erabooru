@@ -79,9 +79,18 @@ func (c *Client) PresignedPut(ctx context.Context, cfg *config.Config, object st
 		return "", err
 	}
 
-	// Rewrite for browser upload
+	// If MinioPublicHost is empty, return relative URL
+	if cfg.MinioPublicHost == "" {
+		// Clear scheme and host to make it relative
+		u.Scheme = ""
+		u.Host = ""
+		u.Path = path.Join(cfg.MinioPublicPrefix, u.Path)
+		return u.String(), nil
+	}
+
+	// Otherwise, use the configured host
 	u.Host = cfg.MinioPublicHost
-	u.Path = path.Join(cfg.MinioPublicPrefix, u.Path) // safe join
+	u.Path = path.Join(cfg.MinioPublicPrefix, u.Path)
 	return u.String(), nil
 }
 
@@ -92,9 +101,18 @@ func (c *Client) PresignedGet(ctx context.Context, cfg *config.Config, object st
 		return "", err
 	}
 
-	// Rewrite for browser download
+	// If MinioPublicHost is empty, return relative URL
+	if cfg.MinioPublicHost == "" {
+		// Clear scheme and host to make it relative
+		u.Scheme = ""
+		u.Host = ""
+		u.Path = path.Join(cfg.MinioPublicPrefix, u.Path)
+		return u.String(), nil
+	}
+
+	// Otherwise, use the configured host
 	u.Host = cfg.MinioPublicHost
-	u.Path = path.Join(cfg.MinioPublicPrefix, u.Path) // safe join
+	u.Path = path.Join(cfg.MinioPublicPrefix, u.Path)
 	return u.String(), nil
 }
 

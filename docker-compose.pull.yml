@@ -1,7 +1,7 @@
 # docker-compose.prod.yml – only the diffs from the base file
 services:
   app:
-    image: ghcr.io/era-things/erabooru-api:edge
+    image: ghcr.io/era-things/erabooru-api:latest
     build: null       
     env_file:          
       - .env
@@ -12,7 +12,7 @@ services:
       - ./bleve-index:/data/bleve     # named vol so any path works
 
   video-worker:
-    image: ghcr.io/era-things/erabooru-video:edge
+    image: ghcr.io/era-things/erabooru-video:latest
     build: null
 
   caddy:
