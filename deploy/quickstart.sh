@@ -83,10 +83,6 @@ docker compose -f docker-compose.yml -f docker-compose.pull.yml pull
 echo "→ Starting erabooru..."
 docker compose -f docker-compose.yml -f docker-compose.pull.yml up -d
 
-# Wait longer and check if containers are actually ready
-echo "→ Waiting for services to initialize..."
-sleep 30
-
 # ────────────────────────────────────────────────────────────────
 # 4. Show status
 # ────────────────────────────────────────────────────────────────
@@ -107,7 +103,6 @@ else
 🟢 erabooru is running!
 
 • Main app       → http://$IP
-• MinIO console  → http://$IP/minio
 • Logs          → docker compose logs
 • Stop          → docker compose down
 
