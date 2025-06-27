@@ -3,6 +3,17 @@ name: ci-build-and-push
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - '*.md'
+      - 'docker-compose*.yml'
+      - 'deploy/quickstart.sh'
+      - '.gitignore'
+      - '.env.example'
+      - 'Makefile'
+      - '.dockerignore'
+      - 'LICENSE'
 
 permissions:
   contents: read
