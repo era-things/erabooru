@@ -3,7 +3,6 @@
 # ──────────────────────────────────────────
 GO        ?= go
 WEB_DIR   ?= web
-ASSET_DIR ?= internal/assets
 BIN_DIR   ?= bin
 
 
@@ -70,7 +69,7 @@ test:
 # ──────────────────────────────────────────
 .PHONY: clean
 clean:
-	rm -rf $(BIN_DIR) $(ASSET_DIR)/build $(WEB_DIR)/.svelte-kit/output
+	rm -rf $(BIN_DIR) $(WEB_DIR)/.svelte-kit/output
 	@echo "🧹  Cleaned build artifacts"
 
 .PHONY: clean-all
