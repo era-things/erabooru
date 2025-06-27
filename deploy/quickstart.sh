@@ -128,22 +128,6 @@ if [[ "${NEED_PERMISSION_FIX:-false}" == "true" ]]; then
     sleep 5
 fi
 
-# Wait for app to respond to HTTP requests
-echo "→ Waiting for app to be ready..."
-for i in {1..15}; do
-    if curl -s http://localhost/ >/dev/null 2>&1; then
-        echo "✅ App is ready"
-        break
-    fi
-    if [ $i -eq 15 ]; then
-        echo "⚠️  App taking longer than expected. Restarting..."
-        docker compose -f docker-compose.yml -f docker-compose.pull.yml restart app
-        sleep 5
-        break
-    fi
-    sleep 2
-done
-
 # ────────────────────────────────────────────────────────────────
 # 4. Show status
 # ────────────────────────────────────────────────────────────────
