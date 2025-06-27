@@ -28,35 +28,35 @@ func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *co
 }
 
 func listMediaHandler(cfg *config.Config) gin.HandlerFunc {
-	return listCommon(cfg.MinioBucket, cfg.MinioBucket)
+	return listCommon(cfg.MinioPublicPrefix, cfg.MinioBucket, cfg.MinioBucket)
 }
 
 func listPreviewsHandler(cfg *config.Config) gin.HandlerFunc {
 	//for now, image previews are just original full-size images
-	return listCommon(cfg.PreviewBucket, cfg.MinioBucket)
+	return listCommon(cfg.MinioPublicPrefix, cfg.PreviewBucket, cfg.MinioBucket)
 }
 
-func listCommon(videoBucket string, pictureBucket string) gin.HandlerFunc {
+func listCommon(minioPrefix string, videoBucket string, pictureBucket string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		q := c.Query("q")
 		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 		if err != nil || page < 1 {
 			page = 1
 		}
-               pageSize, err := strconv.Atoi(c.DefaultQuery("page_size", "60"))
-               if err != nil || pageSize < 1 {
-                       pageSize = 60
-               }
-               if pageSize > 60 {
-                       pageSize = 60
-               }
-               offset := (page - 1) * pageSize
-               items, total, err := search.SearchMedia(q, pageSize, offset)
-               if err != nil {
-                       log.Printf("search media: %v", err)
-                       c.AbortWithStatus(http.StatusInternalServerError)
-                       return
-               }
+		pageSize, err := strconv.Atoi(c.DefaultQuery("page_size", "60"))
+		if err != nil || pageSize < 1 {
+			pageSize = 60
+		}
+		if pageSize > 60 {
+			pageSize = 60
+		}
+		offset := (page - 1) * pageSize
+		items, total, err := search.SearchMedia(q, pageSize, offset)
+		if err != nil {
+			log.Printf("search media: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
 		out := make([]gin.H, len(items))
 
 		for i, mitem := range items {
@@ -70,7 +70,7 @@ func listCommon(videoBucket string, pictureBucket string) gin.HandlerFunc {
 				bucket = pictureBucket
 			}
 
-			url := fmt.Sprintf("http://localhost/minio/%s/%s", bucket, key)
+			url := fmt.Sprintf("%s/%s/%s", minioPrefix, bucket, key)
 			out[i] = gin.H{
 				"id":     mitem.ID,
 				"url":    url,
@@ -79,8 +79,8 @@ func listCommon(videoBucket string, pictureBucket string) gin.HandlerFunc {
 				"format": mitem.Format,
 			}
 		}
-               c.JSON(http.StatusOK, gin.H{"media": out, "total": total})
-       }
+		c.JSON(http.StatusOK, gin.H{"media": out, "total": total})
+	}
 }
 
 func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.HandlerFunc {
@@ -104,7 +104,7 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 			return
 		}
 
-		url := fmt.Sprintf("http://localhost/minio/%s/%s", cfg.MinioBucket, string(id))
+		url := fmt.Sprintf("%s/%s/%s", cfg.MinioPublicPrefix, cfg.MinioBucket, string(id))
 		tags := make([]string, len(item.Edges.Tags))
 		for i, t := range item.Edges.Tags {
 			tags[i] = t.Name
