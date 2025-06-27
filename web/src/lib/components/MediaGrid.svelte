@@ -3,8 +3,7 @@
 	import Masonry from './media_grid/Masonry.svelte'; // Masonry component
 	import type { MediaItem } from '$lib/types/media';
 	import { PAGE_SIZE } from '$lib/constants';
-
-	const apiBase = 'http://localhost/api';
+	import { apiBase } from '$lib/config';
 
 	let { query = '', page = 1, pageSize = Number(PAGE_SIZE), total = $bindable(1) } = $props();
 	let lastQuery: string = $state('');
