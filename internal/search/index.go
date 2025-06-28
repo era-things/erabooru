@@ -130,6 +130,7 @@ func IndexMedia(m *ent.Media) error {
 	if IDX == nil {
 		return fmt.Errorf("index not open")
 	}
+	log.Printf("indexing media %s", m.ID)
 	doc := struct {
 		ent.Media
 		Tags []string `json:"tags"`
@@ -175,16 +176,96 @@ func IndexAllMedia(ctx context.Context, db *ent.Client) error {
 	return nil
 }
 
-// Rebuild deletes the existing index and recreates it from database data.
+// Rebuild intelligently rebuilds the index - uses soft rebuild if index exists with content,
+// otherwise ensures index exists and reindexes all media
 func Rebuild(ctx context.Context, db *ent.Client, path string) error {
-	if err := Close(); err != nil {
-		return err
+	log.Printf("Starting intelligent index rebuild at path: %s", path)
+
+	// If index is not open, try to open/create it
+	if IDX == nil {
+		log.Printf("Index not open, attempting to open/create...")
+		if err := OpenOrCreate(path); err != nil {
+			return fmt.Errorf("failed to open/create index: %v", err)
+		}
 	}
-	if err := os.RemoveAll(path); err != nil {
-		return err
+
+	// Check if index has any content
+	query := bleve.NewMatchAllQuery()
+	req := bleve.NewSearchRequestOptions(query, 1, 0, false) // Just need to check if anything exists
+	result, err := IDX.Search(req)
+
+	if err != nil {
+		log.Printf("Index search failed (possibly corrupted), reindexing all: %v", err)
+		return IndexAllMedia(ctx, db)
 	}
-	if err := OpenOrCreate(path); err != nil {
-		return err
+
+	if result.Total == 0 {
+		log.Printf("Index is empty, reindexing all media...")
+		return IndexAllMedia(ctx, db)
 	}
+
+	// Index has content, use soft rebuild
+	log.Printf("Index has %d documents, performing soft rebuild...", result.Total)
+	return SoftRebuild(ctx, db)
+}
+
+// SoftRebuild clears the existing index and repopulates it without removing files
+func SoftRebuild(ctx context.Context, db *ent.Client) error {
+	if IDX == nil {
+		return fmt.Errorf("index not open")
+	}
+
+	log.Printf("Starting soft rebuild (clearing and repopulating existing index)...")
+
+	// Clear all documents in batches to handle arbitrary amounts
+	if err := clearAllDocuments(); err != nil {
+		return fmt.Errorf("failed to clear existing documents: %v", err)
+	}
+
+	// Reindex all media
+	log.Printf("Reindexing all media...")
 	return IndexAllMedia(ctx, db)
+}
+
+// clearAllDocuments removes all documents from the index in batches
+func clearAllDocuments() error {
+	const batchSize = 1000
+
+	for {
+		// Get a batch of document IDs
+		query := bleve.NewMatchAllQuery()
+		req := bleve.NewSearchRequestOptions(query, batchSize, 0, false)
+		req.Fields = []string{} // We only need IDs
+
+		result, err := IDX.Search(req)
+		if err != nil {
+			return fmt.Errorf("failed to search documents: %v", err)
+		}
+
+		// If no more documents, we're done
+		if len(result.Hits) == 0 {
+			log.Printf("All documents cleared from index")
+			break
+		}
+
+		// Create batch for deletion
+		batch := IDX.NewBatch()
+		for _, hit := range result.Hits {
+			batch.Delete(hit.ID)
+		}
+
+		// Execute the batch deletion
+		log.Printf("Deleting batch of %d documents...", len(result.Hits))
+		if err := IDX.Batch(batch); err != nil {
+			return fmt.Errorf("failed to execute batch deletion: %v", err)
+		}
+
+		// If we got fewer results than requested, we're done
+		if len(result.Hits) < batchSize {
+			log.Printf("All documents cleared from index")
+			break
+		}
+	}
+
+	return nil
 }
