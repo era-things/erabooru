@@ -4,6 +4,10 @@ volumes:
   bleve-index:
 
 services:
+  caddy:
+    volumes:
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+
   # ────────── App (dev) ──────────
   app:
     image: booru:dev
@@ -20,6 +24,12 @@ services:
     ports:
       - "5173:5173"
       - "8080:8080"
+
+  # ────────── Override bleve-init for dev ──────────
+  bleve-init:
+    volumes:
+      - bleve-index:/data/bleve 
+
 
   # ────────── pgweb ──────────
   pgweb:

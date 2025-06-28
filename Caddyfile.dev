@@ -1,0 +1,25 @@
+:80 {
+    handle /api/* {
+        reverse_proxy app:8080
+    }
+
+    handle_path /minio/* {
+        header Cache-Control "no-cache, no-store, must-revalidate"
+        reverse_proxy minio:9000 {
+            header_up Host {http.reverse_proxy.upstream.hostport}
+            flush_interval -1
+        }
+    }
+
+    handle /* {
+        reverse_proxy app:5173 {  # ← Development: Vite dev server
+            # Support WebSocket for Vite HMR
+            header_up Upgrade {>Upgrade}
+            header_up Connection {>Connection}
+            header_up Sec-WebSocket-Key {>Sec-WebSocket-Key}
+            header_up Sec-WebSocket-Version {>Sec-WebSocket-Version}
+        }
+    }
+
+    respond "Not Found" 404
+}

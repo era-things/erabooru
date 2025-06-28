@@ -1,5 +1,14 @@
 version: '3'
 services:
+  caddy:
+    image: caddy:2
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - minio
+
   db:
     image: postgres:15
     environment:
@@ -48,15 +57,6 @@ services:
       - ./bleve-index:/data/bleve
     command: ["sh", "-c", "mkdir -p /data/bleve && chown -R 65532:65532 /data/bleve && chmod -R 755 /data/bleve"]
     user: root
-
-  caddy:
-    image: caddy:2
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-    ports:
-      - "80:80"
-    depends_on:
-      - minio
 
   app:
     image: booru:prod
