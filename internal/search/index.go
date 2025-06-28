@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -76,32 +77,32 @@ func parseQuery(expr string) q.Query {
 // SearchMedia executes a query against the Bleve index and returns the matching
 // Media documents. It does not touch the Postgres database.
 func SearchMedia(expr string, limit, offset int) ([]*ent.Media, int, error) {
-        if IDX == nil {
-                return nil, 0, fmt.Errorf("index not open")
+	if IDX == nil {
+		return nil, 0, fmt.Errorf("index not open")
 	}
 	query := parseQuery(expr)
 	log.Printf("search query: %s", expr)
 	req := bleve.NewSearchRequestOptions(query, limit, offset, false)
 	req.Fields = []string{"*"}
-        res, err := IDX.Search(req)
-        if err != nil {
-                return nil, 0, err
+	res, err := IDX.Search(req)
+	if err != nil {
+		return nil, 0, err
 	}
 	items := make([]*ent.Media, 0, len(res.Hits))
 
-        for _, hit := range res.Hits {
+	for _, hit := range res.Hits {
 		var m ent.Media
 		b, err := json.Marshal(hit.Fields)
 		//log.Printf("search hit: %s", string(b))
-                if err != nil {
-                        return nil, 0, err
+		if err != nil {
+			return nil, 0, err
 		}
-                if err := json.Unmarshal(b, &m); err != nil {
-                        return nil, 0, err
+		if err := json.Unmarshal(b, &m); err != nil {
+			return nil, 0, err
 		}
 		items = append(items, &m)
-        }
-        return items, int(res.Total), nil
+	}
+	return items, int(res.Total), nil
 }
 
 var IDX bleve.Index // global handle
@@ -148,4 +149,42 @@ func DeleteMedia(id string) error {
 		return fmt.Errorf("index not open")
 	}
 	return IDX.Delete(string(id))
+}
+
+// Close closes the Bleve index handle if open.
+func Close() error {
+	if IDX != nil {
+		err := IDX.Close()
+		IDX = nil
+		return err
+	}
+	return nil
+}
+
+// IndexAllMedia indexes all media records from the database.
+func IndexAllMedia(ctx context.Context, db *ent.Client) error {
+	items, err := db.Media.Query().WithTags().All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, m := range items {
+		if err := IndexMedia(m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Rebuild deletes the existing index and recreates it from database data.
+func Rebuild(ctx context.Context, db *ent.Client, path string) error {
+	if err := Close(); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(path); err != nil {
+		return err
+	}
+	if err := OpenOrCreate(path); err != nil {
+		return err
+	}
+	return IndexAllMedia(ctx, db)
 }
