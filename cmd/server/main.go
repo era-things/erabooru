@@ -69,6 +69,7 @@ func main() {
 
 	// Register API routes
 	api.RegisterMediaRoutes(r, database, m, cfg)
+	api.RegisterAdminRoutes(r, database, cfg)
 	api.RegisterStaticRoutes(r)
 
 	log.Println("Starting Gin server on :8080")
