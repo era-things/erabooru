@@ -2,6 +2,7 @@
 # Vars (override with make VAR=foo)
 # ──────────────────────────────────────────
 GO        ?= go
+GOA_ENV   := PATH="$(HOME)/go/bin:$$PATH"
 WEB_DIR   ?= web
 BIN_DIR   ?= bin
 
@@ -56,6 +57,7 @@ prod-pull:
 .PHONY: generate
 generate:
 	$(GO) generate ./ent
+	$(GOA_ENV) goa gen era/booru/design
 
 .PHONY: vet test
 vet:
