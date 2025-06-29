@@ -59,9 +59,9 @@ generate: generate-go generate-ts
 
 .PHONY: generate-go
 generate-go:
-	@echo "→ Generating Go code..."
-	$(GO) generate ./ent
-	$(GOA_ENV) goa gen era/booru/design
+    @echo "→ Generating Go code..."
+    $(GO) generate ./ent
+    $(GO) run goa.design/goa/v3/cmd/goa@latest gen era/booru/design
 
 .PHONY: generate-ts
 generate-ts:
