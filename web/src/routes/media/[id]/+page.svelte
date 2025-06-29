@@ -14,7 +14,7 @@
 	onMount(async () => {
 		const id = get(page).params.id;
 		try {
-			media = await fetchMediaDetail(Number(id));
+			media = await fetchMediaDetail(id);
 			tagsInput = media?.tags.map((t) => t.replace(/ /g, '_')).join(' ') ?? '';
 		} catch (err) {
 			console.error('failed to load media', err);

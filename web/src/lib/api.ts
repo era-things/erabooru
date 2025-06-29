@@ -23,17 +23,17 @@ export async function fetchMediaPreviews(
 	return handleJson(res);
 }
 
-export async function fetchMediaDetail(id: number): Promise<MediaDetail> {
+export async function fetchMediaDetail(id: string): Promise<MediaDetail> {
 	const res = await fetch(`${apiBase}/media/${id}`);
 	return handleJson(res);
 }
 
-export async function deleteMedia(id: number): Promise<void> {
+export async function deleteMedia(id: string): Promise<void> {
 	const res = await fetch(`${apiBase}/media/${id}`, { method: 'DELETE' });
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
-export async function updateMediaTags(id: number, tags: string[]): Promise<void> {
+export async function updateMediaTags(id: string, tags: string[]): Promise<void> {
 	const res = await fetch(`${apiBase}/media/${id}/tags`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
