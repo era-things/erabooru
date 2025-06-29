@@ -84,7 +84,7 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 		meta := struct {
 			Version   int       `json:"version"`
 			CreatedAt time.Time `json:"createdAt"`
-		}{Version: 1, CreatedAt: time.Now().UTC()}
+		}{Version: 2, CreatedAt: time.Now().UTC()}
 		if err := enc.Encode(meta); err != nil {
 			log.Printf("encode meta: %v", err)
 			return
@@ -99,9 +99,10 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 				tags[i] = t.Name
 			}
 			if err := enc.Encode(struct {
-				ID   string   `json:"id"`
-				Tags []string `json:"tags"`
-			}{ID: m.ID, Tags: tags}); err != nil {
+				ID         string   `json:"id"`
+				Tags       []string `json:"tags"`
+				UploadDate string   `json:"upload_date"`
+			}{ID: m.ID, Tags: tags, UploadDate: m.UploadDate.Format("2006-01-02")}); err != nil {
 				log.Printf("encode record %s: %v", m.ID, err)
 				return
 			}
@@ -135,8 +136,9 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 
 		for {
 			var item struct {
-				ID   string   `json:"id"`
-				Tags []string `json:"tags"`
+				ID         string   `json:"id"`
+				Tags       []string `json:"tags"`
+				UploadDate string   `json:"upload_date"`
 			}
 			if err := dec.Decode(&item); err != nil {
 				if err == io.EOF {
@@ -167,6 +169,12 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 			}
 
 			var toAdd []int
+			var dateVal *time.Time
+			if item.UploadDate != "" {
+				if t, err := time.Parse("2006-01-02", item.UploadDate); err == nil {
+					dateVal = &t
+				}
+			}
 			for _, name := range normalizeTags(item.Tags) {
 				if _, ok := existing[name]; ok {
 					continue
@@ -184,12 +192,17 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				toAdd = append(toAdd, tg.ID)
 			}
 
+			upd := db.Media.UpdateOneID(item.ID)
 			if len(toAdd) > 0 {
-				if _, err := db.Media.UpdateOneID(item.ID).AddTagIDs(toAdd...).Save(ctx); err != nil {
-					log.Printf("add tags to %s: %v", item.ID, err)
-					c.AbortWithStatus(http.StatusInternalServerError)
-					return
-				}
+				upd = upd.AddTagIDs(toAdd...)
+			}
+			if dateVal != nil {
+				upd = upd.SetUploadDate(*dateVal)
+			}
+			if _, err := upd.Save(ctx); err != nil {
+				log.Printf("update media %s: %v", item.ID, err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
 			}
 		}
 

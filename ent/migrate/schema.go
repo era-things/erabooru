@@ -15,6 +15,7 @@ var (
 		{Name: "width", Type: field.TypeInt16},
 		{Name: "height", Type: field.TypeInt16},
 		{Name: "duration", Type: field.TypeInt16, Nullable: true},
+		{Name: "upload_date", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "date"}},
 	}
 	// MediaTable holds the schema information for the "media" table.
 	MediaTable = &schema.Table{
