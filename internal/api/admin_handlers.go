@@ -149,7 +149,7 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				return
 			}
 
-			if len(item.Tags) == 0 {
+			if len(item.Tags) == 0 && item.UploadDate == "" {
 				continue
 			}
 
@@ -163,46 +163,71 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				return
 			}
 
-			existing := make(map[string]struct{}, len(mobj.Edges.Tags))
-			for _, t := range mobj.Edges.Tags {
-				existing[t.Name] = struct{}{}
-			}
-
-			var toAdd []int
-			var dateVal *time.Time
+			// Parse import date
+			var importDate *time.Time
 			if item.UploadDate != "" {
 				if t, err := time.Parse("2006-01-02", item.UploadDate); err == nil {
-					dateVal = &t
+					importDate = &t
 				}
-			}
-			for _, name := range normalizeTags(item.Tags) {
-				if _, ok := existing[name]; ok {
-					continue
-				}
-				tg, err := db.Tag.Query().Where(tag.NameEQ(name)).Only(ctx)
-				if ent.IsNotFound(err) {
-					tg, err = db.Tag.Create().SetName(name).SetType(tag.TypeUserTag).Save(ctx)
-				}
-				if err != nil {
-					log.Printf("lookup tag %s: %v", name, err)
-					c.AbortWithStatus(http.StatusInternalServerError)
-					return
-				}
-				existing[name] = struct{}{}
-				toAdd = append(toAdd, tg.ID)
 			}
 
+			// Compare dates - only proceed if import date is newer or equal
+			if importDate != nil {
+				currentDate := mobj.UploadDate
+				// Check if currentDate is not nil before dereferencing
+				if currentDate != nil && importDate.Before(*currentDate) {
+					log.Printf("skipping media %s: import date %s is earlier than current date %s",
+						item.ID, importDate.Format("2006-01-02"), currentDate.Format("2006-01-02"))
+					continue
+				}
+			}
+
+			// Build map of existing tags (only if we have tags to process)
+			var toAdd []int
+			if len(item.Tags) > 0 {
+				existing := make(map[string]struct{}, len(mobj.Edges.Tags))
+				for _, t := range mobj.Edges.Tags {
+					existing[t.Name] = struct{}{}
+				}
+
+				// Find new tags to add
+				for _, name := range normalizeTags(item.Tags) {
+					if _, ok := existing[name]; ok {
+						continue
+					}
+					tg, err := db.Tag.Query().Where(tag.NameEQ(name)).Only(ctx)
+					if ent.IsNotFound(err) {
+						tg, err = db.Tag.Create().SetName(name).SetType(tag.TypeUserTag).Save(ctx)
+					}
+					if err != nil {
+						log.Printf("lookup tag %s: %v", name, err)
+						c.AbortWithStatus(http.StatusInternalServerError)
+						return
+					}
+					existing[name] = struct{}{}
+					toAdd = append(toAdd, tg.ID)
+				}
+			}
+
+			// Update media with new tags and/or date
 			upd := db.Media.UpdateOneID(item.ID)
 			if len(toAdd) > 0 {
 				upd = upd.AddTagIDs(toAdd...)
 			}
-			if dateVal != nil {
-				upd = upd.SetUploadDate(*dateVal)
+			if importDate != nil {
+				upd = upd.SetUploadDate(*importDate)
 			}
-			if _, err := upd.Save(ctx); err != nil {
-				log.Printf("update media %s: %v", item.ID, err)
-				c.AbortWithStatus(http.StatusInternalServerError)
-				return
+
+			// Only save if we have something to update
+			if len(toAdd) > 0 || importDate != nil {
+				if _, err := upd.Save(ctx); err != nil {
+					log.Printf("update media %s: %v", item.ID, err)
+					c.AbortWithStatus(http.StatusInternalServerError)
+					return
+				}
+
+				log.Printf("updated media %s: added %d tags, set date to %s",
+					item.ID, len(toAdd), item.UploadDate)
 			}
 		}
 
