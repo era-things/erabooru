@@ -74,8 +74,7 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 			return
 		}
 
-		c.Header("Content-Type", "application/x-ndjson")
-		c.Header("Content-Encoding", "gzip")
+		c.Header("Content-Type", "application/gzip")
 		c.Header("Content-Disposition", "attachment; filename=\"tags_export.ndjson.gz\"")
 
 		gz := gzip.NewWriter(c.Writer)
@@ -116,6 +115,7 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 
 		gz, err := gzip.NewReader(c.Request.Body)
 		if err != nil {
+			log.Printf("gzip reader error: %v", err)
 			c.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
