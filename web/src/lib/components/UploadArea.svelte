@@ -2,7 +2,7 @@
 	import { xxhash128 } from 'hash-wasm';
 
 	let fileInput: HTMLInputElement | null = $state(null);
-	import { apiBase } from '$lib/config';
+	import { requestUploadUrl, uploadToPresignedUrl } from '$lib/api';
 
 	const supportedTypes: string[] = [
 		'image/png',
@@ -27,43 +27,24 @@
 
 		const uploadName = await getUploadName(file);
 
-		const res = await fetch(`${apiBase}/media/upload-url`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ filename: uploadName })
-		});
-		if (!res.ok) {
-			console.warn(`Failed to get upload URL: ${res.status} ${res.statusText}`);
-			alert(`Failed to get upload URL from /api/media/upload-url`);
-			return;
+		try {
+			const url = await requestUploadUrl(uploadName);
+			console.log('Uploading to:', url);
+			const up = await uploadToPresignedUrl(url, file);
+			if (up.ok) {
+				alert('Upload successful');
+			} else if (up.status === 412) {
+				alert('File already exists (duplicate detected)');
+			} else {
+				alert(`Upload failed: ${up.status} ${up.statusText}`);
+			}
+		} catch (error) {
+			console.error('Upload error:', error);
+			alert('Upload failed due to network error');
 		}
 
-		const data: { url: string } = await res.json();
-		try {
-			console.log('Uploading to:', data.url);
-			const up = await fetch(data.url, {
-				method: 'PUT',
-				body: file,
-				headers: {
-					'Content-Type': file.type || 'application/octet-stream',
-					'If-None-Match': '*' 
-				}
-			});
-            if (up.ok) {
-                alert('Upload successful');
-            } else if (up.status === 412) {
-                // 412 Precondition Failed = duplicate file
-                alert('File already exists (duplicate detected)');
-            } else {
-                alert(`Upload failed: ${up.status} ${up.statusText}`);
-            }
-        } catch (error) {
-            console.error('Upload error:', error);
-            alert('Upload failed due to network error');
-        }
-
-        fileInput!.value = '';
-    }
+		fileInput!.value = '';
+	}
 
 	function trigger() {
 		fileInput?.click();

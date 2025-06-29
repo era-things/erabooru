@@ -1,16 +1,16 @@
 <script lang="ts">
 	import TabNav from '$lib/components/TabNav.svelte';
-	import { apiBase } from '$lib/config';
+	import { regenerateReverseIndex } from '$lib/api';
 
 	async function regenerate() {
 		if (!confirm('Are you sure you want to regenerate the reverse index?')) {
 			return;
 		}
-		const res = await fetch(`${apiBase}/admin/regenerate`, { method: 'POST' });
-		if (res.ok) {
+		try {
+			await regenerateReverseIndex();
 			alert('Regeneration complete');
-		} else {
-			alert(`Failed to regenerate: ${res.status} ${res.statusText}`);
+		} catch (err) {
+			alert(`Failed to regenerate: ${err}`);
 		}
 	}
 </script>

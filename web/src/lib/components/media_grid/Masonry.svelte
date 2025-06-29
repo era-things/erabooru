@@ -4,7 +4,11 @@
 	import type { MediaItem } from '$lib/types/media';
 	import { ElementRect } from 'runed';
 
-	let { items = [], columnWidths = ['1fr', '1fr'], scrollPosition = 0 } = $props<{
+	let {
+		items = [],
+		columnWidths = ['1fr', '1fr'],
+		scrollPosition = 0
+	} = $props<{
 		items: MediaItem[];
 		columnWidths: string[];
 		scrollPosition: number;
@@ -17,32 +21,37 @@
 	);
 
 	let el = $state<HTMLElement>();
-    const rect = new ElementRect(() => el);
+	const rect = new ElementRect(() => el);
 
 	let scrolledPercentage = $derived.by(() => {
 		if (!rect.current || typeof window === 'undefined') return 0;
-		
+
 		const containerTop = rect.top;
 		//const containerBottom = rect.top + rect.height;
 		const viewportHeight = window.innerHeight;
-		
+
 		// How much of the container is above the viewport
 		const scrolledIntoContainer = Math.max(0, scrollPosition - containerTop);
-		
+
 		// Total scrollable distance through the container
 		const maxScrollThroughContainer = Math.max(0, rect.height - viewportHeight);
-		
-		return maxScrollThroughContainer > 0 ? clamp01(scrolledIntoContainer / maxScrollThroughContainer) : 0;
+
+		return maxScrollThroughContainer > 0
+			? clamp01(scrolledIntoContainer / maxScrollThroughContainer)
+			: 0;
 	});
 
 	function clamp01(value: number): number {
 		return Math.min(1, Math.max(0, value));
 	}
-
 </script>
 
-<div bind:this={el} class="grid gap-3 items-start" style="grid-template-columns:{columnWidths.join(' ')}">
+<div
+	bind:this={el}
+	class="grid items-start gap-3"
+	style="grid-template-columns:{columnWidths.join(' ')}"
+>
 	{#each columns as col, index (index)}
-		<Column items={col} {scrolledPercentage} maxHeight={rect.height}/>
+		<Column items={col} {scrolledPercentage} maxHeight={rect.height} />
 	{/each}
 </div>
