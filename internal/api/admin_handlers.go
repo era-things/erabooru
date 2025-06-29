@@ -1,8 +1,11 @@
 package api
 
 import (
+	"compress/gzip"
+	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	"era/booru/ent"
 	"era/booru/ent/media"
@@ -18,6 +21,7 @@ import (
 // RegisterAdminRoutes registers admin-only endpoints.
 func RegisterAdminRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config) {
 	r.POST("/api/admin/regenerate", regenerateHandler(db, m, cfg))
+	r.GET("/api/admin/export-tags", exportTagsHandler(db))
 }
 
 func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.HandlerFunc {
@@ -54,5 +58,48 @@ func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.
 		}
 
 		c.Status(http.StatusOK)
+	}
+}
+
+func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		items, err := db.Media.Query().WithTags().All(ctx)
+		if err != nil {
+			log.Printf("export tags: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		c.Header("Content-Type", "application/x-ndjson")
+		c.Header("Content-Encoding", "gzip")
+		c.Header("Content-Disposition", "attachment; filename=\"tags_export.ndjson.gz\"")
+
+		gz := gzip.NewWriter(c.Writer)
+		defer gz.Close()
+
+		enc := json.NewEncoder(gz)
+		meta := struct {
+			Version   int       `json:"version"`
+			CreatedAt time.Time `json:"createdAt"`
+		}{Version: 1, CreatedAt: time.Now().UTC()}
+		if err := enc.Encode(meta); err != nil {
+			log.Printf("encode meta: %v", err)
+			return
+		}
+
+		for _, m := range items {
+			tags := make([]string, len(m.Edges.Tags))
+			for i, t := range m.Edges.Tags {
+				tags[i] = t.Name
+			}
+			if err := enc.Encode(struct {
+				ID   string   `json:"id"`
+				Tags []string `json:"tags"`
+			}{ID: m.ID, Tags: tags}); err != nil {
+				log.Printf("encode record %s: %v", m.ID, err)
+				return
+			}
+		}
 	}
 }
