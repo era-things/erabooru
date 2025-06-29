@@ -1,7 +1,6 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from '$app/state'
 	import { onMount } from 'svelte';
-	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import TabNav from '$lib/components/TabNav.svelte';
 	import { fetchMediaDetail, deleteMedia, updateMediaTags } from '$lib/api';
@@ -12,7 +11,7 @@
 	let edit = false;
 
 	onMount(async () => {
-		const id = get(page).params.id;
+		const id = page.params.id;
 		try {
 			media = await fetchMediaDetail(id);
 			tagsInput = media?.tags.map((t) => t.replace(/ /g, '_')).join(' ') ?? '';

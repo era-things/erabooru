@@ -1,5 +1,7 @@
-import { apiBase } from './config';
 import type { MediaItem, MediaDetail } from './types/media';
+
+const apiBase = '/api';
+
 
 export interface MediaPreviewsResponse {
 	media: MediaItem[];
