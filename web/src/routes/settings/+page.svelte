@@ -1,17 +1,17 @@
 <script lang="ts">
 	import TabNav from '$lib/components/TabNav.svelte';
-	import { apiBase } from '$lib/config';
+        import { api } from '$lib/client';
 
 	async function regenerate() {
 		if (!confirm('Are you sure you want to regenerate the reverse index?')) {
 			return;
 		}
-		const res = await fetch(`${apiBase}/admin/regenerate`, { method: 'POST' });
-		if (res.ok) {
-			alert('Regeneration complete');
-		} else {
-			alert(`Failed to regenerate: ${res.status} ${res.statusText}`);
-		}
+                const { error } = await api.POST('/admin/regenerate');
+                if (!error) {
+                        alert('Regeneration complete');
+                } else {
+                        alert('Failed to regenerate');
+                }
 	}
 </script>
 

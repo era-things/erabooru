@@ -4,15 +4,139 @@
  */
 
 export interface paths {
-    "/api/{name}": {
+    "/api/admin/regenerate": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** sayHello erabooru */
-        get: operations["erabooru/sayHello"];
+        get?: never;
+        put?: never;
+        /**
+         * regenerate admin
+         * @description Regenerate search index and metadata
+         */
+        post: operations["admin/regenerate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * list media
+         * @description List media items
+         */
+        get: operations["media/list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * previews media
+         * @description List media previews
+         */
+        get: operations["media/previews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * uploadURL media
+         * @description Get a presigned upload URL
+         */
+        post: operations["media/uploadURL"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * get media
+         * @description Get media item by ID
+         */
+        get: operations["media/get"];
+        put?: never;
+        post?: never;
+        /**
+         * delete media
+         * @description Delete media item
+         */
+        delete: operations["media/delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/{id}/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * updateTags media
+         * @description Update tags for media item
+         */
+        post: operations["media/updateTags"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** check health */
+        get: operations["health/check"];
         put?: never;
         post?: never;
         delete?: never;
@@ -24,7 +148,151 @@ export interface paths {
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
+    schemas: {
+        /** @example {
+         *       "duration": 7421203309775958000,
+         *       "format": "Et iste expedita optio corrupti assumenda sed.",
+         *       "height": 5993495206752241000,
+         *       "id": "Non ratione eligendi qui quia doloremque.",
+         *       "size": 4489052888058279000,
+         *       "tags": [
+         *         "Nihil quasi rem nulla et sequi aut.",
+         *         "Aut hic voluptas provident sit iure quia.",
+         *         "Quis voluptatem fuga est placeat quia.",
+         *         "Sint vel qui modi similique."
+         *       ],
+         *       "url": "Eligendi architecto quaerat est.",
+         *       "width": 5481774234563484000
+         *     } */
+        MediaDetail: {
+            /**
+             * Format: int64
+             * @description Video duration in seconds
+             * @example 6601154237725332000
+             */
+            duration?: number;
+            /** @example Necessitatibus est. */
+            format?: string;
+            /**
+             * Format: int64
+             * @example 7804486503803889000
+             */
+            height?: number;
+            /** @example Alias ab et aut quia. */
+            id?: string;
+            /**
+             * Format: int64
+             * @example 5490997323526538000
+             */
+            size?: number;
+            /** @example [
+             *       "Id vitae ducimus nam doloremque.",
+             *       "Dolores ipsum in eum aspernatur.",
+             *       "Ut in labore veritatis quam corrupti.",
+             *       "Delectus qui sit fugit sint."
+             *     ] */
+            tags?: string[];
+            /** @example Amet quia consequatur dignissimos in. */
+            url?: string;
+            /**
+             * Format: int64
+             * @example 3870547163235902000
+             */
+            width?: number;
+        };
+        /** @example {
+         *       "format": "Qui nisi dolor est quo ratione.",
+         *       "height": 681756893210495000,
+         *       "id": "Esse voluptatem dolor in et quae quia.",
+         *       "url": "Tenetur et nostrum atque eaque molestiae nam.",
+         *       "width": 3578520200240905000
+         *     } */
+        MediaItem: {
+            /** @example Voluptatibus et et. */
+            format?: string;
+            /**
+             * Format: int64
+             * @example 3182374220053586400
+             */
+            height?: number;
+            /** @example Porro ad qui voluptates adipisci tenetur. */
+            id?: string;
+            /** @example Repellat voluptates qui reprehenderit dolores. */
+            url?: string;
+            /**
+             * Format: int64
+             * @example 5085790072468249000
+             */
+            width?: number;
+        };
+        /** @example {
+         *       "media": [
+         *         {
+         *           "format": "Mollitia qui officiis consequatur.",
+         *           "height": 4064237908605303300,
+         *           "id": "Quia in quam laborum aliquam sint.",
+         *           "url": "Expedita iusto explicabo voluptate id.",
+         *           "width": 6453942027766000000
+         *         },
+         *         {
+         *           "format": "Mollitia qui officiis consequatur.",
+         *           "height": 4064237908605303300,
+         *           "id": "Quia in quam laborum aliquam sint.",
+         *           "url": "Expedita iusto explicabo voluptate id.",
+         *           "width": 6453942027766000000
+         *         },
+         *         {
+         *           "format": "Mollitia qui officiis consequatur.",
+         *           "height": 4064237908605303300,
+         *           "id": "Quia in quam laborum aliquam sint.",
+         *           "url": "Expedita iusto explicabo voluptate id.",
+         *           "width": 6453942027766000000
+         *         },
+         *         {
+         *           "format": "Mollitia qui officiis consequatur.",
+         *           "height": 4064237908605303300,
+         *           "id": "Quia in quam laborum aliquam sint.",
+         *           "url": "Expedita iusto explicabo voluptate id.",
+         *           "width": 6453942027766000000
+         *         }
+         *       ],
+         *       "total": 4099752415003345400
+         *     } */
+        MediaList: {
+            /** @example [
+             *       {
+             *         "format": "Mollitia qui officiis consequatur.",
+             *         "height": 4064237908605303300,
+             *         "id": "Quia in quam laborum aliquam sint.",
+             *         "url": "Expedita iusto explicabo voluptate id.",
+             *         "width": 6453942027766000000
+             *       },
+             *       {
+             *         "format": "Mollitia qui officiis consequatur.",
+             *         "height": 4064237908605303300,
+             *         "id": "Quia in quam laborum aliquam sint.",
+             *         "url": "Expedita iusto explicabo voluptate id.",
+             *         "width": 6453942027766000000
+             *       }
+             *     ] */
+            media: components["schemas"]["MediaItem"][];
+            /**
+             * Format: int64
+             * @example 1076505782096345900
+             */
+            total: number;
+        };
+        /** @example {
+         *       "object": "Sint natus voluptatem consequatur beatae.",
+         *       "url": "Praesentium explicabo."
+         *     } */
+        UploadURLResponse: {
+            /** @example Voluptatem et minus nisi voluptatem. */
+            object?: string;
+            /** @example Aliquid odit in enim iure. */
+            url?: string;
+        };
+    };
     responses: never;
     parameters: never;
     requestBodies: never;
@@ -33,16 +301,171 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    "erabooru/sayHello": {
+    "admin/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content response. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "media/list": {
+        parameters: {
+            query?: {
+                /** @example Optio vel officiis dolore. */
+                q?: string;
+                /** @example 2791063455337779700 */
+                page?: number;
+                /** @example 3538227376797016000 */
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /** @example {
+                     *       "media": [
+                     *         {
+                     *           "format": "Ea voluptate qui delectus rerum.",
+                     *           "height": 4478699467164243500,
+                     *           "id": "Iusto culpa ex repellat est maiores.",
+                     *           "url": "Laboriosam aut recusandae.",
+                     *           "width": 4269257746853478400
+                     *         },
+                     *         {
+                     *           "format": "Ea voluptate qui delectus rerum.",
+                     *           "height": 4478699467164243500,
+                     *           "id": "Iusto culpa ex repellat est maiores.",
+                     *           "url": "Laboriosam aut recusandae.",
+                     *           "width": 4269257746853478400
+                     *         },
+                     *         {
+                     *           "format": "Ea voluptate qui delectus rerum.",
+                     *           "height": 4478699467164243500,
+                     *           "id": "Iusto culpa ex repellat est maiores.",
+                     *           "url": "Laboriosam aut recusandae.",
+                     *           "width": 4269257746853478400
+                     *         },
+                     *         {
+                     *           "format": "Ea voluptate qui delectus rerum.",
+                     *           "height": 4478699467164243500,
+                     *           "id": "Iusto culpa ex repellat est maiores.",
+                     *           "url": "Laboriosam aut recusandae.",
+                     *           "width": 4269257746853478400
+                     *         }
+                     *       ],
+                     *       "total": 1881487347525540400
+                     *     } */
+                    "application/json": components["schemas"]["MediaList"];
+                };
+            };
+        };
+    };
+    "media/previews": {
+        parameters: {
+            query?: {
+                /** @example Quod voluptas sed ullam. */
+                q?: string;
+                /** @example 4804694174010543000 */
+                page?: number;
+                /** @example 757983125018217500 */
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /** @example {
+                     *       "media": [
+                     *         {
+                     *           "format": "Ea voluptate qui delectus rerum.",
+                     *           "height": 4478699467164243500,
+                     *           "id": "Iusto culpa ex repellat est maiores.",
+                     *           "url": "Laboriosam aut recusandae.",
+                     *           "width": 4269257746853478400
+                     *         },
+                     *         {
+                     *           "format": "Ea voluptate qui delectus rerum.",
+                     *           "height": 4478699467164243500,
+                     *           "id": "Iusto culpa ex repellat est maiores.",
+                     *           "url": "Laboriosam aut recusandae.",
+                     *           "width": 4269257746853478400
+                     *         }
+                     *       ],
+                     *       "total": 7369881979245155000
+                     *     } */
+                    "application/json": components["schemas"]["MediaList"];
+                };
+            };
+        };
+    };
+    "media/uploadURL": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /** @example {
+                 *       "filename": "Et eius nemo."
+                 *     } */
+                "application/json": {
+                    /** @example Omnis saepe repellendus tempora est. */
+                    filename?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /** @example {
+                     *       "object": "Dignissimos sed.",
+                     *       "url": "Vero molestias ad."
+                     *     } */
+                    "application/json": components["schemas"]["UploadURLResponse"];
+                };
+            };
+        };
+    };
+    "media/get": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /**
-                 * @description Name to greet
-                 * @example Laudantium ab esse reprehenderit consequatur sint.
-                 */
-                name: string;
+                /** @example Facere rerum quia autem. */
+                id: string;
             };
             cookie?: never;
         };
@@ -54,9 +477,100 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /** @example Molestias et iure dolorum. */
-                    "application/json": string;
+                    /** @example {
+                     *       "duration": 6666198724408845000,
+                     *       "format": "Molestias earum est consequatur aperiam deserunt.",
+                     *       "height": 3667668171383177700,
+                     *       "id": "Possimus ullam illo qui facere.",
+                     *       "size": 6998739584799792000,
+                     *       "tags": [
+                     *         "Architecto quod repellat harum fugit.",
+                     *         "Minima esse voluptatem id."
+                     *       ],
+                     *       "url": "Possimus est est assumenda sint alias.",
+                     *       "width": 8895310890499510000
+                     *     } */
+                    "application/json": components["schemas"]["MediaDetail"];
                 };
+            };
+        };
+    };
+    "media/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @example Iusto corrupti recusandae fugit iste distinctio voluptatibus. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content response. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "media/updateTags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @example Iusto autem officia aut voluptatum omnis. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /** @example {
+                 *       "tags": [
+                 *         "Sunt quia magni.",
+                 *         "Odit aspernatur eius ut.",
+                 *         "Architecto nisi impedit impedit autem."
+                 *       ]
+                 *     } */
+                "application/json": {
+                    /** @example [
+                     *       "Nam quis est necessitatibus omnis accusamus aspernatur.",
+                     *       "Inventore voluptatibus et itaque cupiditate est aperiam.",
+                     *       "Veritatis earum nisi labore.",
+                     *       "Facere sit sint vitae soluta dolorem."
+                     *     ] */
+                    tags?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description No Content response. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "health/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content response. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

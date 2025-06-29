@@ -4,7 +4,7 @@
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import TabNav from '$lib/components/TabNav.svelte';
-	import { apiBase } from '$lib/config';
+        import { api } from '$lib/client';
 
 	interface MediaDetail {
 		id: number;
@@ -20,47 +20,44 @@
 	let tagsInput = '';
 	let edit = false;
 
-	onMount(async () => {
-		const id = get(page).params.id;
-		try {
-			const res = await fetch(`${apiBase}/media/${id}`);
-			if (res.ok) {
-				media = await res.json();
-				tagsInput = media?.tags.map((t) => t.replace(/ /g, '_')).join(' ') ?? '';
-			} else {
-				console.error('failed to load media', res.status, res.statusText);
-			}
-		} catch (err) {
-			console.error('network error', err);
-		}
-	});
+        onMount(async () => {
+                const id = get(page).params.id;
+                const { data, error } = await api.GET('/media/{id}', {
+                        params: { path: { id } }
+                });
+                if (data) {
+                        media = data as MediaDetail;
+                        tagsInput = media?.tags.map((t) => t.replace(/ /g, '_')).join(' ') ?? '';
+                } else if (error) {
+                        console.error('failed to load media', error);
+                }
+        });
 
 	async function remove() {
 		if (!media) return;
 		if (!confirm('Delete this image?')) return;
-		const res = await fetch(`${apiBase}/media/${media.id}`, { method: 'DELETE' });
-		if (res.ok) {
-			goto('/');
-		} else {
-			alert('Delete failed');
-		}
+                const { error } = await api.DELETE('/media/{id}', { params: { path: { id: media.id } } });
+                if (!error) {
+                        goto('/');
+                } else {
+                        alert('Delete failed');
+                }
 	}
 
 	async function saveTags() {
 		if (!media) return;
-		const tags = tagsInput.split(/\s+/).filter((t) => t.length > 0);
-		const res = await fetch(`${apiBase}/media/${media.id}/tags`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ tags })
-		});
-		if (res.ok) {
-			media.tags = tags;
-			tagsInput = media.tags.map((t) => t.replace(/ /g, '_')).join(' ');
-			edit = false;
-		} else {
-			alert('Failed to save');
-		}
+                const tags = tagsInput.split(/\s+/).filter((t) => t.length > 0);
+                const { error } = await api.POST('/media/{id}/tags', {
+                        params: { path: { id: media.id } },
+                        body: { tags }
+                });
+                if (!error) {
+                        media.tags = tags;
+                        tagsInput = media.tags.map((t) => t.replace(/ /g, '_')).join(' ');
+                        edit = false;
+                } else {
+                        alert('Failed to save');
+                }
 	}
 </script>
 

@@ -2,7 +2,7 @@
 	import { xxhash128 } from 'hash-wasm';
 
 	let fileInput: HTMLInputElement | null = $state(null);
-	import { apiBase } from '$lib/config';
+        import { api } from '$lib/client';
 
 	const supportedTypes: string[] = [
 		'image/png',
@@ -27,20 +27,17 @@
 
 		const uploadName = await getUploadName(file);
 
-		const res = await fetch(`${apiBase}/media/upload-url`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ filename: uploadName })
-		});
-		if (!res.ok) {
-			console.warn(`Failed to get upload URL: ${res.status} ${res.statusText}`);
-			alert(`Failed to get upload URL from /api/media/upload-url`);
-			return;
-		}
+                const { data, error } = await api.POST('/media/upload-url', {
+                        body: { filename: uploadName }
+                });
+                if (!data || error) {
+                        console.warn('Failed to get upload URL', error);
+                        alert('Failed to get upload URL from /api/media/upload-url');
+                        return;
+                }
 
-		const data: { url: string } = await res.json();
-		try {
-			console.log('Uploading to:', data.url);
+                try {
+                        console.log('Uploading to:', data.url);
 			const up = await fetch(data.url, {
 				method: 'PUT',
 				body: file,

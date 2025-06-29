@@ -3,7 +3,7 @@
 	import Masonry from './media_grid/Masonry.svelte'; // Masonry component
 	import type { MediaItem } from '$lib/types/media';
 	import { PAGE_SIZE } from '$lib/constants';
-	import { apiBase } from '$lib/config';
+import { api } from '$lib/client';
 
 	let { query = '', page = 1, pageSize = Number(PAGE_SIZE), total = $bindable(1) } = $props();
 	let lastQuery: string = $state('');
@@ -25,23 +25,23 @@
 		}
 	});
 
-	async function load() {
-		try {
-			const url = query
-				? `${apiBase}/media/previews?q=${encodeURIComponent(query)}&page=${page}&page_size=${pageSize}`
-				: `${apiBase}/media/previews?page=${page}&page_size=${pageSize}`;
-			const res = await fetch(url);
-			if (res.ok) {
-				const data = await res.json();
-				media = data.media as MediaItem[];
-				total = data.total??1 as number;
-			} else {
-				console.error('media fetch error', res.status, res.statusText);
-			}
-		} catch (err) {
-			console.error('network error', err);
-		}
-	}
+        async function load() {
+                const { data, error } = await api.GET('/media/previews', {
+                        params: {
+                                query: {
+                                        q: query || undefined,
+                                        page,
+                                        page_size: pageSize
+                                }
+                        }
+                });
+                if (data) {
+                        media = data.media as MediaItem[];
+                        total = data.total ?? 1 as number;
+                } else if (error) {
+                        console.error('media fetch error', error);
+                }
+        }
 
 	onMount(async () => {
 		mounted = true;
