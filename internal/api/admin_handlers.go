@@ -3,12 +3,14 @@ package api
 import (
 	"compress/gzip"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"time"
 
 	"era/booru/ent"
 	"era/booru/ent/media"
+	"era/booru/ent/tag"
 	"era/booru/internal/config"
 	"era/booru/internal/ingest"
 	minio "era/booru/internal/minio"
@@ -22,6 +24,7 @@ import (
 func RegisterAdminRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config) {
 	r.POST("/api/admin/regenerate", regenerateHandler(db, m, cfg))
 	r.GET("/api/admin/export-tags", exportTagsHandler(db))
+	r.POST("/api/admin/import-tags", importTagsHandler(db))
 }
 
 func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.HandlerFunc {
@@ -104,5 +107,92 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 				return
 			}
 		}
+	}
+}
+
+func importTagsHandler(db *ent.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+
+		gz, err := gzip.NewReader(c.Request.Body)
+		if err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+		defer gz.Close()
+
+		dec := json.NewDecoder(gz)
+
+		var meta struct {
+			Version   int       `json:"version"`
+			CreatedAt time.Time `json:"createdAt"`
+		}
+		if err := dec.Decode(&meta); err != nil {
+			log.Printf("decode meta: %v", err)
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		for {
+			var item struct {
+				ID   string   `json:"id"`
+				Tags []string `json:"tags"`
+			}
+			if err := dec.Decode(&item); err != nil {
+				if err == io.EOF {
+					break
+				}
+				log.Printf("decode item: %v", err)
+				c.AbortWithStatus(http.StatusBadRequest)
+				return
+			}
+
+			if len(item.Tags) == 0 {
+				continue
+			}
+
+			mobj, err := db.Media.Query().Where(media.IDEQ(item.ID)).WithTags().Only(ctx)
+			if ent.IsNotFound(err) {
+				continue
+			}
+			if err != nil {
+				log.Printf("query media %s: %v", item.ID, err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+
+			existing := make(map[string]struct{}, len(mobj.Edges.Tags))
+			for _, t := range mobj.Edges.Tags {
+				existing[t.Name] = struct{}{}
+			}
+
+			var toAdd []int
+			for _, name := range normalizeTags(item.Tags) {
+				if _, ok := existing[name]; ok {
+					continue
+				}
+				tg, err := db.Tag.Query().Where(tag.NameEQ(name)).Only(ctx)
+				if ent.IsNotFound(err) {
+					tg, err = db.Tag.Create().SetName(name).SetType(tag.TypeUserTag).Save(ctx)
+				}
+				if err != nil {
+					log.Printf("lookup tag %s: %v", name, err)
+					c.AbortWithStatus(http.StatusInternalServerError)
+					return
+				}
+				existing[name] = struct{}{}
+				toAdd = append(toAdd, tg.ID)
+			}
+
+			if len(toAdd) > 0 {
+				if _, err := db.Media.UpdateOneID(item.ID).AddTagIDs(toAdd...).Save(ctx); err != nil {
+					log.Printf("add tags to %s: %v", item.ID, err)
+					c.AbortWithStatus(http.StatusInternalServerError)
+					return
+				}
+			}
+		}
+
+		c.Status(http.StatusOK)
 	}
 }
