@@ -55,9 +55,26 @@ prod-pull:
 # BACK-END  (Go + Ent)
 # ──────────────────────────────────────────
 .PHONY: generate
-generate:
+generate: generate-go generate-ts
+
+.PHONY: generate-go
+generate-go:
+	@echo "→ Generating Go code..."
 	$(GO) generate ./ent
 	$(GOA_ENV) goa gen era/booru/design
+
+.PHONY: generate-ts
+generate-ts:
+	@echo "→ Generating TypeScript types..."
+	@if [ ! -f gen/http/openapi3.json ]; then \
+		echo "❌ OpenAPI spec not found at gen/http/openapi3.json"; \
+		echo "   Make sure 'make generate-go' runs first"; \
+		exit 1; \
+	fi
+	@echo "→ Generating TypeScript API types..."
+	cd $(WEB_DIR) && npx openapi-typescript ../gen/http/openapi3.json -o src/lib/types/api.d.ts
+	@echo "✅ TypeScript generation complete"
+
 
 .PHONY: vet test
 vet:
