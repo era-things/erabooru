@@ -45,11 +45,30 @@ func main() {
 	defer stop()
 
 	log.Println("Watching for new uploads")
-	go m.WatchPictures(ctx, func(ctx context.Context, object string) {
-		ingest.AnalyzeImage(ctx, m, database, object)
-	})
-	go m.WatchVideos(ctx, func(ctx context.Context, object string) {
-		ingest.AnalyzeVideo(ctx, cfg, m, database, object)
+	go m.Watch(ctx, func(ctx context.Context, object string, contentType string) {
+		// Process the uploaded file
+		mediaID, err := ingest.Process(ctx, cfg, m, database, object, contentType)
+		if err != nil {
+			log.Printf("failed to process %s: %v", object, err)
+			return
+		}
+
+		// Add "tagme" tag if media was successfully processed
+		if mediaID != "" {
+			tagme, err := db.FindOrCreateTag(ctx, database, "tagme")
+			if err != nil {
+				log.Printf("error handling tagme tag: %v", err)
+				return
+			}
+
+			if _, err := database.Media.UpdateOneID(mediaID).
+				AddTagIDs(tagme.ID).
+				Save(ctx); err != nil {
+				log.Printf("error adding tagme tag to media %s: %v", mediaID, err)
+			} else {
+				log.Printf("added 'tagme' tag to media %s", mediaID)
+			}
+		}
 	})
 
 	r := gin.New()

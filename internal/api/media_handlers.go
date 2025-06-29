@@ -9,8 +9,8 @@ import (
 
 	"era/booru/ent"
 	"era/booru/ent/media"
-	"era/booru/ent/tag"
 	"era/booru/internal/config"
+	"era/booru/internal/db"
 	"era/booru/internal/minio"
 	"era/booru/internal/search"
 
@@ -145,7 +145,7 @@ func uploadURLHandler(m *minio.Client, cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
-func updateMediaTagsHandler(db *ent.Client) gin.HandlerFunc {
+func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := idParam(c)
 		if !ok {
@@ -162,21 +162,14 @@ func updateMediaTagsHandler(db *ent.Client) gin.HandlerFunc {
 
 		clean := normalizeTags(body.Tags)
 
-		tagIDs := make([]int, 0, len(clean))
-		for _, name := range clean {
-			tg, err := db.Tag.Query().Where(tag.NameEQ(name)).Only(c.Request.Context())
-			if ent.IsNotFound(err) {
-				tg, err = db.Tag.Create().SetName(name).SetType(tag.TypeUserTag).Save(c.Request.Context())
-			}
-			if err != nil {
-				log.Printf("tag lookup/create %s: %v", name, err)
-				c.AbortWithStatus(http.StatusInternalServerError)
-				return
-			}
-			tagIDs = append(tagIDs, tg.ID)
+		tagIDs, err := db.FindOrCreateTags(c.Request.Context(), dbClient, clean)
+		if err != nil {
+			log.Printf("error handling tags: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
 		}
 
-		if _, err := db.Media.UpdateOneID(id).ClearTags().AddTagIDs(tagIDs...).Save(c.Request.Context()); err != nil {
+		if _, err := dbClient.Media.UpdateOneID(id).ClearTags().AddTagIDs(tagIDs...).Save(c.Request.Context()); err != nil {
 			log.Printf("update media tags %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return

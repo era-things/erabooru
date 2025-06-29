@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"path"
-	"strings"
 	"time"
 
 	"era/booru/internal/config"
@@ -128,32 +127,4 @@ func (c *Client) Watch(ctx context.Context, onObject func(ctx context.Context, o
 			go onObject(ctx, rec.S3.Object.Key, rec.S3.Object.ContentType)
 		}
 	}
-}
-
-func (c *Client) WatchPictures(ctx context.Context, onObject func(ctx context.Context, object string)) {
-	c.Watch(ctx, func(ctx context.Context, object string, contentType string) {
-		if contentType != "" {
-			if !strings.HasPrefix(contentType, "image/") {
-				log.Printf("skipping non-image object: %s (content-type: %s)", object, contentType)
-				return
-			}
-		}
-
-		log.Printf("new picture: %s", object)
-		onObject(ctx, object)
-	})
-}
-
-func (c *Client) WatchVideos(ctx context.Context, onObject func(ctx context.Context, object string)) {
-	c.Watch(ctx, func(ctx context.Context, object string, contentType string) {
-		if contentType != "" {
-			if !strings.HasPrefix(contentType, "video/") {
-				log.Printf("skipping non-video object: %s (content-type: %s)", object, contentType)
-				return
-			}
-		}
-
-		log.Printf("new video: %s", object)
-		onObject(ctx, object)
-	})
 }
