@@ -64,7 +64,7 @@ func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.
 func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		items, err := db.Media.Query().WithTags().All(ctx)
+		items, err := db.Media.Query().Where(media.HasTags()).WithTags().All(ctx)
 		if err != nil {
 			log.Printf("export tags: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -89,6 +89,9 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 		}
 
 		for _, m := range items {
+			if len(m.Edges.Tags) == 0 {
+				continue
+			}
 			tags := make([]string, len(m.Edges.Tags))
 			for i, t := range m.Edges.Tags {
 				tags[i] = t.Name
