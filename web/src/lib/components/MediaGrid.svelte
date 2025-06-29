@@ -3,7 +3,7 @@
 	import Masonry from './media_grid/Masonry.svelte'; // Masonry component
 	import type { MediaItem } from '$lib/types/media';
 	import { PAGE_SIZE } from '$lib/constants';
-	import { apiBase } from '$lib/config';
+	import { fetchMediaPreviews } from '$lib/api';
 
 	let { query = '', page = 1, pageSize = Number(PAGE_SIZE), total = $bindable(1) } = $props();
 	let lastQuery: string = $state('');
@@ -27,19 +27,11 @@
 
 	async function load() {
 		try {
-			const url = query
-				? `${apiBase}/media/previews?q=${encodeURIComponent(query)}&page=${page}&page_size=${pageSize}`
-				: `${apiBase}/media/previews?page=${page}&page_size=${pageSize}`;
-			const res = await fetch(url);
-			if (res.ok) {
-				const data = await res.json();
-				media = data.media as MediaItem[];
-				total = data.total??1 as number;
-			} else {
-				console.error('media fetch error', res.status, res.statusText);
-			}
+			const data = await fetchMediaPreviews(query, page, pageSize);
+			media = data.media as MediaItem[];
+			total = data.total ?? (1 as number);
 		} catch (err) {
-			console.error('network error', err);
+			console.error('media fetch error', err);
 		}
 	}
 

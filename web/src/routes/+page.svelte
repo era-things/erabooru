@@ -5,11 +5,11 @@
 	import { goto } from '$app/navigation';
 	import { PAGE_SIZE } from '$lib/constants';
 
-    const q = $derived(page.url.searchParams.get('q') ?? '');
-    let currentPage = $derived(Number(page.url.searchParams.get('page') || '1'));
-    const pageSize = $derived(Number(page.url.searchParams.get('page_size') || PAGE_SIZE));
-    let total = $state(1);
-    let totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
+	const q = $derived(page.url.searchParams.get('q') ?? '');
+	let currentPage = $derived(Number(page.url.searchParams.get('page') || '1'));
+	const pageSize = $derived(Number(page.url.searchParams.get('page_size') || PAGE_SIZE));
+	let total = $state(1);
+	let totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
 
 	function prev() {
 		if (currentPage > 1) {
