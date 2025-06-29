@@ -59,9 +59,10 @@ generate: generate-go generate-ts
 
 .PHONY: generate-go
 generate-go:
-    @echo "→ Generating Go code..."
-    $(GO) generate ./ent
-    $(GO) run goa.design/goa/v3/cmd/goa@latest gen era/booru/design
+	@echo "→ Generating Go code..."
+	$(GO) generate ./ent
+	$(GO) run goa.design/goa/v3/cmd/goa@latest gen era/booru/design
+	oapi-codegen -config design/oapi-codegen.yaml gen/http/openapi3.json
 
 .PHONY: generate-ts
 generate-ts:

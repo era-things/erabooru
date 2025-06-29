@@ -1,5 +1,5 @@
 package: api          # Go package for the generated code
 generate:
   gin-server: true    # Gin stubs + interfaces
-  models: false       # reuse Goa’s structs, avoid duplicates
+  models: true        # generate request/response models
 output: internal/api/api.gen.go
