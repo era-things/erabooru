@@ -2,7 +2,6 @@ import type { MediaItem, MediaDetail } from './types/media';
 
 const apiBase = '/api';
 
-
 export interface MediaPreviewsResponse {
 	media: MediaItem[];
 	total: number;
@@ -68,4 +67,22 @@ export async function uploadToPresignedUrl(url: string, file: File): Promise<Res
 export async function regenerateReverseIndex(): Promise<void> {
 	const res = await fetch(`${apiBase}/admin/regenerate`, { method: 'POST' });
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+export async function downloadMediaTags(): Promise<Blob> {
+        const res = await fetch(`${apiBase}/admin/export-tags`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.blob();
+}
+
+export async function importMediaTags(file: File): Promise<void> {
+       const res = await fetch(`${apiBase}/admin/import-tags`, {
+               method: 'POST',
+               headers: {
+                       'Content-Type': 'application/x-ndjson',
+                       'Content-Encoding': 'gzip'
+               },
+               body: file
+       });
+       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
