@@ -84,7 +84,7 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 		meta := struct {
 			Version   int       `json:"version"`
 			CreatedAt time.Time `json:"createdAt"`
-		}{Version: 1, CreatedAt: time.Now().UTC()}
+		}{Version: 2, CreatedAt: time.Now().UTC()}
 		if err := enc.Encode(meta); err != nil {
 			log.Printf("encode meta: %v", err)
 			return
@@ -99,9 +99,10 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 				tags[i] = t.Name
 			}
 			if err := enc.Encode(struct {
-				ID   string   `json:"id"`
-				Tags []string `json:"tags"`
-			}{ID: m.ID, Tags: tags}); err != nil {
+				ID         string   `json:"id"`
+				Tags       []string `json:"tags"`
+				UploadDate string   `json:"upload_date"`
+			}{ID: m.ID, Tags: tags, UploadDate: m.UploadDate.Format("2006-01-02")}); err != nil {
 				log.Printf("encode record %s: %v", m.ID, err)
 				return
 			}
@@ -135,8 +136,9 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 
 		for {
 			var item struct {
-				ID   string   `json:"id"`
-				Tags []string `json:"tags"`
+				ID         string   `json:"id"`
+				Tags       []string `json:"tags"`
+				UploadDate string   `json:"upload_date"`
 			}
 			if err := dec.Decode(&item); err != nil {
 				if err == io.EOF {
@@ -147,7 +149,7 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				return
 			}
 
-			if len(item.Tags) == 0 {
+			if len(item.Tags) == 0 && item.UploadDate == "" {
 				continue
 			}
 
@@ -161,35 +163,71 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				return
 			}
 
-			existing := make(map[string]struct{}, len(mobj.Edges.Tags))
-			for _, t := range mobj.Edges.Tags {
-				existing[t.Name] = struct{}{}
+			// Parse import date
+			var importDate *time.Time
+			if item.UploadDate != "" {
+				if t, err := time.Parse("2006-01-02", item.UploadDate); err == nil {
+					importDate = &t
+				}
 			}
 
-			var toAdd []int
-			for _, name := range normalizeTags(item.Tags) {
-				if _, ok := existing[name]; ok {
+			// Compare dates - only proceed if import date is newer or equal
+			if importDate != nil {
+				currentDate := mobj.UploadDate
+				// Check if currentDate is not nil before dereferencing
+				if currentDate != nil && importDate.Before(*currentDate) {
+					log.Printf("skipping media %s: import date %s is earlier than current date %s",
+						item.ID, importDate.Format("2006-01-02"), currentDate.Format("2006-01-02"))
 					continue
 				}
-				tg, err := db.Tag.Query().Where(tag.NameEQ(name)).Only(ctx)
-				if ent.IsNotFound(err) {
-					tg, err = db.Tag.Create().SetName(name).SetType(tag.TypeUserTag).Save(ctx)
-				}
-				if err != nil {
-					log.Printf("lookup tag %s: %v", name, err)
-					c.AbortWithStatus(http.StatusInternalServerError)
-					return
-				}
-				existing[name] = struct{}{}
-				toAdd = append(toAdd, tg.ID)
 			}
 
+			// Build map of existing tags (only if we have tags to process)
+			var toAdd []int
+			if len(item.Tags) > 0 {
+				existing := make(map[string]struct{}, len(mobj.Edges.Tags))
+				for _, t := range mobj.Edges.Tags {
+					existing[t.Name] = struct{}{}
+				}
+
+				// Find new tags to add
+				for _, name := range normalizeTags(item.Tags) {
+					if _, ok := existing[name]; ok {
+						continue
+					}
+					tg, err := db.Tag.Query().Where(tag.NameEQ(name)).Only(ctx)
+					if ent.IsNotFound(err) {
+						tg, err = db.Tag.Create().SetName(name).SetType(tag.TypeUserTag).Save(ctx)
+					}
+					if err != nil {
+						log.Printf("lookup tag %s: %v", name, err)
+						c.AbortWithStatus(http.StatusInternalServerError)
+						return
+					}
+					existing[name] = struct{}{}
+					toAdd = append(toAdd, tg.ID)
+				}
+			}
+
+			// Update media with new tags and/or date
+			upd := db.Media.UpdateOneID(item.ID)
 			if len(toAdd) > 0 {
-				if _, err := db.Media.UpdateOneID(item.ID).AddTagIDs(toAdd...).Save(ctx); err != nil {
-					log.Printf("add tags to %s: %v", item.ID, err)
+				upd = upd.AddTagIDs(toAdd...)
+			}
+			if importDate != nil {
+				upd = upd.SetUploadDate(*importDate)
+			}
+
+			// Only save if we have something to update
+			if len(toAdd) > 0 || importDate != nil {
+				if _, err := upd.Save(ctx); err != nil {
+					log.Printf("update media %s: %v", item.ID, err)
 					c.AbortWithStatus(http.StatusInternalServerError)
 					return
 				}
+
+				log.Printf("updated media %s: added %d tags, set date to %s",
+					item.ID, len(toAdd), item.UploadDate)
 			}
 		}
 

@@ -72,11 +72,12 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string) gi
 
 			url := fmt.Sprintf("%s/%s/%s", minioPrefix, bucket, key)
 			out[i] = gin.H{
-				"id":     mitem.ID,
-				"url":    url,
-				"width":  mitem.Width,
-				"height": mitem.Height,
-				"format": mitem.Format,
+				"id":          mitem.ID,
+				"url":         url,
+				"width":       mitem.Width,
+				"height":      mitem.Height,
+				"format":      mitem.Format,
+				"upload_date": mitem.UploadDate,
 			}
 		}
 		c.JSON(http.StatusOK, gin.H{"media": out, "total": total})
@@ -110,14 +111,15 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 			tags[i] = t.Name
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"id":       item.ID,
-			"url":      url,
-			"width":    item.Width,
-			"height":   item.Height,
-			"format":   item.Format,
-			"duration": item.Duration,
-			"size":     stat.Size,
-			"tags":     tags,
+			"id":          item.ID,
+			"url":         url,
+			"width":       item.Width,
+			"height":      item.Height,
+			"format":      item.Format,
+			"duration":    item.Duration,
+			"upload_date": item.UploadDate,
+			"size":        stat.Size,
+			"tags":        tags,
 		})
 	}
 }

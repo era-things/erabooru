@@ -6,6 +6,7 @@ import (
 	"era/booru/ent/media"
 	"fmt"
 	"strings"
+	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
@@ -25,6 +26,8 @@ type Media struct {
 	Height int16 `json:"height,omitempty"`
 	// Duration in seconds for video or audio
 	Duration *int16 `json:"duration,omitempty"`
+	// Date when the file was uploaded
+	UploadDate *time.Time `json:"upload_date,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the MediaQuery when eager-loading is set.
 	Edges        MediaEdges `json:"edges"`
@@ -58,6 +61,8 @@ func (*Media) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case media.FieldID, media.FieldFormat:
 			values[i] = new(sql.NullString)
+		case media.FieldUploadDate:
+			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
 		}
@@ -103,6 +108,13 @@ func (m *Media) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				m.Duration = new(int16)
 				*m.Duration = int16(value.Int64)
+			}
+		case media.FieldUploadDate:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field upload_date", values[i])
+			} else if value.Valid {
+				m.UploadDate = new(time.Time)
+				*m.UploadDate = value.Time
 			}
 		default:
 			m.selectValues.Set(columns[i], values[i])
@@ -157,6 +169,11 @@ func (m *Media) String() string {
 	if v := m.Duration; v != nil {
 		builder.WriteString("duration=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := m.UploadDate; v != nil {
+		builder.WriteString("upload_date=")
+		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteByte(')')
 	return builder.String()

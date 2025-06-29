@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
@@ -41,6 +42,7 @@ type MediaMutation struct {
 	addheight     *int16
 	duration      *int16
 	addduration   *int16
+	upload_date   *time.Time
 	clearedFields map[string]struct{}
 	tags          map[int]struct{}
 	removedtags   map[int]struct{}
@@ -372,6 +374,55 @@ func (m *MediaMutation) ResetDuration() {
 	delete(m.clearedFields, media.FieldDuration)
 }
 
+// SetUploadDate sets the "upload_date" field.
+func (m *MediaMutation) SetUploadDate(t time.Time) {
+	m.upload_date = &t
+}
+
+// UploadDate returns the value of the "upload_date" field in the mutation.
+func (m *MediaMutation) UploadDate() (r time.Time, exists bool) {
+	v := m.upload_date
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUploadDate returns the old "upload_date" field's value of the Media entity.
+// If the Media object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MediaMutation) OldUploadDate(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUploadDate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUploadDate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUploadDate: %w", err)
+	}
+	return oldValue.UploadDate, nil
+}
+
+// ClearUploadDate clears the value of the "upload_date" field.
+func (m *MediaMutation) ClearUploadDate() {
+	m.upload_date = nil
+	m.clearedFields[media.FieldUploadDate] = struct{}{}
+}
+
+// UploadDateCleared returns if the "upload_date" field was cleared in this mutation.
+func (m *MediaMutation) UploadDateCleared() bool {
+	_, ok := m.clearedFields[media.FieldUploadDate]
+	return ok
+}
+
+// ResetUploadDate resets all changes to the "upload_date" field.
+func (m *MediaMutation) ResetUploadDate() {
+	m.upload_date = nil
+	delete(m.clearedFields, media.FieldUploadDate)
+}
+
 // AddTagIDs adds the "tags" edge to the Tag entity by ids.
 func (m *MediaMutation) AddTagIDs(ids ...int) {
 	if m.tags == nil {
@@ -460,7 +511,7 @@ func (m *MediaMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *MediaMutation) Fields() []string {
-	fields := make([]string, 0, 4)
+	fields := make([]string, 0, 5)
 	if m.format != nil {
 		fields = append(fields, media.FieldFormat)
 	}
@@ -472,6 +523,9 @@ func (m *MediaMutation) Fields() []string {
 	}
 	if m.duration != nil {
 		fields = append(fields, media.FieldDuration)
+	}
+	if m.upload_date != nil {
+		fields = append(fields, media.FieldUploadDate)
 	}
 	return fields
 }
@@ -489,6 +543,8 @@ func (m *MediaMutation) Field(name string) (ent.Value, bool) {
 		return m.Height()
 	case media.FieldDuration:
 		return m.Duration()
+	case media.FieldUploadDate:
+		return m.UploadDate()
 	}
 	return nil, false
 }
@@ -506,6 +562,8 @@ func (m *MediaMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldHeight(ctx)
 	case media.FieldDuration:
 		return m.OldDuration(ctx)
+	case media.FieldUploadDate:
+		return m.OldUploadDate(ctx)
 	}
 	return nil, fmt.Errorf("unknown Media field %s", name)
 }
@@ -542,6 +600,13 @@ func (m *MediaMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDuration(v)
+		return nil
+	case media.FieldUploadDate:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUploadDate(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Media field %s", name)
@@ -615,6 +680,9 @@ func (m *MediaMutation) ClearedFields() []string {
 	if m.FieldCleared(media.FieldDuration) {
 		fields = append(fields, media.FieldDuration)
 	}
+	if m.FieldCleared(media.FieldUploadDate) {
+		fields = append(fields, media.FieldUploadDate)
+	}
 	return fields
 }
 
@@ -631,6 +699,9 @@ func (m *MediaMutation) ClearField(name string) error {
 	switch name {
 	case media.FieldDuration:
 		m.ClearDuration()
+		return nil
+	case media.FieldUploadDate:
+		m.ClearUploadDate()
 		return nil
 	}
 	return fmt.Errorf("unknown Media nullable field %s", name)
@@ -651,6 +722,9 @@ func (m *MediaMutation) ResetField(name string) error {
 		return nil
 	case media.FieldDuration:
 		m.ResetDuration()
+		return nil
+	case media.FieldUploadDate:
+		m.ResetUploadDate()
 		return nil
 	}
 	return fmt.Errorf("unknown Media field %s", name)

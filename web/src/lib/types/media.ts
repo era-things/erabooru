@@ -4,6 +4,7 @@ export interface MediaItem {
 	width: number;
 	height: number;
 	format: string;
+	upload_date: Date;
 }
 
 export interface MediaDetail extends MediaItem {

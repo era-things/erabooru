@@ -8,11 +8,13 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"era/booru/ent"
 	"era/booru/internal/config"
 	"era/booru/internal/minio"
 	"era/booru/internal/processing"
+
 	mc "github.com/minio/minio-go/v7"
 )
 
@@ -42,6 +44,7 @@ func AnalyzeImage(ctx context.Context, m *minio.Client, db *ent.Client, object s
 		SetFormat(metadata.Format).
 		SetWidth(int16(metadata.Width)).
 		SetHeight(int16(metadata.Height)).
+		SetUploadDate(time.Now().UTC()).
 		Save(ctx); err != nil {
 		log.Printf("create media: %v", err)
 	} else {
@@ -87,6 +90,7 @@ func AnalyzeVideo(ctx context.Context, cfg *config.Config, m *minio.Client, db *
 		SetWidth(int16(out.Width)).
 		SetHeight(int16(out.Height)).
 		SetDuration(int16(out.Duration)).
+		SetUploadDate(time.Now().UTC()).
 		Save(ctx); err != nil {
 		log.Printf("create video media: %v", err)
 	} else {
@@ -98,29 +102,14 @@ func AnalyzeVideo(ctx context.Context, cfg *config.Config, m *minio.Client, db *
 // appropriate analysis functions. The contentType may be empty; in that case
 // the decision is made based on the file extension.
 func Process(ctx context.Context, cfg *config.Config, m *minio.Client, db *ent.Client, object, contentType string) {
-	if contentType != "" {
-		if strings.HasPrefix(contentType, "video/") {
-			AnalyzeVideo(ctx, cfg, m, db, object)
-			return
-		}
-		if strings.HasPrefix(contentType, "image/") {
-			AnalyzeImage(ctx, m, db, object)
-			return
-		}
-	}
-
-	ext := strings.ToLower(strings.TrimPrefix(pathExt(object), "."))
-	if config.SupportedVideoFormats[ext] {
+	if strings.HasPrefix(contentType, "video/") {
 		AnalyzeVideo(ctx, cfg, m, db, object)
 		return
+	} else if strings.HasPrefix(contentType, "image/") {
+		AnalyzeImage(ctx, m, db, object)
+		return
+	} else {
+		log.Printf("unsupported content type %s for object %s", contentType, object)
+		return
 	}
-	AnalyzeImage(ctx, m, db, object)
-}
-
-// pathExt is a tiny helper returning the file extension of a key.
-func pathExt(key string) string {
-	if i := strings.LastIndexByte(key, '.'); i != -1 {
-		return key[i:]
-	}
-	return ""
 }

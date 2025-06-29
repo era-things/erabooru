@@ -4,6 +4,7 @@ package media
 
 import (
 	"era/booru/ent/predicate"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -82,6 +83,11 @@ func Height(v int16) predicate.Media {
 // Duration applies equality check predicate on the "duration" field. It's identical to DurationEQ.
 func Duration(v int16) predicate.Media {
 	return predicate.Media(sql.FieldEQ(FieldDuration, v))
+}
+
+// UploadDate applies equality check predicate on the "upload_date" field. It's identical to UploadDateEQ.
+func UploadDate(v time.Time) predicate.Media {
+	return predicate.Media(sql.FieldEQ(FieldUploadDate, v))
 }
 
 // FormatEQ applies the EQ predicate on the "format" field.
@@ -277,6 +283,56 @@ func DurationIsNil() predicate.Media {
 // DurationNotNil applies the NotNil predicate on the "duration" field.
 func DurationNotNil() predicate.Media {
 	return predicate.Media(sql.FieldNotNull(FieldDuration))
+}
+
+// UploadDateEQ applies the EQ predicate on the "upload_date" field.
+func UploadDateEQ(v time.Time) predicate.Media {
+	return predicate.Media(sql.FieldEQ(FieldUploadDate, v))
+}
+
+// UploadDateNEQ applies the NEQ predicate on the "upload_date" field.
+func UploadDateNEQ(v time.Time) predicate.Media {
+	return predicate.Media(sql.FieldNEQ(FieldUploadDate, v))
+}
+
+// UploadDateIn applies the In predicate on the "upload_date" field.
+func UploadDateIn(vs ...time.Time) predicate.Media {
+	return predicate.Media(sql.FieldIn(FieldUploadDate, vs...))
+}
+
+// UploadDateNotIn applies the NotIn predicate on the "upload_date" field.
+func UploadDateNotIn(vs ...time.Time) predicate.Media {
+	return predicate.Media(sql.FieldNotIn(FieldUploadDate, vs...))
+}
+
+// UploadDateGT applies the GT predicate on the "upload_date" field.
+func UploadDateGT(v time.Time) predicate.Media {
+	return predicate.Media(sql.FieldGT(FieldUploadDate, v))
+}
+
+// UploadDateGTE applies the GTE predicate on the "upload_date" field.
+func UploadDateGTE(v time.Time) predicate.Media {
+	return predicate.Media(sql.FieldGTE(FieldUploadDate, v))
+}
+
+// UploadDateLT applies the LT predicate on the "upload_date" field.
+func UploadDateLT(v time.Time) predicate.Media {
+	return predicate.Media(sql.FieldLT(FieldUploadDate, v))
+}
+
+// UploadDateLTE applies the LTE predicate on the "upload_date" field.
+func UploadDateLTE(v time.Time) predicate.Media {
+	return predicate.Media(sql.FieldLTE(FieldUploadDate, v))
+}
+
+// UploadDateIsNil applies the IsNil predicate on the "upload_date" field.
+func UploadDateIsNil() predicate.Media {
+	return predicate.Media(sql.FieldIsNull(FieldUploadDate))
+}
+
+// UploadDateNotNil applies the NotNil predicate on the "upload_date" field.
+func UploadDateNotNil() predicate.Media {
+	return predicate.Media(sql.FieldNotNull(FieldUploadDate))
 }
 
 // HasTags applies the HasEdge predicate on the "tags" edge.

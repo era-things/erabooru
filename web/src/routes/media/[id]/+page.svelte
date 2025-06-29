@@ -56,6 +56,7 @@
 				<p>Format: {media.format}</p>
 				<p>Dimensions: {media.width}×{media.height}</p>
 				<p>Size: {(media.size / 1024 / 1024).toFixed(2)} MB</p>
+				<p>Uploaded: {new Date(media.upload_date).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</p>
 			</div>
 			{#if media.tags.length}
 				<div class="text-sm">
