@@ -20,8 +20,6 @@ const (
 	FieldHeight = "height"
 	// FieldDuration holds the string denoting the duration field in the database.
 	FieldDuration = "duration"
-	// FieldUploadDate holds the string denoting the upload_date field in the database.
-	FieldUploadDate = "upload_date"
 	// EdgeTags holds the string denoting the tags edge name in mutations.
 	EdgeTags = "tags"
 	// EdgeMediaAttributes holds the string denoting the media_attributes edge name in mutations.
@@ -49,7 +47,6 @@ var Columns = []string{
 	FieldWidth,
 	FieldHeight,
 	FieldDuration,
-	FieldUploadDate,
 }
 
 var (
@@ -99,11 +96,6 @@ func ByHeight(opts ...sql.OrderTermOption) OrderOption {
 // ByDuration orders the results by the duration field.
 func ByDuration(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDuration, opts...).ToFunc()
-}
-
-// ByUploadDate orders the results by the upload_date field.
-func ByUploadDate(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldUploadDate, opts...).ToFunc()
 }
 
 // ByTagsCount orders the results by tags count.

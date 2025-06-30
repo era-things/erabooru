@@ -14,6 +14,7 @@ import (
 	"era/booru/ent/attribute"
 	"era/booru/ent/media"
 	"era/booru/internal/config"
+	dbhelpers "era/booru/internal/db"
 	"era/booru/internal/ingest"
 	minio "era/booru/internal/minio"
 	"era/booru/internal/search"
@@ -100,10 +101,9 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 				tags[i] = t.Name
 			}
 
-			// Handle nil UploadDate
 			uploadDate := ""
-			if m.UploadDate != nil {
-				uploadDate = m.UploadDate.Format("2006-01-02")
+			if d, err := dbhelpers.GetUploadDate(ctx, db, m.ID); err == nil && d != nil {
+				uploadDate = d.Format("2006-01-02")
 			}
 
 			if err := enc.Encode(struct {
@@ -183,15 +183,14 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 			if item.UploadDate != "" {
 				if t, err := time.Parse("2006-01-02", item.UploadDate); err == nil {
 					importDate = &t
-					currentDate := mobj.UploadDate
-					if currentDate == nil {
-						// No existing date, use import date
-						shouldUpdateDate = true
-					} else if importDate.Before(*currentDate) {
-						// Import date is earlier, use it
-						shouldUpdateDate = true
+					currentDate, err := dbhelpers.GetUploadDate(ctx, db, item.ID)
+					if err == nil {
+						if currentDate == nil {
+							shouldUpdateDate = true
+						} else if importDate.Before(*currentDate) {
+							shouldUpdateDate = true
+						}
 					}
-					// If current date is earlier or equal, don't update
 				}
 			}
 
@@ -237,9 +236,7 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				changes = append(changes, fmt.Sprintf("added %d tags", len(toAdd)))
 			}
 
-			// Update date if we should (import date is earlier)
 			if shouldUpdateDate && importDate != nil {
-				upd = upd.SetUploadDate(*importDate)
 				changes = append(changes, fmt.Sprintf("updated date to %s", item.UploadDate))
 			}
 
@@ -249,6 +246,13 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 					log.Printf("update media %s: %v", item.ID, err)
 					c.AbortWithStatus(http.StatusInternalServerError)
 					return
+				}
+				if shouldUpdateDate && importDate != nil {
+					if err := dbhelpers.SetUploadDate(ctx, db, item.ID, *importDate); err != nil {
+						log.Printf("set upload date for %s: %v", item.ID, err)
+						c.AbortWithStatus(http.StatusInternalServerError)
+						return
+					}
 				}
 
 				log.Printf("updated media %s: %s", item.ID, strings.Join(changes, ", "))

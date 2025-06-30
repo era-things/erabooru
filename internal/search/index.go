@@ -8,8 +8,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"era/booru/ent"
+	"era/booru/ent/attribute"
+	"era/booru/ent/mediaattribute"
 
 	"github.com/blevesearch/bleve/v2"
 	q "github.com/blevesearch/bleve/v2/search/query"
@@ -76,7 +79,17 @@ func parseQuery(expr string) q.Query {
 
 // SearchMedia executes a query against the Bleve index and returns the matching
 // Media documents. It does not touch the Postgres database.
-func SearchMedia(expr string, limit, offset int) ([]*ent.Media, int, error) {
+type MediaDoc struct {
+	ID         string     `json:"id"`
+	Format     string     `json:"format"`
+	Width      int16      `json:"width"`
+	Height     int16      `json:"height"`
+	Duration   *int16     `json:"duration,omitempty"`
+	UploadDate *time.Time `json:"upload_date,omitempty"`
+	Tags       []string   `json:"tags,omitempty"`
+}
+
+func SearchMedia(expr string, limit, offset int) ([]*MediaDoc, int, error) {
 	if IDX == nil {
 		return nil, 0, fmt.Errorf("index not open")
 	}
@@ -88,10 +101,10 @@ func SearchMedia(expr string, limit, offset int) ([]*ent.Media, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	items := make([]*ent.Media, 0, len(res.Hits))
+	items := make([]*MediaDoc, 0, len(res.Hits))
 
 	for _, hit := range res.Hits {
-		var m ent.Media
+		var m MediaDoc
 		b, err := json.Marshal(hit.Fields)
 		//log.Printf("search hit: %s", string(b))
 		if err != nil {
@@ -126,15 +139,30 @@ func OpenOrCreate(path string) error {
 }
 
 // IndexMedia indexes the media metadata in the Bleve index.
-func IndexMedia(m *ent.Media) error {
+func IndexMedia(ctx context.Context, db *ent.Client, m *ent.Media) error {
 	if IDX == nil {
 		return fmt.Errorf("index not open")
 	}
 	log.Printf("indexing media %s", m.ID)
-	doc := struct {
-		ent.Media
-		Tags []string `json:"tags"`
-	}{Media: *m}
+	var uploadDate *time.Time
+	ma, err := db.MediaAttribute.Query().
+		Where(mediaattribute.MediaIDEQ(m.ID)).
+		Where(mediaattribute.HasAttributeWith(attribute.NameEQ("Upload Date"))).
+		Only(ctx)
+	if err == nil && ma.Value != nil {
+		if t, err2 := time.Parse("2006-01-02", *ma.Value); err2 == nil {
+			uploadDate = &t
+		}
+	}
+
+	doc := MediaDoc{
+		ID:         m.ID,
+		Format:     m.Format,
+		Width:      m.Width,
+		Height:     m.Height,
+		Duration:   m.Duration,
+		UploadDate: uploadDate,
+	}
 	if m.Edges.Tags != nil {
 		doc.Tags = make([]string, len(m.Edges.Tags))
 		for i, t := range m.Edges.Tags {
@@ -169,7 +197,7 @@ func IndexAllMedia(ctx context.Context, db *ent.Client) error {
 		return err
 	}
 	for _, m := range items {
-		if err := IndexMedia(m); err != nil {
+		if err := IndexMedia(ctx, db, m); err != nil {
 			return err
 		}
 	}

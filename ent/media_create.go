@@ -8,7 +8,6 @@ import (
 	"era/booru/ent/media"
 	"errors"
 	"fmt"
-	"time"
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
@@ -49,20 +48,6 @@ func (mc *MediaCreate) SetDuration(i int16) *MediaCreate {
 func (mc *MediaCreate) SetNillableDuration(i *int16) *MediaCreate {
 	if i != nil {
 		mc.SetDuration(*i)
-	}
-	return mc
-}
-
-// SetUploadDate sets the "upload_date" field.
-func (mc *MediaCreate) SetUploadDate(t time.Time) *MediaCreate {
-	mc.mutation.SetUploadDate(t)
-	return mc
-}
-
-// SetNillableUploadDate sets the "upload_date" field if the given value is not nil.
-func (mc *MediaCreate) SetNillableUploadDate(t *time.Time) *MediaCreate {
-	if t != nil {
-		mc.SetUploadDate(*t)
 	}
 	return mc
 }
@@ -186,10 +171,6 @@ func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 	if value, ok := mc.mutation.Duration(); ok {
 		_spec.SetField(media.FieldDuration, field.TypeInt16, value)
 		_node.Duration = &value
-	}
-	if value, ok := mc.mutation.UploadDate(); ok {
-		_spec.SetField(media.FieldUploadDate, field.TypeTime, value)
-		_node.UploadDate = &value
 	}
 	if nodes := mc.mutation.TagsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
