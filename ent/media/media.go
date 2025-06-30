@@ -24,13 +24,22 @@ const (
 	FieldUploadDate = "upload_date"
 	// EdgeTags holds the string denoting the tags edge name in mutations.
 	EdgeTags = "tags"
+	// EdgeMediaAttributes holds the string denoting the media_attributes edge name in mutations.
+	EdgeMediaAttributes = "media_attributes"
 	// Table holds the table name of the media in the database.
 	Table = "media"
 	// TagsTable is the table that holds the tags relation/edge. The primary key declared below.
-	TagsTable = "media_tags"
-	// TagsInverseTable is the table name for the Tag entity.
-	// It exists in this package in order to avoid circular dependency with the "tag" package.
-	TagsInverseTable = "tags"
+	TagsTable = "media_attributes"
+	// TagsInverseTable is the table name for the Attribute entity.
+	// It exists in this package in order to avoid circular dependency with the "attribute" package.
+	TagsInverseTable = "attributes"
+	// MediaAttributesTable is the table that holds the media_attributes relation/edge.
+	MediaAttributesTable = "media_attributes"
+	// MediaAttributesInverseTable is the table name for the MediaAttribute entity.
+	// It exists in this package in order to avoid circular dependency with the "mediaattribute" package.
+	MediaAttributesInverseTable = "media_attributes"
+	// MediaAttributesColumn is the table column denoting the media_attributes relation/edge.
+	MediaAttributesColumn = "media_id"
 )
 
 // Columns holds all SQL columns for media fields.
@@ -46,7 +55,7 @@ var Columns = []string{
 var (
 	// TagsPrimaryKey and TagsColumn2 are the table columns denoting the
 	// primary key for the tags relation (M2M).
-	TagsPrimaryKey = []string{"media_id", "tag_id"}
+	TagsPrimaryKey = []string{"media_id", "attribute_id"}
 )
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -110,10 +119,31 @@ func ByTags(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newTagsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByMediaAttributesCount orders the results by media_attributes count.
+func ByMediaAttributesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newMediaAttributesStep(), opts...)
+	}
+}
+
+// ByMediaAttributes orders the results by media_attributes terms.
+func ByMediaAttributes(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newMediaAttributesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newTagsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(TagsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2M, false, TagsTable, TagsPrimaryKey...),
+	)
+}
+func newMediaAttributesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(MediaAttributesInverseTable, MediaAttributesColumn),
+		sqlgraph.Edge(sqlgraph.O2M, true, MediaAttributesTable, MediaAttributesColumn),
 	)
 }

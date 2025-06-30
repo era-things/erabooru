@@ -2,15 +2,16 @@ package db
 
 import (
 	"context"
-	"era/booru/ent"
-	"era/booru/ent/tag"
 	"fmt"
+
+	"era/booru/ent"
+	"era/booru/ent/attribute"
 )
 
-func FindOrCreateTag(ctx context.Context, db *ent.Client, name string) (*ent.Tag, error) {
-	tg, err := db.Tag.Query().Where(tag.NameEQ(name)).Only(ctx)
+func FindOrCreateTag(ctx context.Context, db *ent.Client, name string) (*ent.Attribute, error) {
+	tg, err := db.Attribute.Query().Where(attribute.NameEQ(name)).Only(ctx)
 	if ent.IsNotFound(err) {
-		tg, err = db.Tag.Create().SetName(name).SetType(tag.TypeUserTag).Save(ctx)
+		tg, err = db.Attribute.Create().SetName(name).SetType(attribute.TypeTag).Save(ctx)
 	}
 	return tg, err
 }

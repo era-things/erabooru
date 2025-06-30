@@ -12,10 +12,12 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// Attribute is the client for interacting with the Attribute builders.
+	Attribute *AttributeClient
 	// Media is the client for interacting with the Media builders.
 	Media *MediaClient
-	// Tag is the client for interacting with the Tag builders.
-	Tag *TagClient
+	// MediaAttribute is the client for interacting with the MediaAttribute builders.
+	MediaAttribute *MediaAttributeClient
 
 	// lazily loaded.
 	client     *Client
@@ -147,8 +149,9 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.Attribute = NewAttributeClient(tx.config)
 	tx.Media = NewMediaClient(tx.config)
-	tx.Tag = NewTagClient(tx.config)
+	tx.MediaAttribute = NewMediaAttributeClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.
@@ -158,7 +161,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: Media.QueryXXX(), the query will be executed
+// applies a query, for example: Attribute.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.
