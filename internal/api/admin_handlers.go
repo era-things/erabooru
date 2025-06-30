@@ -3,9 +3,11 @@ package api
 import (
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"era/booru/ent"
@@ -67,7 +69,8 @@ func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.
 func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		items, err := db.Media.Query().Where(media.HasTags()).WithTags().All(ctx)
+		// Remove the HasTags() filter to export all media
+		items, err := db.Media.Query().WithTags().All(ctx)
 		if err != nil {
 			log.Printf("export tags: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -91,18 +94,23 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 		}
 
 		for _, m := range items {
-			if len(m.Edges.Tags) == 0 {
-				continue
-			}
+			// Remove the check for len(m.Edges.Tags) == 0 to export all media
 			tags := make([]string, len(m.Edges.Tags))
 			for i, t := range m.Edges.Tags {
 				tags[i] = t.Name
 			}
+
+			// Handle nil UploadDate
+			uploadDate := ""
+			if m.UploadDate != nil {
+				uploadDate = m.UploadDate.Format("2006-01-02")
+			}
+
 			if err := enc.Encode(struct {
 				ID         string   `json:"id"`
 				Tags       []string `json:"tags"`
 				UploadDate string   `json:"upload_date"`
-			}{ID: m.ID, Tags: tags, UploadDate: m.UploadDate.Format("2006-01-02")}); err != nil {
+			}{ID: m.ID, Tags: tags, UploadDate: uploadDate}); err != nil {
 				log.Printf("encode record %s: %v", m.ID, err)
 				return
 			}
@@ -149,13 +157,10 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				return
 			}
 
-			if len(item.Tags) == 0 && item.UploadDate == "" {
-				continue
-			}
-
+			// Don't skip - process every record to potentially remove "tagme"
 			mobj, err := db.Media.Query().Where(media.IDEQ(item.ID)).WithTags().Only(ctx)
 			if ent.IsNotFound(err) {
-				continue
+				continue // Skip if media doesn't exist
 			}
 			if err != nil {
 				log.Printf("query media %s: %v", item.ID, err)
@@ -163,26 +168,34 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				return
 			}
 
-			// Parse import date
+			// 1) Always look for existing "tagme" tag and remove it if it exists
+			var tagmeID *int
+			for _, t := range mobj.Edges.Tags {
+				if t.Name == "tagme" {
+					tagmeID = &t.ID
+					break
+				}
+			}
+
+			// 2) Parse import date and choose earliest (keep existing if it's earlier)
 			var importDate *time.Time
+			var shouldUpdateDate bool
 			if item.UploadDate != "" {
 				if t, err := time.Parse("2006-01-02", item.UploadDate); err == nil {
 					importDate = &t
+					currentDate := mobj.UploadDate
+					if currentDate == nil {
+						// No existing date, use import date
+						shouldUpdateDate = true
+					} else if importDate.Before(*currentDate) {
+						// Import date is earlier, use it
+						shouldUpdateDate = true
+					}
+					// If current date is earlier or equal, don't update
 				}
 			}
 
-			// Compare dates - only proceed if import date is newer or equal
-			if importDate != nil {
-				currentDate := mobj.UploadDate
-				// Check if currentDate is not nil before dereferencing
-				if currentDate != nil && importDate.Before(*currentDate) {
-					log.Printf("skipping media %s: import date %s is earlier than current date %s",
-						item.ID, importDate.Format("2006-01-02"), currentDate.Format("2006-01-02"))
-					continue
-				}
-			}
-
-			// Build map of existing tags (only if we have tags to process)
+			// 3) Parse existing tags and merge with incoming tags
 			var toAdd []int
 			if len(item.Tags) > 0 {
 				existing := make(map[string]struct{}, len(mobj.Edges.Tags))
@@ -193,7 +206,7 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				// Find new tags to add
 				for _, name := range normalizeTags(item.Tags) {
 					if _, ok := existing[name]; ok {
-						continue
+						continue // Tag already exists
 					}
 					tg, err := db.Tag.Query().Where(tag.NameEQ(name)).Only(ctx)
 					if ent.IsNotFound(err) {
@@ -204,30 +217,41 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 						c.AbortWithStatus(http.StatusInternalServerError)
 						return
 					}
-					existing[name] = struct{}{}
 					toAdd = append(toAdd, tg.ID)
 				}
 			}
 
-			// Update media with new tags and/or date
+			// Update media with changes
 			upd := db.Media.UpdateOneID(item.ID)
+			var changes []string
+
+			// Always remove "tagme" tag if it exists
+			if tagmeID != nil {
+				upd = upd.RemoveTagIDs(*tagmeID)
+				changes = append(changes, "removed 'tagme' tag")
+			}
+
+			// Add new tags
 			if len(toAdd) > 0 {
 				upd = upd.AddTagIDs(toAdd...)
+				changes = append(changes, fmt.Sprintf("added %d tags", len(toAdd)))
 			}
-			if importDate != nil {
+
+			// Update date if we should (import date is earlier)
+			if shouldUpdateDate && importDate != nil {
 				upd = upd.SetUploadDate(*importDate)
+				changes = append(changes, fmt.Sprintf("updated date to %s", item.UploadDate))
 			}
 
 			// Only save if we have something to update
-			if len(toAdd) > 0 || importDate != nil {
+			if len(changes) > 0 {
 				if _, err := upd.Save(ctx); err != nil {
 					log.Printf("update media %s: %v", item.ID, err)
 					c.AbortWithStatus(http.StatusInternalServerError)
 					return
 				}
 
-				log.Printf("updated media %s: added %d tags, set date to %s",
-					item.ID, len(toAdd), item.UploadDate)
+				log.Printf("updated media %s: %s", item.ID, strings.Join(changes, ", "))
 			}
 		}
 
