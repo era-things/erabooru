@@ -11,8 +11,9 @@ import (
 
 	"era/booru/ent/migrate"
 
+	"era/booru/ent/attribute"
 	"era/booru/ent/media"
-	"era/booru/ent/tag"
+	"era/booru/ent/mediaattribute"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
@@ -25,10 +26,12 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// Attribute is the client for interacting with the Attribute builders.
+	Attribute *AttributeClient
 	// Media is the client for interacting with the Media builders.
 	Media *MediaClient
-	// Tag is the client for interacting with the Tag builders.
-	Tag *TagClient
+	// MediaAttribute is the client for interacting with the MediaAttribute builders.
+	MediaAttribute *MediaAttributeClient
 }
 
 // NewClient creates a new client configured with the given options.
@@ -40,8 +43,9 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.Attribute = NewAttributeClient(c.config)
 	c.Media = NewMediaClient(c.config)
-	c.Tag = NewTagClient(c.config)
+	c.MediaAttribute = NewMediaAttributeClient(c.config)
 }
 
 type (
@@ -132,10 +136,11 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:    ctx,
-		config: cfg,
-		Media:  NewMediaClient(cfg),
-		Tag:    NewTagClient(cfg),
+		ctx:            ctx,
+		config:         cfg,
+		Attribute:      NewAttributeClient(cfg),
+		Media:          NewMediaClient(cfg),
+		MediaAttribute: NewMediaAttributeClient(cfg),
 	}, nil
 }
 
@@ -153,17 +158,18 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:    ctx,
-		config: cfg,
-		Media:  NewMediaClient(cfg),
-		Tag:    NewTagClient(cfg),
+		ctx:            ctx,
+		config:         cfg,
+		Attribute:      NewAttributeClient(cfg),
+		Media:          NewMediaClient(cfg),
+		MediaAttribute: NewMediaAttributeClient(cfg),
 	}, nil
 }
 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		Media.
+//		Attribute.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -185,26 +191,195 @@ func (c *Client) Close() error {
 // Use adds the mutation hooks to all the entity clients.
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
+	c.Attribute.Use(hooks...)
 	c.Media.Use(hooks...)
-	c.Tag.Use(hooks...)
+	c.MediaAttribute.Use(hooks...)
 }
 
 // Intercept adds the query interceptors to all the entity clients.
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
+	c.Attribute.Intercept(interceptors...)
 	c.Media.Intercept(interceptors...)
-	c.Tag.Intercept(interceptors...)
+	c.MediaAttribute.Intercept(interceptors...)
 }
 
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *AttributeMutation:
+		return c.Attribute.mutate(ctx, m)
 	case *MediaMutation:
 		return c.Media.mutate(ctx, m)
-	case *TagMutation:
-		return c.Tag.mutate(ctx, m)
+	case *MediaAttributeMutation:
+		return c.MediaAttribute.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// AttributeClient is a client for the Attribute schema.
+type AttributeClient struct {
+	config
+}
+
+// NewAttributeClient returns a client for the Attribute from the given config.
+func NewAttributeClient(c config) *AttributeClient {
+	return &AttributeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `attribute.Hooks(f(g(h())))`.
+func (c *AttributeClient) Use(hooks ...Hook) {
+	c.hooks.Attribute = append(c.hooks.Attribute, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `attribute.Intercept(f(g(h())))`.
+func (c *AttributeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Attribute = append(c.inters.Attribute, interceptors...)
+}
+
+// Create returns a builder for creating a Attribute entity.
+func (c *AttributeClient) Create() *AttributeCreate {
+	mutation := newAttributeMutation(c.config, OpCreate)
+	return &AttributeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Attribute entities.
+func (c *AttributeClient) CreateBulk(builders ...*AttributeCreate) *AttributeCreateBulk {
+	return &AttributeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AttributeClient) MapCreateBulk(slice any, setFunc func(*AttributeCreate, int)) *AttributeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AttributeCreateBulk{err: fmt.Errorf("calling to AttributeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AttributeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AttributeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Attribute.
+func (c *AttributeClient) Update() *AttributeUpdate {
+	mutation := newAttributeMutation(c.config, OpUpdate)
+	return &AttributeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AttributeClient) UpdateOne(a *Attribute) *AttributeUpdateOne {
+	mutation := newAttributeMutation(c.config, OpUpdateOne, withAttribute(a))
+	return &AttributeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AttributeClient) UpdateOneID(id int) *AttributeUpdateOne {
+	mutation := newAttributeMutation(c.config, OpUpdateOne, withAttributeID(id))
+	return &AttributeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Attribute.
+func (c *AttributeClient) Delete() *AttributeDelete {
+	mutation := newAttributeMutation(c.config, OpDelete)
+	return &AttributeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AttributeClient) DeleteOne(a *Attribute) *AttributeDeleteOne {
+	return c.DeleteOneID(a.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AttributeClient) DeleteOneID(id int) *AttributeDeleteOne {
+	builder := c.Delete().Where(attribute.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AttributeDeleteOne{builder}
+}
+
+// Query returns a query builder for Attribute.
+func (c *AttributeClient) Query() *AttributeQuery {
+	return &AttributeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAttribute},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Attribute entity by its id.
+func (c *AttributeClient) Get(ctx context.Context, id int) (*Attribute, error) {
+	return c.Query().Where(attribute.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AttributeClient) GetX(ctx context.Context, id int) *Attribute {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryMedia queries the media edge of a Attribute.
+func (c *AttributeClient) QueryMedia(a *Attribute) *MediaQuery {
+	query := (&MediaClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := a.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(attribute.Table, attribute.FieldID, id),
+			sqlgraph.To(media.Table, media.FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, true, attribute.MediaTable, attribute.MediaPrimaryKey...),
+		)
+		fromV = sqlgraph.Neighbors(a.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMediaAttributes queries the media_attributes edge of a Attribute.
+func (c *AttributeClient) QueryMediaAttributes(a *Attribute) *MediaAttributeQuery {
+	query := (&MediaAttributeClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := a.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(attribute.Table, attribute.FieldID, id),
+			sqlgraph.To(mediaattribute.Table, mediaattribute.AttributeColumn),
+			sqlgraph.Edge(sqlgraph.O2M, true, attribute.MediaAttributesTable, attribute.MediaAttributesColumn),
+		)
+		fromV = sqlgraph.Neighbors(a.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AttributeClient) Hooks() []Hook {
+	return c.hooks.Attribute
+}
+
+// Interceptors returns the client interceptors.
+func (c *AttributeClient) Interceptors() []Interceptor {
+	return c.inters.Attribute
+}
+
+func (c *AttributeClient) mutate(ctx context.Context, m *AttributeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AttributeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AttributeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AttributeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AttributeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Attribute mutation op: %q", m.Op())
 	}
 }
 
@@ -317,14 +492,30 @@ func (c *MediaClient) GetX(ctx context.Context, id string) *Media {
 }
 
 // QueryTags queries the tags edge of a Media.
-func (c *MediaClient) QueryTags(m *Media) *TagQuery {
-	query := (&TagClient{config: c.config}).Query()
+func (c *MediaClient) QueryTags(m *Media) *AttributeQuery {
+	query := (&AttributeClient{config: c.config}).Query()
 	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
 		id := m.ID
 		step := sqlgraph.NewStep(
 			sqlgraph.From(media.Table, media.FieldID, id),
-			sqlgraph.To(tag.Table, tag.FieldID),
+			sqlgraph.To(attribute.Table, attribute.FieldID),
 			sqlgraph.Edge(sqlgraph.M2M, false, media.TagsTable, media.TagsPrimaryKey...),
+		)
+		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMediaAttributes queries the media_attributes edge of a Media.
+func (c *MediaClient) QueryMediaAttributes(m *Media) *MediaAttributeQuery {
+	query := (&MediaAttributeClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(media.Table, media.FieldID, id),
+			sqlgraph.To(mediaattribute.Table, mediaattribute.MediaColumn),
+			sqlgraph.Edge(sqlgraph.O2M, true, media.MediaAttributesTable, media.MediaAttributesColumn),
 		)
 		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
 		return fromV, nil
@@ -357,161 +548,128 @@ func (c *MediaClient) mutate(ctx context.Context, m *MediaMutation) (Value, erro
 	}
 }
 
-// TagClient is a client for the Tag schema.
-type TagClient struct {
+// MediaAttributeClient is a client for the MediaAttribute schema.
+type MediaAttributeClient struct {
 	config
 }
 
-// NewTagClient returns a client for the Tag from the given config.
-func NewTagClient(c config) *TagClient {
-	return &TagClient{config: c}
+// NewMediaAttributeClient returns a client for the MediaAttribute from the given config.
+func NewMediaAttributeClient(c config) *MediaAttributeClient {
+	return &MediaAttributeClient{config: c}
 }
 
 // Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `tag.Hooks(f(g(h())))`.
-func (c *TagClient) Use(hooks ...Hook) {
-	c.hooks.Tag = append(c.hooks.Tag, hooks...)
+// A call to `Use(f, g, h)` equals to `mediaattribute.Hooks(f(g(h())))`.
+func (c *MediaAttributeClient) Use(hooks ...Hook) {
+	c.hooks.MediaAttribute = append(c.hooks.MediaAttribute, hooks...)
 }
 
 // Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `tag.Intercept(f(g(h())))`.
-func (c *TagClient) Intercept(interceptors ...Interceptor) {
-	c.inters.Tag = append(c.inters.Tag, interceptors...)
+// A call to `Intercept(f, g, h)` equals to `mediaattribute.Intercept(f(g(h())))`.
+func (c *MediaAttributeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MediaAttribute = append(c.inters.MediaAttribute, interceptors...)
 }
 
-// Create returns a builder for creating a Tag entity.
-func (c *TagClient) Create() *TagCreate {
-	mutation := newTagMutation(c.config, OpCreate)
-	return &TagCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+// Create returns a builder for creating a MediaAttribute entity.
+func (c *MediaAttributeClient) Create() *MediaAttributeCreate {
+	mutation := newMediaAttributeMutation(c.config, OpCreate)
+	return &MediaAttributeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
-// CreateBulk returns a builder for creating a bulk of Tag entities.
-func (c *TagClient) CreateBulk(builders ...*TagCreate) *TagCreateBulk {
-	return &TagCreateBulk{config: c.config, builders: builders}
+// CreateBulk returns a builder for creating a bulk of MediaAttribute entities.
+func (c *MediaAttributeClient) CreateBulk(builders ...*MediaAttributeCreate) *MediaAttributeCreateBulk {
+	return &MediaAttributeCreateBulk{config: c.config, builders: builders}
 }
 
 // MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
 // a builder and applies setFunc on it.
-func (c *TagClient) MapCreateBulk(slice any, setFunc func(*TagCreate, int)) *TagCreateBulk {
+func (c *MediaAttributeClient) MapCreateBulk(slice any, setFunc func(*MediaAttributeCreate, int)) *MediaAttributeCreateBulk {
 	rv := reflect.ValueOf(slice)
 	if rv.Kind() != reflect.Slice {
-		return &TagCreateBulk{err: fmt.Errorf("calling to TagClient.MapCreateBulk with wrong type %T, need slice", slice)}
+		return &MediaAttributeCreateBulk{err: fmt.Errorf("calling to MediaAttributeClient.MapCreateBulk with wrong type %T, need slice", slice)}
 	}
-	builders := make([]*TagCreate, rv.Len())
+	builders := make([]*MediaAttributeCreate, rv.Len())
 	for i := 0; i < rv.Len(); i++ {
 		builders[i] = c.Create()
 		setFunc(builders[i], i)
 	}
-	return &TagCreateBulk{config: c.config, builders: builders}
+	return &MediaAttributeCreateBulk{config: c.config, builders: builders}
 }
 
-// Update returns an update builder for Tag.
-func (c *TagClient) Update() *TagUpdate {
-	mutation := newTagMutation(c.config, OpUpdate)
-	return &TagUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+// Update returns an update builder for MediaAttribute.
+func (c *MediaAttributeClient) Update() *MediaAttributeUpdate {
+	mutation := newMediaAttributeMutation(c.config, OpUpdate)
+	return &MediaAttributeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
 // UpdateOne returns an update builder for the given entity.
-func (c *TagClient) UpdateOne(t *Tag) *TagUpdateOne {
-	mutation := newTagMutation(c.config, OpUpdateOne, withTag(t))
-	return &TagUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+func (c *MediaAttributeClient) UpdateOne(ma *MediaAttribute) *MediaAttributeUpdateOne {
+	mutation := newMediaAttributeMutation(c.config, OpUpdateOne)
+	mutation.media = &ma.MediaID
+	mutation.attribute = &ma.AttributeID
+	return &MediaAttributeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
-// UpdateOneID returns an update builder for the given id.
-func (c *TagClient) UpdateOneID(id int) *TagUpdateOne {
-	mutation := newTagMutation(c.config, OpUpdateOne, withTagID(id))
-	return &TagUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+// Delete returns a delete builder for MediaAttribute.
+func (c *MediaAttributeClient) Delete() *MediaAttributeDelete {
+	mutation := newMediaAttributeMutation(c.config, OpDelete)
+	return &MediaAttributeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
-// Delete returns a delete builder for Tag.
-func (c *TagClient) Delete() *TagDelete {
-	mutation := newTagMutation(c.config, OpDelete)
-	return &TagDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *TagClient) DeleteOne(t *Tag) *TagDeleteOne {
-	return c.DeleteOneID(t.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *TagClient) DeleteOneID(id int) *TagDeleteOne {
-	builder := c.Delete().Where(tag.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &TagDeleteOne{builder}
-}
-
-// Query returns a query builder for Tag.
-func (c *TagClient) Query() *TagQuery {
-	return &TagQuery{
+// Query returns a query builder for MediaAttribute.
+func (c *MediaAttributeClient) Query() *MediaAttributeQuery {
+	return &MediaAttributeQuery{
 		config: c.config,
-		ctx:    &QueryContext{Type: TypeTag},
+		ctx:    &QueryContext{Type: TypeMediaAttribute},
 		inters: c.Interceptors(),
 	}
 }
 
-// Get returns a Tag entity by its id.
-func (c *TagClient) Get(ctx context.Context, id int) (*Tag, error) {
-	return c.Query().Where(tag.ID(id)).Only(ctx)
+// QueryMedia queries the media edge of a MediaAttribute.
+func (c *MediaAttributeClient) QueryMedia(ma *MediaAttribute) *MediaQuery {
+	return c.Query().
+		Where(mediaattribute.MediaID(ma.MediaID), mediaattribute.AttributeID(ma.AttributeID)).
+		QueryMedia()
 }
 
-// GetX is like Get, but panics if an error occurs.
-func (c *TagClient) GetX(ctx context.Context, id int) *Tag {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QueryMedia queries the media edge of a Tag.
-func (c *TagClient) QueryMedia(t *Tag) *MediaQuery {
-	query := (&MediaClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := t.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(tag.Table, tag.FieldID, id),
-			sqlgraph.To(media.Table, media.FieldID),
-			sqlgraph.Edge(sqlgraph.M2M, true, tag.MediaTable, tag.MediaPrimaryKey...),
-		)
-		fromV = sqlgraph.Neighbors(t.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
+// QueryAttribute queries the attribute edge of a MediaAttribute.
+func (c *MediaAttributeClient) QueryAttribute(ma *MediaAttribute) *AttributeQuery {
+	return c.Query().
+		Where(mediaattribute.MediaID(ma.MediaID), mediaattribute.AttributeID(ma.AttributeID)).
+		QueryAttribute()
 }
 
 // Hooks returns the client hooks.
-func (c *TagClient) Hooks() []Hook {
-	return c.hooks.Tag
+func (c *MediaAttributeClient) Hooks() []Hook {
+	return c.hooks.MediaAttribute
 }
 
 // Interceptors returns the client interceptors.
-func (c *TagClient) Interceptors() []Interceptor {
-	return c.inters.Tag
+func (c *MediaAttributeClient) Interceptors() []Interceptor {
+	return c.inters.MediaAttribute
 }
 
-func (c *TagClient) mutate(ctx context.Context, m *TagMutation) (Value, error) {
+func (c *MediaAttributeClient) mutate(ctx context.Context, m *MediaAttributeMutation) (Value, error) {
 	switch m.Op() {
 	case OpCreate:
-		return (&TagCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+		return (&MediaAttributeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpUpdate:
-		return (&TagUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+		return (&MediaAttributeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpUpdateOne:
-		return (&TagUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+		return (&MediaAttributeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpDelete, OpDeleteOne:
-		return (&TagDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+		return (&MediaAttributeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
-		return nil, fmt.Errorf("ent: unknown Tag mutation op: %q", m.Op())
+		return nil, fmt.Errorf("ent: unknown MediaAttribute mutation op: %q", m.Op())
 	}
 }
 
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Media, Tag []ent.Hook
+		Attribute, Media, MediaAttribute []ent.Hook
 	}
 	inters struct {
-		Media, Tag []ent.Interceptor
+		Attribute, Media, MediaAttribute []ent.Interceptor
 	}
 )

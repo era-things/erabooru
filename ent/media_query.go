@@ -5,9 +5,10 @@ package ent
 import (
 	"context"
 	"database/sql/driver"
+	"era/booru/ent/attribute"
 	"era/booru/ent/media"
+	"era/booru/ent/mediaattribute"
 	"era/booru/ent/predicate"
-	"era/booru/ent/tag"
 	"fmt"
 	"math"
 
@@ -20,11 +21,12 @@ import (
 // MediaQuery is the builder for querying Media entities.
 type MediaQuery struct {
 	config
-	ctx        *QueryContext
-	order      []media.OrderOption
-	inters     []Interceptor
-	predicates []predicate.Media
-	withTags   *TagQuery
+	ctx                 *QueryContext
+	order               []media.OrderOption
+	inters              []Interceptor
+	predicates          []predicate.Media
+	withTags            *AttributeQuery
+	withMediaAttributes *MediaAttributeQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -62,8 +64,8 @@ func (mq *MediaQuery) Order(o ...media.OrderOption) *MediaQuery {
 }
 
 // QueryTags chains the current query on the "tags" edge.
-func (mq *MediaQuery) QueryTags() *TagQuery {
-	query := (&TagClient{config: mq.config}).Query()
+func (mq *MediaQuery) QueryTags() *AttributeQuery {
+	query := (&AttributeClient{config: mq.config}).Query()
 	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
 		if err := mq.prepareQuery(ctx); err != nil {
 			return nil, err
@@ -74,8 +76,30 @@ func (mq *MediaQuery) QueryTags() *TagQuery {
 		}
 		step := sqlgraph.NewStep(
 			sqlgraph.From(media.Table, media.FieldID, selector),
-			sqlgraph.To(tag.Table, tag.FieldID),
+			sqlgraph.To(attribute.Table, attribute.FieldID),
 			sqlgraph.Edge(sqlgraph.M2M, false, media.TagsTable, media.TagsPrimaryKey...),
+		)
+		fromU = sqlgraph.SetNeighbors(mq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryMediaAttributes chains the current query on the "media_attributes" edge.
+func (mq *MediaQuery) QueryMediaAttributes() *MediaAttributeQuery {
+	query := (&MediaAttributeClient{config: mq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := mq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := mq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(media.Table, media.FieldID, selector),
+			sqlgraph.To(mediaattribute.Table, mediaattribute.MediaColumn),
+			sqlgraph.Edge(sqlgraph.O2M, true, media.MediaAttributesTable, media.MediaAttributesColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(mq.driver.Dialect(), step)
 		return fromU, nil
@@ -270,12 +294,13 @@ func (mq *MediaQuery) Clone() *MediaQuery {
 		return nil
 	}
 	return &MediaQuery{
-		config:     mq.config,
-		ctx:        mq.ctx.Clone(),
-		order:      append([]media.OrderOption{}, mq.order...),
-		inters:     append([]Interceptor{}, mq.inters...),
-		predicates: append([]predicate.Media{}, mq.predicates...),
-		withTags:   mq.withTags.Clone(),
+		config:              mq.config,
+		ctx:                 mq.ctx.Clone(),
+		order:               append([]media.OrderOption{}, mq.order...),
+		inters:              append([]Interceptor{}, mq.inters...),
+		predicates:          append([]predicate.Media{}, mq.predicates...),
+		withTags:            mq.withTags.Clone(),
+		withMediaAttributes: mq.withMediaAttributes.Clone(),
 		// clone intermediate query.
 		sql:  mq.sql.Clone(),
 		path: mq.path,
@@ -284,12 +309,23 @@ func (mq *MediaQuery) Clone() *MediaQuery {
 
 // WithTags tells the query-builder to eager-load the nodes that are connected to
 // the "tags" edge. The optional arguments are used to configure the query builder of the edge.
-func (mq *MediaQuery) WithTags(opts ...func(*TagQuery)) *MediaQuery {
-	query := (&TagClient{config: mq.config}).Query()
+func (mq *MediaQuery) WithTags(opts ...func(*AttributeQuery)) *MediaQuery {
+	query := (&AttributeClient{config: mq.config}).Query()
 	for _, opt := range opts {
 		opt(query)
 	}
 	mq.withTags = query
+	return mq
+}
+
+// WithMediaAttributes tells the query-builder to eager-load the nodes that are connected to
+// the "media_attributes" edge. The optional arguments are used to configure the query builder of the edge.
+func (mq *MediaQuery) WithMediaAttributes(opts ...func(*MediaAttributeQuery)) *MediaQuery {
+	query := (&MediaAttributeClient{config: mq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	mq.withMediaAttributes = query
 	return mq
 }
 
@@ -371,8 +407,9 @@ func (mq *MediaQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Media,
 	var (
 		nodes       = []*Media{}
 		_spec       = mq.querySpec()
-		loadedTypes = [1]bool{
+		loadedTypes = [2]bool{
 			mq.withTags != nil,
+			mq.withMediaAttributes != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -395,15 +432,22 @@ func (mq *MediaQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Media,
 	}
 	if query := mq.withTags; query != nil {
 		if err := mq.loadTags(ctx, query, nodes,
-			func(n *Media) { n.Edges.Tags = []*Tag{} },
-			func(n *Media, e *Tag) { n.Edges.Tags = append(n.Edges.Tags, e) }); err != nil {
+			func(n *Media) { n.Edges.Tags = []*Attribute{} },
+			func(n *Media, e *Attribute) { n.Edges.Tags = append(n.Edges.Tags, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := mq.withMediaAttributes; query != nil {
+		if err := mq.loadMediaAttributes(ctx, query, nodes,
+			func(n *Media) { n.Edges.MediaAttributes = []*MediaAttribute{} },
+			func(n *Media, e *MediaAttribute) { n.Edges.MediaAttributes = append(n.Edges.MediaAttributes, e) }); err != nil {
 			return nil, err
 		}
 	}
 	return nodes, nil
 }
 
-func (mq *MediaQuery) loadTags(ctx context.Context, query *TagQuery, nodes []*Media, init func(*Media), assign func(*Media, *Tag)) error {
+func (mq *MediaQuery) loadTags(ctx context.Context, query *AttributeQuery, nodes []*Media, init func(*Media), assign func(*Media, *Attribute)) error {
 	edgeIDs := make([]driver.Value, len(nodes))
 	byID := make(map[string]*Media)
 	nids := make(map[int]map[*Media]struct{})
@@ -416,7 +460,7 @@ func (mq *MediaQuery) loadTags(ctx context.Context, query *TagQuery, nodes []*Me
 	}
 	query.Where(func(s *sql.Selector) {
 		joinT := sql.Table(media.TagsTable)
-		s.Join(joinT).On(s.C(tag.FieldID), joinT.C(media.TagsPrimaryKey[1]))
+		s.Join(joinT).On(s.C(attribute.FieldID), joinT.C(media.TagsPrimaryKey[1]))
 		s.Where(sql.InValues(joinT.C(media.TagsPrimaryKey[0]), edgeIDs...))
 		columns := s.SelectedColumns()
 		s.Select(joinT.C(media.TagsPrimaryKey[0]))
@@ -449,7 +493,7 @@ func (mq *MediaQuery) loadTags(ctx context.Context, query *TagQuery, nodes []*Me
 			}
 		})
 	})
-	neighbors, err := withInterceptors[[]*Tag](ctx, query, qr, query.inters)
+	neighbors, err := withInterceptors[[]*Attribute](ctx, query, qr, query.inters)
 	if err != nil {
 		return err
 	}
@@ -461,6 +505,36 @@ func (mq *MediaQuery) loadTags(ctx context.Context, query *TagQuery, nodes []*Me
 		for kn := range nodes {
 			assign(kn, n)
 		}
+	}
+	return nil
+}
+func (mq *MediaQuery) loadMediaAttributes(ctx context.Context, query *MediaAttributeQuery, nodes []*Media, init func(*Media), assign func(*Media, *MediaAttribute)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[string]*Media)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(mediaattribute.FieldMediaID)
+	}
+	query.Where(predicate.MediaAttribute(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(media.MediaAttributesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.MediaID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "media_id" returned %v for node %v`, fk, n)
+		}
+		assign(node, n)
 	}
 	return nil
 }

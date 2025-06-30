@@ -36,20 +36,31 @@ type Media struct {
 
 // MediaEdges holds the relations/edges for other nodes in the graph.
 type MediaEdges struct {
-	// Tags associated with the media item, used for categorization
-	Tags []*Tag `json:"tags,omitempty"`
+	// Attributes associated with the media item, used for categorization
+	Tags []*Attribute `json:"tags,omitempty"`
+	// MediaAttributes holds the value of the media_attributes edge.
+	MediaAttributes []*MediaAttribute `json:"media_attributes,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // TagsOrErr returns the Tags value or an error if the edge
 // was not loaded in eager-loading.
-func (e MediaEdges) TagsOrErr() ([]*Tag, error) {
+func (e MediaEdges) TagsOrErr() ([]*Attribute, error) {
 	if e.loadedTypes[0] {
 		return e.Tags, nil
 	}
 	return nil, &NotLoadedError{edge: "tags"}
+}
+
+// MediaAttributesOrErr returns the MediaAttributes value or an error if the edge
+// was not loaded in eager-loading.
+func (e MediaEdges) MediaAttributesOrErr() ([]*MediaAttribute, error) {
+	if e.loadedTypes[1] {
+		return e.MediaAttributes, nil
+	}
+	return nil, &NotLoadedError{edge: "media_attributes"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -130,8 +141,13 @@ func (m *Media) Value(name string) (ent.Value, error) {
 }
 
 // QueryTags queries the "tags" edge of the Media entity.
-func (m *Media) QueryTags() *TagQuery {
+func (m *Media) QueryTags() *AttributeQuery {
 	return NewMediaClient(m.config).QueryTags(m)
+}
+
+// QueryMediaAttributes queries the "media_attributes" edge of the Media entity.
+func (m *Media) QueryMediaAttributes() *MediaAttributeQuery {
+	return NewMediaClient(m.config).QueryMediaAttributes(m)
 }
 
 // Update returns a builder for updating this Media.

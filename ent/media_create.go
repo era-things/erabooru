@@ -4,8 +4,8 @@ package ent
 
 import (
 	"context"
+	"era/booru/ent/attribute"
 	"era/booru/ent/media"
-	"era/booru/ent/tag"
 	"errors"
 	"fmt"
 	"time"
@@ -73,17 +73,17 @@ func (mc *MediaCreate) SetID(s string) *MediaCreate {
 	return mc
 }
 
-// AddTagIDs adds the "tags" edge to the Tag entity by IDs.
+// AddTagIDs adds the "tags" edge to the Attribute entity by IDs.
 func (mc *MediaCreate) AddTagIDs(ids ...int) *MediaCreate {
 	mc.mutation.AddTagIDs(ids...)
 	return mc
 }
 
-// AddTags adds the "tags" edges to the Tag entity.
-func (mc *MediaCreate) AddTags(t ...*Tag) *MediaCreate {
-	ids := make([]int, len(t))
-	for i := range t {
-		ids[i] = t[i].ID
+// AddTags adds the "tags" edges to the Attribute entity.
+func (mc *MediaCreate) AddTags(a ...*Attribute) *MediaCreate {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
 	}
 	return mc.AddTagIDs(ids...)
 }
@@ -199,7 +199,7 @@ func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 			Columns: media.TagsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(tag.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(attribute.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
