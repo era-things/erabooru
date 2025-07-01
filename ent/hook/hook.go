@@ -8,18 +8,6 @@ import (
 	"fmt"
 )
 
-// The AttributeFunc type is an adapter to allow the use of ordinary
-// function as Attribute mutator.
-type AttributeFunc func(context.Context, *ent.AttributeMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f AttributeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.AttributeMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AttributeMutation", m)
-}
-
 // The MediaFunc type is an adapter to allow the use of ordinary
 // function as Media mutator.
 type MediaFunc func(context.Context, *ent.MediaMutation) (ent.Value, error)
@@ -32,16 +20,16 @@ func (f MediaFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MediaMutation", m)
 }
 
-// The MediaAttributeFunc type is an adapter to allow the use of ordinary
-// function as MediaAttribute mutator.
-type MediaAttributeFunc func(context.Context, *ent.MediaAttributeMutation) (ent.Value, error)
+// The TagFunc type is an adapter to allow the use of ordinary
+// function as Tag mutator.
+type TagFunc func(context.Context, *ent.TagMutation) (ent.Value, error)
 
 // Mutate calls f(ctx, m).
-func (f MediaAttributeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.MediaAttributeMutation); ok {
+func (f TagFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TagMutation); ok {
 		return f(ctx, mv)
 	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MediaAttributeMutation", m)
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TagMutation", m)
 }
 
 // Condition is a hook condition function.

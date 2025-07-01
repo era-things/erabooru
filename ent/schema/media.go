@@ -44,8 +44,7 @@ func (Media) Fields() []ent.Field {
 // Edges of the Media.
 func (Media) Edges() []ent.Edge {
 	return []ent.Edge{
-		edge.To("tags", Attribute.Type).
-			Through("media_attributes", MediaAttribute.Type).
-			Comment("Attributes associated with the media item, used for categorization"),
+		edge.To("tags", Tag.Type).
+			Comment("Tags associated with the media item, used for categorization"),
 	}
 }

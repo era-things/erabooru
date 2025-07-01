@@ -347,32 +347,9 @@ func HasTags() predicate.Media {
 }
 
 // HasTagsWith applies the HasEdge predicate on the "tags" edge with a given conditions (other predicates).
-func HasTagsWith(preds ...predicate.Attribute) predicate.Media {
+func HasTagsWith(preds ...predicate.Tag) predicate.Media {
 	return predicate.Media(func(s *sql.Selector) {
 		step := newTagsStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
-// HasMediaAttributes applies the HasEdge predicate on the "media_attributes" edge.
-func HasMediaAttributes() predicate.Media {
-	return predicate.Media(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, true, MediaAttributesTable, MediaAttributesColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasMediaAttributesWith applies the HasEdge predicate on the "media_attributes" edge with a given conditions (other predicates).
-func HasMediaAttributesWith(preds ...predicate.MediaAttribute) predicate.Media {
-	return predicate.Media(func(s *sql.Selector) {
-		step := newMediaAttributesStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

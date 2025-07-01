@@ -8,18 +8,6 @@ import (
 )
 
 var (
-	// AttributesColumns holds the columns for the "attributes" table.
-	AttributesColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "name", Type: field.TypeString, Unique: true},
-		{Name: "type", Type: field.TypeEnum, Enums: []string{"tag", "numeric", "date", "string"}},
-	}
-	// AttributesTable holds the schema information for the "attributes" table.
-	AttributesTable = &schema.Table{
-		Name:       "attributes",
-		Columns:    AttributesColumns,
-		PrimaryKey: []*schema.Column{AttributesColumns[0]},
-	}
 	// MediaColumns holds the columns for the "media" table.
 	MediaColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
@@ -35,41 +23,52 @@ var (
 		Columns:    MediaColumns,
 		PrimaryKey: []*schema.Column{MediaColumns[0]},
 	}
-	// MediaAttributesColumns holds the columns for the "media_attributes" table.
-	MediaAttributesColumns = []*schema.Column{
-		{Name: "value", Type: field.TypeString, Nullable: true},
-		{Name: "media_id", Type: field.TypeString},
-		{Name: "attribute_id", Type: field.TypeInt},
+	// TagsColumns holds the columns for the "tags" table.
+	TagsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "name", Type: field.TypeString, Unique: true},
+		{Name: "type", Type: field.TypeEnum, Enums: []string{"user_tag", "meta_tag"}},
 	}
-	// MediaAttributesTable holds the schema information for the "media_attributes" table.
-	MediaAttributesTable = &schema.Table{
-		Name:       "media_attributes",
-		Columns:    MediaAttributesColumns,
-		PrimaryKey: []*schema.Column{MediaAttributesColumns[1], MediaAttributesColumns[2]},
+	// TagsTable holds the schema information for the "tags" table.
+	TagsTable = &schema.Table{
+		Name:       "tags",
+		Columns:    TagsColumns,
+		PrimaryKey: []*schema.Column{TagsColumns[0]},
+	}
+	// MediaTagsColumns holds the columns for the "media_tags" table.
+	MediaTagsColumns = []*schema.Column{
+		{Name: "media_id", Type: field.TypeString},
+		{Name: "tag_id", Type: field.TypeInt},
+	}
+	// MediaTagsTable holds the schema information for the "media_tags" table.
+	MediaTagsTable = &schema.Table{
+		Name:       "media_tags",
+		Columns:    MediaTagsColumns,
+		PrimaryKey: []*schema.Column{MediaTagsColumns[0], MediaTagsColumns[1]},
 		ForeignKeys: []*schema.ForeignKey{
 			{
-				Symbol:     "media_attributes_media_media",
-				Columns:    []*schema.Column{MediaAttributesColumns[1]},
+				Symbol:     "media_tags_media_id",
+				Columns:    []*schema.Column{MediaTagsColumns[0]},
 				RefColumns: []*schema.Column{MediaColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 			{
-				Symbol:     "media_attributes_attributes_attribute",
-				Columns:    []*schema.Column{MediaAttributesColumns[2]},
-				RefColumns: []*schema.Column{AttributesColumns[0]},
-				OnDelete:   schema.NoAction,
+				Symbol:     "media_tags_tag_id",
+				Columns:    []*schema.Column{MediaTagsColumns[1]},
+				RefColumns: []*schema.Column{TagsColumns[0]},
+				OnDelete:   schema.Cascade,
 			},
 		},
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
-		AttributesTable,
 		MediaTable,
-		MediaAttributesTable,
+		TagsTable,
+		MediaTagsTable,
 	}
 )
 
 func init() {
-	MediaAttributesTable.ForeignKeys[0].RefTable = MediaTable
-	MediaAttributesTable.ForeignKeys[1].RefTable = AttributesTable
+	MediaTagsTable.ForeignKeys[0].RefTable = MediaTable
+	MediaTagsTable.ForeignKeys[1].RefTable = TagsTable
 }

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"era/booru/ent"
-	"era/booru/ent/attribute"
 	"era/booru/ent/media"
+	"era/booru/ent/tag"
 	"era/booru/internal/config"
 	"era/booru/internal/ingest"
 	minio "era/booru/internal/minio"
@@ -208,9 +208,9 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 					if _, ok := existing[name]; ok {
 						continue // Tag already exists
 					}
-					tg, err := db.Attribute.Query().Where(attribute.NameEQ(name)).Only(ctx)
+					tg, err := db.Tag.Query().Where(tag.NameEQ(name)).Only(ctx)
 					if ent.IsNotFound(err) {
-						tg, err = db.Attribute.Create().SetName(name).SetType(attribute.TypeTag).Save(ctx)
+						tg, err = db.Tag.Create().SetName(name).SetType(tag.TypeUserTag).Save(ctx)
 					}
 					if err != nil {
 						log.Printf("lookup tag %s: %v", name, err)

@@ -6,11 +6,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
-// Attribute is the predicate function for attribute builders.
-type Attribute func(*sql.Selector)
-
 // Media is the predicate function for media builders.
 type Media func(*sql.Selector)
 
-// MediaAttribute is the predicate function for mediaattribute builders.
-type MediaAttribute func(*sql.Selector)
+// Tag is the predicate function for tag builders.
+type Tag func(*sql.Selector)

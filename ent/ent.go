@@ -4,9 +4,8 @@ package ent
 
 import (
 	"context"
-	"era/booru/ent/attribute"
 	"era/booru/ent/media"
-	"era/booru/ent/mediaattribute"
+	"era/booru/ent/tag"
 	"errors"
 	"fmt"
 	"reflect"
@@ -75,9 +74,8 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			attribute.Table:      attribute.ValidColumn,
-			media.Table:          media.ValidColumn,
-			mediaattribute.Table: mediaattribute.ValidColumn,
+			media.Table: media.ValidColumn,
+			tag.Table:   tag.ValidColumn,
 		})
 	})
 	return columnCheck(table, column)

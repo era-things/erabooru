@@ -4,9 +4,9 @@ package ent
 
 import (
 	"context"
-	"era/booru/ent/attribute"
 	"era/booru/ent/media"
 	"era/booru/ent/predicate"
+	"era/booru/ent/tag"
 	"errors"
 	"fmt"
 	"time"
@@ -76,17 +76,17 @@ func (mu *MediaUpdate) ClearUploadDate() *MediaUpdate {
 	return mu
 }
 
-// AddTagIDs adds the "tags" edge to the Attribute entity by IDs.
+// AddTagIDs adds the "tags" edge to the Tag entity by IDs.
 func (mu *MediaUpdate) AddTagIDs(ids ...int) *MediaUpdate {
 	mu.mutation.AddTagIDs(ids...)
 	return mu
 }
 
-// AddTags adds the "tags" edges to the Attribute entity.
-func (mu *MediaUpdate) AddTags(a ...*Attribute) *MediaUpdate {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
+// AddTags adds the "tags" edges to the Tag entity.
+func (mu *MediaUpdate) AddTags(t ...*Tag) *MediaUpdate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
 	}
 	return mu.AddTagIDs(ids...)
 }
@@ -96,23 +96,23 @@ func (mu *MediaUpdate) Mutation() *MediaMutation {
 	return mu.mutation
 }
 
-// ClearTags clears all "tags" edges to the Attribute entity.
+// ClearTags clears all "tags" edges to the Tag entity.
 func (mu *MediaUpdate) ClearTags() *MediaUpdate {
 	mu.mutation.ClearTags()
 	return mu
 }
 
-// RemoveTagIDs removes the "tags" edge to Attribute entities by IDs.
+// RemoveTagIDs removes the "tags" edge to Tag entities by IDs.
 func (mu *MediaUpdate) RemoveTagIDs(ids ...int) *MediaUpdate {
 	mu.mutation.RemoveTagIDs(ids...)
 	return mu
 }
 
-// RemoveTags removes "tags" edges to Attribute entities.
-func (mu *MediaUpdate) RemoveTags(a ...*Attribute) *MediaUpdate {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
+// RemoveTags removes "tags" edges to Tag entities.
+func (mu *MediaUpdate) RemoveTags(t ...*Tag) *MediaUpdate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
 	}
 	return mu.RemoveTagIDs(ids...)
 }
@@ -176,7 +176,7 @@ func (mu *MediaUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Columns: media.TagsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attribute.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(tag.FieldID, field.TypeInt),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
@@ -189,7 +189,7 @@ func (mu *MediaUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Columns: media.TagsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attribute.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(tag.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -205,7 +205,7 @@ func (mu *MediaUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Columns: media.TagsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attribute.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(tag.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -280,17 +280,17 @@ func (muo *MediaUpdateOne) ClearUploadDate() *MediaUpdateOne {
 	return muo
 }
 
-// AddTagIDs adds the "tags" edge to the Attribute entity by IDs.
+// AddTagIDs adds the "tags" edge to the Tag entity by IDs.
 func (muo *MediaUpdateOne) AddTagIDs(ids ...int) *MediaUpdateOne {
 	muo.mutation.AddTagIDs(ids...)
 	return muo
 }
 
-// AddTags adds the "tags" edges to the Attribute entity.
-func (muo *MediaUpdateOne) AddTags(a ...*Attribute) *MediaUpdateOne {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
+// AddTags adds the "tags" edges to the Tag entity.
+func (muo *MediaUpdateOne) AddTags(t ...*Tag) *MediaUpdateOne {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
 	}
 	return muo.AddTagIDs(ids...)
 }
@@ -300,23 +300,23 @@ func (muo *MediaUpdateOne) Mutation() *MediaMutation {
 	return muo.mutation
 }
 
-// ClearTags clears all "tags" edges to the Attribute entity.
+// ClearTags clears all "tags" edges to the Tag entity.
 func (muo *MediaUpdateOne) ClearTags() *MediaUpdateOne {
 	muo.mutation.ClearTags()
 	return muo
 }
 
-// RemoveTagIDs removes the "tags" edge to Attribute entities by IDs.
+// RemoveTagIDs removes the "tags" edge to Tag entities by IDs.
 func (muo *MediaUpdateOne) RemoveTagIDs(ids ...int) *MediaUpdateOne {
 	muo.mutation.RemoveTagIDs(ids...)
 	return muo
 }
 
-// RemoveTags removes "tags" edges to Attribute entities.
-func (muo *MediaUpdateOne) RemoveTags(a ...*Attribute) *MediaUpdateOne {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
+// RemoveTags removes "tags" edges to Tag entities.
+func (muo *MediaUpdateOne) RemoveTags(t ...*Tag) *MediaUpdateOne {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
 	}
 	return muo.RemoveTagIDs(ids...)
 }
@@ -410,7 +410,7 @@ func (muo *MediaUpdateOne) sqlSave(ctx context.Context) (_node *Media, err error
 			Columns: media.TagsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attribute.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(tag.FieldID, field.TypeInt),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
@@ -423,7 +423,7 @@ func (muo *MediaUpdateOne) sqlSave(ctx context.Context) (_node *Media, err error
 			Columns: media.TagsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attribute.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(tag.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -439,7 +439,7 @@ func (muo *MediaUpdateOne) sqlSave(ctx context.Context) (_node *Media, err error
 			Columns: media.TagsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attribute.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(tag.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

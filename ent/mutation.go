@@ -4,10 +4,9 @@ package ent
 
 import (
 	"context"
-	"era/booru/ent/attribute"
 	"era/booru/ent/media"
-	"era/booru/ent/mediaattribute"
 	"era/booru/ent/predicate"
+	"era/booru/ent/tag"
 	"errors"
 	"fmt"
 	"sync"
@@ -26,489 +25,9 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeAttribute      = "Attribute"
-	TypeMedia          = "Media"
-	TypeMediaAttribute = "MediaAttribute"
+	TypeMedia = "Media"
+	TypeTag   = "Tag"
 )
-
-// AttributeMutation represents an operation that mutates the Attribute nodes in the graph.
-type AttributeMutation struct {
-	config
-	op            Op
-	typ           string
-	id            *int
-	name          *string
-	_type         *attribute.Type
-	clearedFields map[string]struct{}
-	media         map[string]struct{}
-	removedmedia  map[string]struct{}
-	clearedmedia  bool
-	done          bool
-	oldValue      func(context.Context) (*Attribute, error)
-	predicates    []predicate.Attribute
-}
-
-var _ ent.Mutation = (*AttributeMutation)(nil)
-
-// attributeOption allows management of the mutation configuration using functional options.
-type attributeOption func(*AttributeMutation)
-
-// newAttributeMutation creates new mutation for the Attribute entity.
-func newAttributeMutation(c config, op Op, opts ...attributeOption) *AttributeMutation {
-	m := &AttributeMutation{
-		config:        c,
-		op:            op,
-		typ:           TypeAttribute,
-		clearedFields: make(map[string]struct{}),
-	}
-	for _, opt := range opts {
-		opt(m)
-	}
-	return m
-}
-
-// withAttributeID sets the ID field of the mutation.
-func withAttributeID(id int) attributeOption {
-	return func(m *AttributeMutation) {
-		var (
-			err   error
-			once  sync.Once
-			value *Attribute
-		)
-		m.oldValue = func(ctx context.Context) (*Attribute, error) {
-			once.Do(func() {
-				if m.done {
-					err = errors.New("querying old values post mutation is not allowed")
-				} else {
-					value, err = m.Client().Attribute.Get(ctx, id)
-				}
-			})
-			return value, err
-		}
-		m.id = &id
-	}
-}
-
-// withAttribute sets the old Attribute of the mutation.
-func withAttribute(node *Attribute) attributeOption {
-	return func(m *AttributeMutation) {
-		m.oldValue = func(context.Context) (*Attribute, error) {
-			return node, nil
-		}
-		m.id = &node.ID
-	}
-}
-
-// Client returns a new `ent.Client` from the mutation. If the mutation was
-// executed in a transaction (ent.Tx), a transactional client is returned.
-func (m AttributeMutation) Client() *Client {
-	client := &Client{config: m.config}
-	client.init()
-	return client
-}
-
-// Tx returns an `ent.Tx` for mutations that were executed in transactions;
-// it returns an error otherwise.
-func (m AttributeMutation) Tx() (*Tx, error) {
-	if _, ok := m.driver.(*txDriver); !ok {
-		return nil, errors.New("ent: mutation is not running in a transaction")
-	}
-	tx := &Tx{config: m.config}
-	tx.init()
-	return tx, nil
-}
-
-// SetID sets the value of the id field. Note that this
-// operation is only accepted on creation of Attribute entities.
-func (m *AttributeMutation) SetID(id int) {
-	m.id = &id
-}
-
-// ID returns the ID value in the mutation. Note that the ID is only available
-// if it was provided to the builder or after it was returned from the database.
-func (m *AttributeMutation) ID() (id int, exists bool) {
-	if m.id == nil {
-		return
-	}
-	return *m.id, true
-}
-
-// IDs queries the database and returns the entity ids that match the mutation's predicate.
-// That means, if the mutation is applied within a transaction with an isolation level such
-// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
-// or updated by the mutation.
-func (m *AttributeMutation) IDs(ctx context.Context) ([]int, error) {
-	switch {
-	case m.op.Is(OpUpdateOne | OpDeleteOne):
-		id, exists := m.ID()
-		if exists {
-			return []int{id}, nil
-		}
-		fallthrough
-	case m.op.Is(OpUpdate | OpDelete):
-		return m.Client().Attribute.Query().Where(m.predicates...).IDs(ctx)
-	default:
-		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
-	}
-}
-
-// SetName sets the "name" field.
-func (m *AttributeMutation) SetName(s string) {
-	m.name = &s
-}
-
-// Name returns the value of the "name" field in the mutation.
-func (m *AttributeMutation) Name() (r string, exists bool) {
-	v := m.name
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldName returns the old "name" field's value of the Attribute entity.
-// If the Attribute object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AttributeMutation) OldName(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldName is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldName requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldName: %w", err)
-	}
-	return oldValue.Name, nil
-}
-
-// ResetName resets all changes to the "name" field.
-func (m *AttributeMutation) ResetName() {
-	m.name = nil
-}
-
-// SetType sets the "type" field.
-func (m *AttributeMutation) SetType(a attribute.Type) {
-	m._type = &a
-}
-
-// GetType returns the value of the "type" field in the mutation.
-func (m *AttributeMutation) GetType() (r attribute.Type, exists bool) {
-	v := m._type
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldType returns the old "type" field's value of the Attribute entity.
-// If the Attribute object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AttributeMutation) OldType(ctx context.Context) (v attribute.Type, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldType is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldType requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldType: %w", err)
-	}
-	return oldValue.Type, nil
-}
-
-// ResetType resets all changes to the "type" field.
-func (m *AttributeMutation) ResetType() {
-	m._type = nil
-}
-
-// AddMediumIDs adds the "media" edge to the Media entity by ids.
-func (m *AttributeMutation) AddMediumIDs(ids ...string) {
-	if m.media == nil {
-		m.media = make(map[string]struct{})
-	}
-	for i := range ids {
-		m.media[ids[i]] = struct{}{}
-	}
-}
-
-// ClearMedia clears the "media" edge to the Media entity.
-func (m *AttributeMutation) ClearMedia() {
-	m.clearedmedia = true
-}
-
-// MediaCleared reports if the "media" edge to the Media entity was cleared.
-func (m *AttributeMutation) MediaCleared() bool {
-	return m.clearedmedia
-}
-
-// RemoveMediumIDs removes the "media" edge to the Media entity by IDs.
-func (m *AttributeMutation) RemoveMediumIDs(ids ...string) {
-	if m.removedmedia == nil {
-		m.removedmedia = make(map[string]struct{})
-	}
-	for i := range ids {
-		delete(m.media, ids[i])
-		m.removedmedia[ids[i]] = struct{}{}
-	}
-}
-
-// RemovedMedia returns the removed IDs of the "media" edge to the Media entity.
-func (m *AttributeMutation) RemovedMediaIDs() (ids []string) {
-	for id := range m.removedmedia {
-		ids = append(ids, id)
-	}
-	return
-}
-
-// MediaIDs returns the "media" edge IDs in the mutation.
-func (m *AttributeMutation) MediaIDs() (ids []string) {
-	for id := range m.media {
-		ids = append(ids, id)
-	}
-	return
-}
-
-// ResetMedia resets all changes to the "media" edge.
-func (m *AttributeMutation) ResetMedia() {
-	m.media = nil
-	m.clearedmedia = false
-	m.removedmedia = nil
-}
-
-// Where appends a list predicates to the AttributeMutation builder.
-func (m *AttributeMutation) Where(ps ...predicate.Attribute) {
-	m.predicates = append(m.predicates, ps...)
-}
-
-// WhereP appends storage-level predicates to the AttributeMutation builder. Using this method,
-// users can use type-assertion to append predicates that do not depend on any generated package.
-func (m *AttributeMutation) WhereP(ps ...func(*sql.Selector)) {
-	p := make([]predicate.Attribute, len(ps))
-	for i := range ps {
-		p[i] = ps[i]
-	}
-	m.Where(p...)
-}
-
-// Op returns the operation name.
-func (m *AttributeMutation) Op() Op {
-	return m.op
-}
-
-// SetOp allows setting the mutation operation.
-func (m *AttributeMutation) SetOp(op Op) {
-	m.op = op
-}
-
-// Type returns the node type of this mutation (Attribute).
-func (m *AttributeMutation) Type() string {
-	return m.typ
-}
-
-// Fields returns all fields that were changed during this mutation. Note that in
-// order to get all numeric fields that were incremented/decremented, call
-// AddedFields().
-func (m *AttributeMutation) Fields() []string {
-	fields := make([]string, 0, 2)
-	if m.name != nil {
-		fields = append(fields, attribute.FieldName)
-	}
-	if m._type != nil {
-		fields = append(fields, attribute.FieldType)
-	}
-	return fields
-}
-
-// Field returns the value of a field with the given name. The second boolean
-// return value indicates that this field was not set, or was not defined in the
-// schema.
-func (m *AttributeMutation) Field(name string) (ent.Value, bool) {
-	switch name {
-	case attribute.FieldName:
-		return m.Name()
-	case attribute.FieldType:
-		return m.GetType()
-	}
-	return nil, false
-}
-
-// OldField returns the old value of the field from the database. An error is
-// returned if the mutation operation is not UpdateOne, or the query to the
-// database failed.
-func (m *AttributeMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
-	switch name {
-	case attribute.FieldName:
-		return m.OldName(ctx)
-	case attribute.FieldType:
-		return m.OldType(ctx)
-	}
-	return nil, fmt.Errorf("unknown Attribute field %s", name)
-}
-
-// SetField sets the value of a field with the given name. It returns an error if
-// the field is not defined in the schema, or if the type mismatched the field
-// type.
-func (m *AttributeMutation) SetField(name string, value ent.Value) error {
-	switch name {
-	case attribute.FieldName:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetName(v)
-		return nil
-	case attribute.FieldType:
-		v, ok := value.(attribute.Type)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetType(v)
-		return nil
-	}
-	return fmt.Errorf("unknown Attribute field %s", name)
-}
-
-// AddedFields returns all numeric fields that were incremented/decremented during
-// this mutation.
-func (m *AttributeMutation) AddedFields() []string {
-	return nil
-}
-
-// AddedField returns the numeric value that was incremented/decremented on a field
-// with the given name. The second boolean return value indicates that this field
-// was not set, or was not defined in the schema.
-func (m *AttributeMutation) AddedField(name string) (ent.Value, bool) {
-	return nil, false
-}
-
-// AddField adds the value to the field with the given name. It returns an error if
-// the field is not defined in the schema, or if the type mismatched the field
-// type.
-func (m *AttributeMutation) AddField(name string, value ent.Value) error {
-	switch name {
-	}
-	return fmt.Errorf("unknown Attribute numeric field %s", name)
-}
-
-// ClearedFields returns all nullable fields that were cleared during this
-// mutation.
-func (m *AttributeMutation) ClearedFields() []string {
-	return nil
-}
-
-// FieldCleared returns a boolean indicating if a field with the given name was
-// cleared in this mutation.
-func (m *AttributeMutation) FieldCleared(name string) bool {
-	_, ok := m.clearedFields[name]
-	return ok
-}
-
-// ClearField clears the value of the field with the given name. It returns an
-// error if the field is not defined in the schema.
-func (m *AttributeMutation) ClearField(name string) error {
-	return fmt.Errorf("unknown Attribute nullable field %s", name)
-}
-
-// ResetField resets all changes in the mutation for the field with the given name.
-// It returns an error if the field is not defined in the schema.
-func (m *AttributeMutation) ResetField(name string) error {
-	switch name {
-	case attribute.FieldName:
-		m.ResetName()
-		return nil
-	case attribute.FieldType:
-		m.ResetType()
-		return nil
-	}
-	return fmt.Errorf("unknown Attribute field %s", name)
-}
-
-// AddedEdges returns all edge names that were set/added in this mutation.
-func (m *AttributeMutation) AddedEdges() []string {
-	edges := make([]string, 0, 1)
-	if m.media != nil {
-		edges = append(edges, attribute.EdgeMedia)
-	}
-	return edges
-}
-
-// AddedIDs returns all IDs (to other nodes) that were added for the given edge
-// name in this mutation.
-func (m *AttributeMutation) AddedIDs(name string) []ent.Value {
-	switch name {
-	case attribute.EdgeMedia:
-		ids := make([]ent.Value, 0, len(m.media))
-		for id := range m.media {
-			ids = append(ids, id)
-		}
-		return ids
-	}
-	return nil
-}
-
-// RemovedEdges returns all edge names that were removed in this mutation.
-func (m *AttributeMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 1)
-	if m.removedmedia != nil {
-		edges = append(edges, attribute.EdgeMedia)
-	}
-	return edges
-}
-
-// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
-// the given name in this mutation.
-func (m *AttributeMutation) RemovedIDs(name string) []ent.Value {
-	switch name {
-	case attribute.EdgeMedia:
-		ids := make([]ent.Value, 0, len(m.removedmedia))
-		for id := range m.removedmedia {
-			ids = append(ids, id)
-		}
-		return ids
-	}
-	return nil
-}
-
-// ClearedEdges returns all edge names that were cleared in this mutation.
-func (m *AttributeMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 1)
-	if m.clearedmedia {
-		edges = append(edges, attribute.EdgeMedia)
-	}
-	return edges
-}
-
-// EdgeCleared returns a boolean which indicates if the edge with the given name
-// was cleared in this mutation.
-func (m *AttributeMutation) EdgeCleared(name string) bool {
-	switch name {
-	case attribute.EdgeMedia:
-		return m.clearedmedia
-	}
-	return false
-}
-
-// ClearEdge clears the value of the edge with the given name. It returns an error
-// if that edge is not defined in the schema.
-func (m *AttributeMutation) ClearEdge(name string) error {
-	switch name {
-	}
-	return fmt.Errorf("unknown Attribute unique edge %s", name)
-}
-
-// ResetEdge resets all changes to the edge with the given name in this mutation.
-// It returns an error if the edge is not defined in the schema.
-func (m *AttributeMutation) ResetEdge(name string) error {
-	switch name {
-	case attribute.EdgeMedia:
-		m.ResetMedia()
-		return nil
-	}
-	return fmt.Errorf("unknown Attribute edge %s", name)
-}
 
 // MediaMutation represents an operation that mutates the Media nodes in the graph.
 type MediaMutation struct {
@@ -904,7 +423,7 @@ func (m *MediaMutation) ResetUploadDate() {
 	delete(m.clearedFields, media.FieldUploadDate)
 }
 
-// AddTagIDs adds the "tags" edge to the Attribute entity by ids.
+// AddTagIDs adds the "tags" edge to the Tag entity by ids.
 func (m *MediaMutation) AddTagIDs(ids ...int) {
 	if m.tags == nil {
 		m.tags = make(map[int]struct{})
@@ -914,17 +433,17 @@ func (m *MediaMutation) AddTagIDs(ids ...int) {
 	}
 }
 
-// ClearTags clears the "tags" edge to the Attribute entity.
+// ClearTags clears the "tags" edge to the Tag entity.
 func (m *MediaMutation) ClearTags() {
 	m.clearedtags = true
 }
 
-// TagsCleared reports if the "tags" edge to the Attribute entity was cleared.
+// TagsCleared reports if the "tags" edge to the Tag entity was cleared.
 func (m *MediaMutation) TagsCleared() bool {
 	return m.clearedtags
 }
 
-// RemoveTagIDs removes the "tags" edge to the Attribute entity by IDs.
+// RemoveTagIDs removes the "tags" edge to the Tag entity by IDs.
 func (m *MediaMutation) RemoveTagIDs(ids ...int) {
 	if m.removedtags == nil {
 		m.removedtags = make(map[int]struct{})
@@ -935,7 +454,7 @@ func (m *MediaMutation) RemoveTagIDs(ids ...int) {
 	}
 }
 
-// RemovedTags returns the removed IDs of the "tags" edge to the Attribute entity.
+// RemovedTags returns the removed IDs of the "tags" edge to the Tag entity.
 func (m *MediaMutation) RemovedTagsIDs() (ids []int) {
 	for id := range m.removedtags {
 		ids = append(ids, id)
@@ -1295,33 +814,34 @@ func (m *MediaMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown Media edge %s", name)
 }
 
-// MediaAttributeMutation represents an operation that mutates the MediaAttribute nodes in the graph.
-type MediaAttributeMutation struct {
+// TagMutation represents an operation that mutates the Tag nodes in the graph.
+type TagMutation struct {
 	config
-	op               Op
-	typ              string
-	value            *string
-	clearedFields    map[string]struct{}
-	media            *string
-	clearedmedia     bool
-	attribute        *int
-	clearedattribute bool
-	done             bool
-	oldValue         func(context.Context) (*MediaAttribute, error)
-	predicates       []predicate.MediaAttribute
+	op            Op
+	typ           string
+	id            *int
+	name          *string
+	_type         *tag.Type
+	clearedFields map[string]struct{}
+	media         map[string]struct{}
+	removedmedia  map[string]struct{}
+	clearedmedia  bool
+	done          bool
+	oldValue      func(context.Context) (*Tag, error)
+	predicates    []predicate.Tag
 }
 
-var _ ent.Mutation = (*MediaAttributeMutation)(nil)
+var _ ent.Mutation = (*TagMutation)(nil)
 
-// mediaattributeOption allows management of the mutation configuration using functional options.
-type mediaattributeOption func(*MediaAttributeMutation)
+// tagOption allows management of the mutation configuration using functional options.
+type tagOption func(*TagMutation)
 
-// newMediaAttributeMutation creates new mutation for the MediaAttribute entity.
-func newMediaAttributeMutation(c config, op Op, opts ...mediaattributeOption) *MediaAttributeMutation {
-	m := &MediaAttributeMutation{
+// newTagMutation creates new mutation for the Tag entity.
+func newTagMutation(c config, op Op, opts ...tagOption) *TagMutation {
+	m := &TagMutation{
 		config:        c,
 		op:            op,
-		typ:           TypeMediaAttribute,
+		typ:           TypeTag,
 		clearedFields: make(map[string]struct{}),
 	}
 	for _, opt := range opts {
@@ -1330,9 +850,41 @@ func newMediaAttributeMutation(c config, op Op, opts ...mediaattributeOption) *M
 	return m
 }
 
+// withTagID sets the ID field of the mutation.
+func withTagID(id int) tagOption {
+	return func(m *TagMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *Tag
+		)
+		m.oldValue = func(ctx context.Context) (*Tag, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().Tag.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withTag sets the old Tag of the mutation.
+func withTag(node *Tag) tagOption {
+	return func(m *TagMutation) {
+		m.oldValue = func(context.Context) (*Tag, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
 // Client returns a new `ent.Client` from the mutation. If the mutation was
 // executed in a transaction (ent.Tx), a transactional client is returned.
-func (m MediaAttributeMutation) Client() *Client {
+func (m TagMutation) Client() *Client {
 	client := &Client{config: m.config}
 	client.init()
 	return client
@@ -1340,7 +892,7 @@ func (m MediaAttributeMutation) Client() *Client {
 
 // Tx returns an `ent.Tx` for mutations that were executed in transactions;
 // it returns an error otherwise.
-func (m MediaAttributeMutation) Tx() (*Tx, error) {
+func (m TagMutation) Tx() (*Tx, error) {
 	if _, ok := m.driver.(*txDriver); !ok {
 		return nil, errors.New("ent: mutation is not running in a transaction")
 	}
@@ -1349,139 +901,175 @@ func (m MediaAttributeMutation) Tx() (*Tx, error) {
 	return tx, nil
 }
 
-// SetMediaID sets the "media_id" field.
-func (m *MediaAttributeMutation) SetMediaID(s string) {
-	m.media = &s
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of Tag entities.
+func (m *TagMutation) SetID(id int) {
+	m.id = &id
 }
 
-// MediaID returns the value of the "media_id" field in the mutation.
-func (m *MediaAttributeMutation) MediaID() (r string, exists bool) {
-	v := m.media
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *TagMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *TagMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().Tag.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetName sets the "name" field.
+func (m *TagMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *TagMutation) Name() (r string, exists bool) {
+	v := m.name
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ResetMediaID resets all changes to the "media_id" field.
-func (m *MediaAttributeMutation) ResetMediaID() {
-	m.media = nil
+// OldName returns the old "name" field's value of the Tag entity.
+// If the Tag object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TagMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
 }
 
-// SetAttributeID sets the "attribute_id" field.
-func (m *MediaAttributeMutation) SetAttributeID(i int) {
-	m.attribute = &i
+// ResetName resets all changes to the "name" field.
+func (m *TagMutation) ResetName() {
+	m.name = nil
 }
 
-// AttributeID returns the value of the "attribute_id" field in the mutation.
-func (m *MediaAttributeMutation) AttributeID() (r int, exists bool) {
-	v := m.attribute
+// SetType sets the "type" field.
+func (m *TagMutation) SetType(t tag.Type) {
+	m._type = &t
+}
+
+// GetType returns the value of the "type" field in the mutation.
+func (m *TagMutation) GetType() (r tag.Type, exists bool) {
+	v := m._type
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ResetAttributeID resets all changes to the "attribute_id" field.
-func (m *MediaAttributeMutation) ResetAttributeID() {
-	m.attribute = nil
-}
-
-// SetValue sets the "value" field.
-func (m *MediaAttributeMutation) SetValue(s string) {
-	m.value = &s
-}
-
-// Value returns the value of the "value" field in the mutation.
-func (m *MediaAttributeMutation) Value() (r string, exists bool) {
-	v := m.value
-	if v == nil {
-		return
+// OldType returns the old "type" field's value of the Tag entity.
+// If the Tag object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TagMutation) OldType(ctx context.Context) (v tag.Type, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldType is only allowed on UpdateOne operations")
 	}
-	return *v, true
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldType: %w", err)
+	}
+	return oldValue.Type, nil
 }
 
-// ClearValue clears the value of the "value" field.
-func (m *MediaAttributeMutation) ClearValue() {
-	m.value = nil
-	m.clearedFields[mediaattribute.FieldValue] = struct{}{}
+// ResetType resets all changes to the "type" field.
+func (m *TagMutation) ResetType() {
+	m._type = nil
 }
 
-// ValueCleared returns if the "value" field was cleared in this mutation.
-func (m *MediaAttributeMutation) ValueCleared() bool {
-	_, ok := m.clearedFields[mediaattribute.FieldValue]
-	return ok
-}
-
-// ResetValue resets all changes to the "value" field.
-func (m *MediaAttributeMutation) ResetValue() {
-	m.value = nil
-	delete(m.clearedFields, mediaattribute.FieldValue)
+// AddMediumIDs adds the "media" edge to the Media entity by ids.
+func (m *TagMutation) AddMediumIDs(ids ...string) {
+	if m.media == nil {
+		m.media = make(map[string]struct{})
+	}
+	for i := range ids {
+		m.media[ids[i]] = struct{}{}
+	}
 }
 
 // ClearMedia clears the "media" edge to the Media entity.
-func (m *MediaAttributeMutation) ClearMedia() {
+func (m *TagMutation) ClearMedia() {
 	m.clearedmedia = true
-	m.clearedFields[mediaattribute.FieldMediaID] = struct{}{}
 }
 
 // MediaCleared reports if the "media" edge to the Media entity was cleared.
-func (m *MediaAttributeMutation) MediaCleared() bool {
+func (m *TagMutation) MediaCleared() bool {
 	return m.clearedmedia
 }
 
+// RemoveMediumIDs removes the "media" edge to the Media entity by IDs.
+func (m *TagMutation) RemoveMediumIDs(ids ...string) {
+	if m.removedmedia == nil {
+		m.removedmedia = make(map[string]struct{})
+	}
+	for i := range ids {
+		delete(m.media, ids[i])
+		m.removedmedia[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedMedia returns the removed IDs of the "media" edge to the Media entity.
+func (m *TagMutation) RemovedMediaIDs() (ids []string) {
+	for id := range m.removedmedia {
+		ids = append(ids, id)
+	}
+	return
+}
+
 // MediaIDs returns the "media" edge IDs in the mutation.
-// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
-// MediaID instead. It exists only for internal usage by the builders.
-func (m *MediaAttributeMutation) MediaIDs() (ids []string) {
-	if id := m.media; id != nil {
-		ids = append(ids, *id)
+func (m *TagMutation) MediaIDs() (ids []string) {
+	for id := range m.media {
+		ids = append(ids, id)
 	}
 	return
 }
 
 // ResetMedia resets all changes to the "media" edge.
-func (m *MediaAttributeMutation) ResetMedia() {
+func (m *TagMutation) ResetMedia() {
 	m.media = nil
 	m.clearedmedia = false
+	m.removedmedia = nil
 }
 
-// ClearAttribute clears the "attribute" edge to the Attribute entity.
-func (m *MediaAttributeMutation) ClearAttribute() {
-	m.clearedattribute = true
-	m.clearedFields[mediaattribute.FieldAttributeID] = struct{}{}
-}
-
-// AttributeCleared reports if the "attribute" edge to the Attribute entity was cleared.
-func (m *MediaAttributeMutation) AttributeCleared() bool {
-	return m.clearedattribute
-}
-
-// AttributeIDs returns the "attribute" edge IDs in the mutation.
-// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
-// AttributeID instead. It exists only for internal usage by the builders.
-func (m *MediaAttributeMutation) AttributeIDs() (ids []int) {
-	if id := m.attribute; id != nil {
-		ids = append(ids, *id)
-	}
-	return
-}
-
-// ResetAttribute resets all changes to the "attribute" edge.
-func (m *MediaAttributeMutation) ResetAttribute() {
-	m.attribute = nil
-	m.clearedattribute = false
-}
-
-// Where appends a list predicates to the MediaAttributeMutation builder.
-func (m *MediaAttributeMutation) Where(ps ...predicate.MediaAttribute) {
+// Where appends a list predicates to the TagMutation builder.
+func (m *TagMutation) Where(ps ...predicate.Tag) {
 	m.predicates = append(m.predicates, ps...)
 }
 
-// WhereP appends storage-level predicates to the MediaAttributeMutation builder. Using this method,
+// WhereP appends storage-level predicates to the TagMutation builder. Using this method,
 // users can use type-assertion to append predicates that do not depend on any generated package.
-func (m *MediaAttributeMutation) WhereP(ps ...func(*sql.Selector)) {
-	p := make([]predicate.MediaAttribute, len(ps))
+func (m *TagMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.Tag, len(ps))
 	for i := range ps {
 		p[i] = ps[i]
 	}
@@ -1489,33 +1077,30 @@ func (m *MediaAttributeMutation) WhereP(ps ...func(*sql.Selector)) {
 }
 
 // Op returns the operation name.
-func (m *MediaAttributeMutation) Op() Op {
+func (m *TagMutation) Op() Op {
 	return m.op
 }
 
 // SetOp allows setting the mutation operation.
-func (m *MediaAttributeMutation) SetOp(op Op) {
+func (m *TagMutation) SetOp(op Op) {
 	m.op = op
 }
 
-// Type returns the node type of this mutation (MediaAttribute).
-func (m *MediaAttributeMutation) Type() string {
+// Type returns the node type of this mutation (Tag).
+func (m *TagMutation) Type() string {
 	return m.typ
 }
 
 // Fields returns all fields that were changed during this mutation. Note that in
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
-func (m *MediaAttributeMutation) Fields() []string {
-	fields := make([]string, 0, 3)
-	if m.media != nil {
-		fields = append(fields, mediaattribute.FieldMediaID)
+func (m *TagMutation) Fields() []string {
+	fields := make([]string, 0, 2)
+	if m.name != nil {
+		fields = append(fields, tag.FieldName)
 	}
-	if m.attribute != nil {
-		fields = append(fields, mediaattribute.FieldAttributeID)
-	}
-	if m.value != nil {
-		fields = append(fields, mediaattribute.FieldValue)
+	if m._type != nil {
+		fields = append(fields, tag.FieldType)
 	}
 	return fields
 }
@@ -1523,14 +1108,12 @@ func (m *MediaAttributeMutation) Fields() []string {
 // Field returns the value of a field with the given name. The second boolean
 // return value indicates that this field was not set, or was not defined in the
 // schema.
-func (m *MediaAttributeMutation) Field(name string) (ent.Value, bool) {
+func (m *TagMutation) Field(name string) (ent.Value, bool) {
 	switch name {
-	case mediaattribute.FieldMediaID:
-		return m.MediaID()
-	case mediaattribute.FieldAttributeID:
-		return m.AttributeID()
-	case mediaattribute.FieldValue:
-		return m.Value()
+	case tag.FieldName:
+		return m.Name()
+	case tag.FieldType:
+		return m.GetType()
 	}
 	return nil, false
 }
@@ -1538,198 +1121,174 @@ func (m *MediaAttributeMutation) Field(name string) (ent.Value, bool) {
 // OldField returns the old value of the field from the database. An error is
 // returned if the mutation operation is not UpdateOne, or the query to the
 // database failed.
-func (m *MediaAttributeMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
-	return nil, errors.New("edge schema MediaAttribute does not support getting old values")
+func (m *TagMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case tag.FieldName:
+		return m.OldName(ctx)
+	case tag.FieldType:
+		return m.OldType(ctx)
+	}
+	return nil, fmt.Errorf("unknown Tag field %s", name)
 }
 
 // SetField sets the value of a field with the given name. It returns an error if
 // the field is not defined in the schema, or if the type mismatched the field
 // type.
-func (m *MediaAttributeMutation) SetField(name string, value ent.Value) error {
+func (m *TagMutation) SetField(name string, value ent.Value) error {
 	switch name {
-	case mediaattribute.FieldMediaID:
+	case tag.FieldName:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetMediaID(v)
+		m.SetName(v)
 		return nil
-	case mediaattribute.FieldAttributeID:
-		v, ok := value.(int)
+	case tag.FieldType:
+		v, ok := value.(tag.Type)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetAttributeID(v)
-		return nil
-	case mediaattribute.FieldValue:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetValue(v)
+		m.SetType(v)
 		return nil
 	}
-	return fmt.Errorf("unknown MediaAttribute field %s", name)
+	return fmt.Errorf("unknown Tag field %s", name)
 }
 
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
-func (m *MediaAttributeMutation) AddedFields() []string {
-	var fields []string
-	return fields
+func (m *TagMutation) AddedFields() []string {
+	return nil
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
-func (m *MediaAttributeMutation) AddedField(name string) (ent.Value, bool) {
-	switch name {
-	}
+func (m *TagMutation) AddedField(name string) (ent.Value, bool) {
 	return nil, false
 }
 
 // AddField adds the value to the field with the given name. It returns an error if
 // the field is not defined in the schema, or if the type mismatched the field
 // type.
-func (m *MediaAttributeMutation) AddField(name string, value ent.Value) error {
+func (m *TagMutation) AddField(name string, value ent.Value) error {
 	switch name {
 	}
-	return fmt.Errorf("unknown MediaAttribute numeric field %s", name)
+	return fmt.Errorf("unknown Tag numeric field %s", name)
 }
 
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
-func (m *MediaAttributeMutation) ClearedFields() []string {
-	var fields []string
-	if m.FieldCleared(mediaattribute.FieldValue) {
-		fields = append(fields, mediaattribute.FieldValue)
-	}
-	return fields
+func (m *TagMutation) ClearedFields() []string {
+	return nil
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
 // cleared in this mutation.
-func (m *MediaAttributeMutation) FieldCleared(name string) bool {
+func (m *TagMutation) FieldCleared(name string) bool {
 	_, ok := m.clearedFields[name]
 	return ok
 }
 
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
-func (m *MediaAttributeMutation) ClearField(name string) error {
-	switch name {
-	case mediaattribute.FieldValue:
-		m.ClearValue()
-		return nil
-	}
-	return fmt.Errorf("unknown MediaAttribute nullable field %s", name)
+func (m *TagMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown Tag nullable field %s", name)
 }
 
 // ResetField resets all changes in the mutation for the field with the given name.
 // It returns an error if the field is not defined in the schema.
-func (m *MediaAttributeMutation) ResetField(name string) error {
+func (m *TagMutation) ResetField(name string) error {
 	switch name {
-	case mediaattribute.FieldMediaID:
-		m.ResetMediaID()
+	case tag.FieldName:
+		m.ResetName()
 		return nil
-	case mediaattribute.FieldAttributeID:
-		m.ResetAttributeID()
-		return nil
-	case mediaattribute.FieldValue:
-		m.ResetValue()
+	case tag.FieldType:
+		m.ResetType()
 		return nil
 	}
-	return fmt.Errorf("unknown MediaAttribute field %s", name)
+	return fmt.Errorf("unknown Tag field %s", name)
 }
 
 // AddedEdges returns all edge names that were set/added in this mutation.
-func (m *MediaAttributeMutation) AddedEdges() []string {
-	edges := make([]string, 0, 2)
+func (m *TagMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
 	if m.media != nil {
-		edges = append(edges, mediaattribute.EdgeMedia)
-	}
-	if m.attribute != nil {
-		edges = append(edges, mediaattribute.EdgeAttribute)
+		edges = append(edges, tag.EdgeMedia)
 	}
 	return edges
 }
 
 // AddedIDs returns all IDs (to other nodes) that were added for the given edge
 // name in this mutation.
-func (m *MediaAttributeMutation) AddedIDs(name string) []ent.Value {
+func (m *TagMutation) AddedIDs(name string) []ent.Value {
 	switch name {
-	case mediaattribute.EdgeMedia:
-		if id := m.media; id != nil {
-			return []ent.Value{*id}
+	case tag.EdgeMedia:
+		ids := make([]ent.Value, 0, len(m.media))
+		for id := range m.media {
+			ids = append(ids, id)
 		}
-	case mediaattribute.EdgeAttribute:
-		if id := m.attribute; id != nil {
-			return []ent.Value{*id}
-		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
-func (m *MediaAttributeMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 2)
+func (m *TagMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.removedmedia != nil {
+		edges = append(edges, tag.EdgeMedia)
+	}
 	return edges
 }
 
 // RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
 // the given name in this mutation.
-func (m *MediaAttributeMutation) RemovedIDs(name string) []ent.Value {
+func (m *TagMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case tag.EdgeMedia:
+		ids := make([]ent.Value, 0, len(m.removedmedia))
+		for id := range m.removedmedia {
+			ids = append(ids, id)
+		}
+		return ids
+	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
-func (m *MediaAttributeMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 2)
+func (m *TagMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
 	if m.clearedmedia {
-		edges = append(edges, mediaattribute.EdgeMedia)
-	}
-	if m.clearedattribute {
-		edges = append(edges, mediaattribute.EdgeAttribute)
+		edges = append(edges, tag.EdgeMedia)
 	}
 	return edges
 }
 
 // EdgeCleared returns a boolean which indicates if the edge with the given name
 // was cleared in this mutation.
-func (m *MediaAttributeMutation) EdgeCleared(name string) bool {
+func (m *TagMutation) EdgeCleared(name string) bool {
 	switch name {
-	case mediaattribute.EdgeMedia:
+	case tag.EdgeMedia:
 		return m.clearedmedia
-	case mediaattribute.EdgeAttribute:
-		return m.clearedattribute
 	}
 	return false
 }
 
 // ClearEdge clears the value of the edge with the given name. It returns an error
 // if that edge is not defined in the schema.
-func (m *MediaAttributeMutation) ClearEdge(name string) error {
+func (m *TagMutation) ClearEdge(name string) error {
 	switch name {
-	case mediaattribute.EdgeMedia:
-		m.ClearMedia()
-		return nil
-	case mediaattribute.EdgeAttribute:
-		m.ClearAttribute()
-		return nil
 	}
-	return fmt.Errorf("unknown MediaAttribute unique edge %s", name)
+	return fmt.Errorf("unknown Tag unique edge %s", name)
 }
 
 // ResetEdge resets all changes to the edge with the given name in this mutation.
 // It returns an error if the edge is not defined in the schema.
-func (m *MediaAttributeMutation) ResetEdge(name string) error {
+func (m *TagMutation) ResetEdge(name string) error {
 	switch name {
-	case mediaattribute.EdgeMedia:
+	case tag.EdgeMedia:
 		m.ResetMedia()
 		return nil
-	case mediaattribute.EdgeAttribute:
-		m.ResetAttribute()
-		return nil
 	}
-	return fmt.Errorf("unknown MediaAttribute edge %s", name)
+	return fmt.Errorf("unknown Tag edge %s", name)
 }
