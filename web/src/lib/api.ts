@@ -70,19 +70,19 @@ export async function regenerateReverseIndex(): Promise<void> {
 }
 
 export async function downloadMediaTags(): Promise<Blob> {
-        const res = await fetch(`${apiBase}/admin/export-tags`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.blob();
+	const res = await fetch(`${apiBase}/admin/export-tags`);
+	if (!res.ok) throw new Error(`HTTP ${res.status}`);
+	return res.blob();
 }
 
 export async function importMediaTags(file: File): Promise<void> {
-       const res = await fetch(`${apiBase}/admin/import-tags`, {
-               method: 'POST',
-               headers: {
-                       'Content-Type': 'application/x-ndjson',
-                       'Content-Encoding': 'gzip'
-               },
-               body: file
-       });
-       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+	const res = await fetch(`${apiBase}/admin/import-tags`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/x-ndjson',
+			'Content-Encoding': 'gzip'
+		},
+		body: file
+	});
+	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }

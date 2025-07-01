@@ -4,7 +4,9 @@ package ent
 
 import (
 	"context"
+	"era/booru/ent/date"
 	"era/booru/ent/media"
+	"era/booru/ent/mediadate"
 	"era/booru/ent/predicate"
 	"era/booru/ent/tag"
 	"errors"
@@ -25,31 +27,546 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeMedia = "Media"
-	TypeTag   = "Tag"
+	TypeDate      = "Date"
+	TypeMedia     = "Media"
+	TypeMediaDate = "MediaDate"
+	TypeTag       = "Tag"
 )
+
+// DateMutation represents an operation that mutates the Date nodes in the graph.
+type DateMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *int
+	name               *string
+	clearedFields      map[string]struct{}
+	media              map[string]struct{}
+	removedmedia       map[string]struct{}
+	clearedmedia       bool
+	media_dates        map[int]struct{}
+	removedmedia_dates map[int]struct{}
+	clearedmedia_dates bool
+	done               bool
+	oldValue           func(context.Context) (*Date, error)
+	predicates         []predicate.Date
+}
+
+var _ ent.Mutation = (*DateMutation)(nil)
+
+// dateOption allows management of the mutation configuration using functional options.
+type dateOption func(*DateMutation)
+
+// newDateMutation creates new mutation for the Date entity.
+func newDateMutation(c config, op Op, opts ...dateOption) *DateMutation {
+	m := &DateMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeDate,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withDateID sets the ID field of the mutation.
+func withDateID(id int) dateOption {
+	return func(m *DateMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *Date
+		)
+		m.oldValue = func(ctx context.Context) (*Date, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().Date.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withDate sets the old Date of the mutation.
+func withDate(node *Date) dateOption {
+	return func(m *DateMutation) {
+		m.oldValue = func(context.Context) (*Date, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m DateMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m DateMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of Date entities.
+func (m *DateMutation) SetID(id int) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *DateMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *DateMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().Date.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetName sets the "name" field.
+func (m *DateMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *DateMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the Date entity.
+// If the Date object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DateMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *DateMutation) ResetName() {
+	m.name = nil
+}
+
+// AddMediumIDs adds the "media" edge to the Media entity by ids.
+func (m *DateMutation) AddMediumIDs(ids ...string) {
+	if m.media == nil {
+		m.media = make(map[string]struct{})
+	}
+	for i := range ids {
+		m.media[ids[i]] = struct{}{}
+	}
+}
+
+// ClearMedia clears the "media" edge to the Media entity.
+func (m *DateMutation) ClearMedia() {
+	m.clearedmedia = true
+}
+
+// MediaCleared reports if the "media" edge to the Media entity was cleared.
+func (m *DateMutation) MediaCleared() bool {
+	return m.clearedmedia
+}
+
+// RemoveMediumIDs removes the "media" edge to the Media entity by IDs.
+func (m *DateMutation) RemoveMediumIDs(ids ...string) {
+	if m.removedmedia == nil {
+		m.removedmedia = make(map[string]struct{})
+	}
+	for i := range ids {
+		delete(m.media, ids[i])
+		m.removedmedia[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedMedia returns the removed IDs of the "media" edge to the Media entity.
+func (m *DateMutation) RemovedMediaIDs() (ids []string) {
+	for id := range m.removedmedia {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// MediaIDs returns the "media" edge IDs in the mutation.
+func (m *DateMutation) MediaIDs() (ids []string) {
+	for id := range m.media {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetMedia resets all changes to the "media" edge.
+func (m *DateMutation) ResetMedia() {
+	m.media = nil
+	m.clearedmedia = false
+	m.removedmedia = nil
+}
+
+// AddMediaDateIDs adds the "media_dates" edge to the MediaDate entity by ids.
+func (m *DateMutation) AddMediaDateIDs(ids ...int) {
+	if m.media_dates == nil {
+		m.media_dates = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.media_dates[ids[i]] = struct{}{}
+	}
+}
+
+// ClearMediaDates clears the "media_dates" edge to the MediaDate entity.
+func (m *DateMutation) ClearMediaDates() {
+	m.clearedmedia_dates = true
+}
+
+// MediaDatesCleared reports if the "media_dates" edge to the MediaDate entity was cleared.
+func (m *DateMutation) MediaDatesCleared() bool {
+	return m.clearedmedia_dates
+}
+
+// RemoveMediaDateIDs removes the "media_dates" edge to the MediaDate entity by IDs.
+func (m *DateMutation) RemoveMediaDateIDs(ids ...int) {
+	if m.removedmedia_dates == nil {
+		m.removedmedia_dates = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.media_dates, ids[i])
+		m.removedmedia_dates[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedMediaDates returns the removed IDs of the "media_dates" edge to the MediaDate entity.
+func (m *DateMutation) RemovedMediaDatesIDs() (ids []int) {
+	for id := range m.removedmedia_dates {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// MediaDatesIDs returns the "media_dates" edge IDs in the mutation.
+func (m *DateMutation) MediaDatesIDs() (ids []int) {
+	for id := range m.media_dates {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetMediaDates resets all changes to the "media_dates" edge.
+func (m *DateMutation) ResetMediaDates() {
+	m.media_dates = nil
+	m.clearedmedia_dates = false
+	m.removedmedia_dates = nil
+}
+
+// Where appends a list predicates to the DateMutation builder.
+func (m *DateMutation) Where(ps ...predicate.Date) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the DateMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *DateMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.Date, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *DateMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *DateMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (Date).
+func (m *DateMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *DateMutation) Fields() []string {
+	fields := make([]string, 0, 1)
+	if m.name != nil {
+		fields = append(fields, date.FieldName)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *DateMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case date.FieldName:
+		return m.Name()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *DateMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case date.FieldName:
+		return m.OldName(ctx)
+	}
+	return nil, fmt.Errorf("unknown Date field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *DateMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case date.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	}
+	return fmt.Errorf("unknown Date field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *DateMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *DateMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *DateMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown Date numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *DateMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *DateMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *DateMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown Date nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *DateMutation) ResetField(name string) error {
+	switch name {
+	case date.FieldName:
+		m.ResetName()
+		return nil
+	}
+	return fmt.Errorf("unknown Date field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *DateMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.media != nil {
+		edges = append(edges, date.EdgeMedia)
+	}
+	if m.media_dates != nil {
+		edges = append(edges, date.EdgeMediaDates)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *DateMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case date.EdgeMedia:
+		ids := make([]ent.Value, 0, len(m.media))
+		for id := range m.media {
+			ids = append(ids, id)
+		}
+		return ids
+	case date.EdgeMediaDates:
+		ids := make([]ent.Value, 0, len(m.media_dates))
+		for id := range m.media_dates {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *DateMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.removedmedia != nil {
+		edges = append(edges, date.EdgeMedia)
+	}
+	if m.removedmedia_dates != nil {
+		edges = append(edges, date.EdgeMediaDates)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *DateMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case date.EdgeMedia:
+		ids := make([]ent.Value, 0, len(m.removedmedia))
+		for id := range m.removedmedia {
+			ids = append(ids, id)
+		}
+		return ids
+	case date.EdgeMediaDates:
+		ids := make([]ent.Value, 0, len(m.removedmedia_dates))
+		for id := range m.removedmedia_dates {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *DateMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedmedia {
+		edges = append(edges, date.EdgeMedia)
+	}
+	if m.clearedmedia_dates {
+		edges = append(edges, date.EdgeMediaDates)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *DateMutation) EdgeCleared(name string) bool {
+	switch name {
+	case date.EdgeMedia:
+		return m.clearedmedia
+	case date.EdgeMediaDates:
+		return m.clearedmedia_dates
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *DateMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown Date unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *DateMutation) ResetEdge(name string) error {
+	switch name {
+	case date.EdgeMedia:
+		m.ResetMedia()
+		return nil
+	case date.EdgeMediaDates:
+		m.ResetMediaDates()
+		return nil
+	}
+	return fmt.Errorf("unknown Date edge %s", name)
+}
 
 // MediaMutation represents an operation that mutates the Media nodes in the graph.
 type MediaMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *string
-	format        *string
-	width         *int16
-	addwidth      *int16
-	height        *int16
-	addheight     *int16
-	duration      *int16
-	addduration   *int16
-	upload_date   *time.Time
-	clearedFields map[string]struct{}
-	tags          map[int]struct{}
-	removedtags   map[int]struct{}
-	clearedtags   bool
-	done          bool
-	oldValue      func(context.Context) (*Media, error)
-	predicates    []predicate.Media
+	op                 Op
+	typ                string
+	id                 *string
+	format             *string
+	width              *int16
+	addwidth           *int16
+	height             *int16
+	addheight          *int16
+	duration           *int16
+	addduration        *int16
+	clearedFields      map[string]struct{}
+	tags               map[int]struct{}
+	removedtags        map[int]struct{}
+	clearedtags        bool
+	dates              map[int]struct{}
+	removeddates       map[int]struct{}
+	cleareddates       bool
+	media_dates        map[int]struct{}
+	removedmedia_dates map[int]struct{}
+	clearedmedia_dates bool
+	done               bool
+	oldValue           func(context.Context) (*Media, error)
+	predicates         []predicate.Media
 }
 
 var _ ent.Mutation = (*MediaMutation)(nil)
@@ -374,55 +891,6 @@ func (m *MediaMutation) ResetDuration() {
 	delete(m.clearedFields, media.FieldDuration)
 }
 
-// SetUploadDate sets the "upload_date" field.
-func (m *MediaMutation) SetUploadDate(t time.Time) {
-	m.upload_date = &t
-}
-
-// UploadDate returns the value of the "upload_date" field in the mutation.
-func (m *MediaMutation) UploadDate() (r time.Time, exists bool) {
-	v := m.upload_date
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldUploadDate returns the old "upload_date" field's value of the Media entity.
-// If the Media object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *MediaMutation) OldUploadDate(ctx context.Context) (v *time.Time, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldUploadDate is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldUploadDate requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldUploadDate: %w", err)
-	}
-	return oldValue.UploadDate, nil
-}
-
-// ClearUploadDate clears the value of the "upload_date" field.
-func (m *MediaMutation) ClearUploadDate() {
-	m.upload_date = nil
-	m.clearedFields[media.FieldUploadDate] = struct{}{}
-}
-
-// UploadDateCleared returns if the "upload_date" field was cleared in this mutation.
-func (m *MediaMutation) UploadDateCleared() bool {
-	_, ok := m.clearedFields[media.FieldUploadDate]
-	return ok
-}
-
-// ResetUploadDate resets all changes to the "upload_date" field.
-func (m *MediaMutation) ResetUploadDate() {
-	m.upload_date = nil
-	delete(m.clearedFields, media.FieldUploadDate)
-}
-
 // AddTagIDs adds the "tags" edge to the Tag entity by ids.
 func (m *MediaMutation) AddTagIDs(ids ...int) {
 	if m.tags == nil {
@@ -477,6 +945,114 @@ func (m *MediaMutation) ResetTags() {
 	m.removedtags = nil
 }
 
+// AddDateIDs adds the "dates" edge to the Date entity by ids.
+func (m *MediaMutation) AddDateIDs(ids ...int) {
+	if m.dates == nil {
+		m.dates = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.dates[ids[i]] = struct{}{}
+	}
+}
+
+// ClearDates clears the "dates" edge to the Date entity.
+func (m *MediaMutation) ClearDates() {
+	m.cleareddates = true
+}
+
+// DatesCleared reports if the "dates" edge to the Date entity was cleared.
+func (m *MediaMutation) DatesCleared() bool {
+	return m.cleareddates
+}
+
+// RemoveDateIDs removes the "dates" edge to the Date entity by IDs.
+func (m *MediaMutation) RemoveDateIDs(ids ...int) {
+	if m.removeddates == nil {
+		m.removeddates = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.dates, ids[i])
+		m.removeddates[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedDates returns the removed IDs of the "dates" edge to the Date entity.
+func (m *MediaMutation) RemovedDatesIDs() (ids []int) {
+	for id := range m.removeddates {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// DatesIDs returns the "dates" edge IDs in the mutation.
+func (m *MediaMutation) DatesIDs() (ids []int) {
+	for id := range m.dates {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetDates resets all changes to the "dates" edge.
+func (m *MediaMutation) ResetDates() {
+	m.dates = nil
+	m.cleareddates = false
+	m.removeddates = nil
+}
+
+// AddMediaDateIDs adds the "media_dates" edge to the MediaDate entity by ids.
+func (m *MediaMutation) AddMediaDateIDs(ids ...int) {
+	if m.media_dates == nil {
+		m.media_dates = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.media_dates[ids[i]] = struct{}{}
+	}
+}
+
+// ClearMediaDates clears the "media_dates" edge to the MediaDate entity.
+func (m *MediaMutation) ClearMediaDates() {
+	m.clearedmedia_dates = true
+}
+
+// MediaDatesCleared reports if the "media_dates" edge to the MediaDate entity was cleared.
+func (m *MediaMutation) MediaDatesCleared() bool {
+	return m.clearedmedia_dates
+}
+
+// RemoveMediaDateIDs removes the "media_dates" edge to the MediaDate entity by IDs.
+func (m *MediaMutation) RemoveMediaDateIDs(ids ...int) {
+	if m.removedmedia_dates == nil {
+		m.removedmedia_dates = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.media_dates, ids[i])
+		m.removedmedia_dates[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedMediaDates returns the removed IDs of the "media_dates" edge to the MediaDate entity.
+func (m *MediaMutation) RemovedMediaDatesIDs() (ids []int) {
+	for id := range m.removedmedia_dates {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// MediaDatesIDs returns the "media_dates" edge IDs in the mutation.
+func (m *MediaMutation) MediaDatesIDs() (ids []int) {
+	for id := range m.media_dates {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetMediaDates resets all changes to the "media_dates" edge.
+func (m *MediaMutation) ResetMediaDates() {
+	m.media_dates = nil
+	m.clearedmedia_dates = false
+	m.removedmedia_dates = nil
+}
+
 // Where appends a list predicates to the MediaMutation builder.
 func (m *MediaMutation) Where(ps ...predicate.Media) {
 	m.predicates = append(m.predicates, ps...)
@@ -511,7 +1087,7 @@ func (m *MediaMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *MediaMutation) Fields() []string {
-	fields := make([]string, 0, 5)
+	fields := make([]string, 0, 4)
 	if m.format != nil {
 		fields = append(fields, media.FieldFormat)
 	}
@@ -523,9 +1099,6 @@ func (m *MediaMutation) Fields() []string {
 	}
 	if m.duration != nil {
 		fields = append(fields, media.FieldDuration)
-	}
-	if m.upload_date != nil {
-		fields = append(fields, media.FieldUploadDate)
 	}
 	return fields
 }
@@ -543,8 +1116,6 @@ func (m *MediaMutation) Field(name string) (ent.Value, bool) {
 		return m.Height()
 	case media.FieldDuration:
 		return m.Duration()
-	case media.FieldUploadDate:
-		return m.UploadDate()
 	}
 	return nil, false
 }
@@ -562,8 +1133,6 @@ func (m *MediaMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldHeight(ctx)
 	case media.FieldDuration:
 		return m.OldDuration(ctx)
-	case media.FieldUploadDate:
-		return m.OldUploadDate(ctx)
 	}
 	return nil, fmt.Errorf("unknown Media field %s", name)
 }
@@ -600,13 +1169,6 @@ func (m *MediaMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDuration(v)
-		return nil
-	case media.FieldUploadDate:
-		v, ok := value.(time.Time)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetUploadDate(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Media field %s", name)
@@ -680,9 +1242,6 @@ func (m *MediaMutation) ClearedFields() []string {
 	if m.FieldCleared(media.FieldDuration) {
 		fields = append(fields, media.FieldDuration)
 	}
-	if m.FieldCleared(media.FieldUploadDate) {
-		fields = append(fields, media.FieldUploadDate)
-	}
 	return fields
 }
 
@@ -699,9 +1258,6 @@ func (m *MediaMutation) ClearField(name string) error {
 	switch name {
 	case media.FieldDuration:
 		m.ClearDuration()
-		return nil
-	case media.FieldUploadDate:
-		m.ClearUploadDate()
 		return nil
 	}
 	return fmt.Errorf("unknown Media nullable field %s", name)
@@ -723,18 +1279,21 @@ func (m *MediaMutation) ResetField(name string) error {
 	case media.FieldDuration:
 		m.ResetDuration()
 		return nil
-	case media.FieldUploadDate:
-		m.ResetUploadDate()
-		return nil
 	}
 	return fmt.Errorf("unknown Media field %s", name)
 }
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *MediaMutation) AddedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 3)
 	if m.tags != nil {
 		edges = append(edges, media.EdgeTags)
+	}
+	if m.dates != nil {
+		edges = append(edges, media.EdgeDates)
+	}
+	if m.media_dates != nil {
+		edges = append(edges, media.EdgeMediaDates)
 	}
 	return edges
 }
@@ -749,15 +1308,33 @@ func (m *MediaMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case media.EdgeDates:
+		ids := make([]ent.Value, 0, len(m.dates))
+		for id := range m.dates {
+			ids = append(ids, id)
+		}
+		return ids
+	case media.EdgeMediaDates:
+		ids := make([]ent.Value, 0, len(m.media_dates))
+		for id := range m.media_dates {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *MediaMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 3)
 	if m.removedtags != nil {
 		edges = append(edges, media.EdgeTags)
+	}
+	if m.removeddates != nil {
+		edges = append(edges, media.EdgeDates)
+	}
+	if m.removedmedia_dates != nil {
+		edges = append(edges, media.EdgeMediaDates)
 	}
 	return edges
 }
@@ -772,15 +1349,33 @@ func (m *MediaMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case media.EdgeDates:
+		ids := make([]ent.Value, 0, len(m.removeddates))
+		for id := range m.removeddates {
+			ids = append(ids, id)
+		}
+		return ids
+	case media.EdgeMediaDates:
+		ids := make([]ent.Value, 0, len(m.removedmedia_dates))
+		for id := range m.removedmedia_dates {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *MediaMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 3)
 	if m.clearedtags {
 		edges = append(edges, media.EdgeTags)
+	}
+	if m.cleareddates {
+		edges = append(edges, media.EdgeDates)
+	}
+	if m.clearedmedia_dates {
+		edges = append(edges, media.EdgeMediaDates)
 	}
 	return edges
 }
@@ -791,6 +1386,10 @@ func (m *MediaMutation) EdgeCleared(name string) bool {
 	switch name {
 	case media.EdgeTags:
 		return m.clearedtags
+	case media.EdgeDates:
+		return m.cleareddates
+	case media.EdgeMediaDates:
+		return m.clearedmedia_dates
 	}
 	return false
 }
@@ -810,8 +1409,551 @@ func (m *MediaMutation) ResetEdge(name string) error {
 	case media.EdgeTags:
 		m.ResetTags()
 		return nil
+	case media.EdgeDates:
+		m.ResetDates()
+		return nil
+	case media.EdgeMediaDates:
+		m.ResetMediaDates()
+		return nil
 	}
 	return fmt.Errorf("unknown Media edge %s", name)
+}
+
+// MediaDateMutation represents an operation that mutates the MediaDate nodes in the graph.
+type MediaDateMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int
+	value         *time.Time
+	clearedFields map[string]struct{}
+	media         *string
+	clearedmedia  bool
+	date          *int
+	cleareddate   bool
+	done          bool
+	oldValue      func(context.Context) (*MediaDate, error)
+	predicates    []predicate.MediaDate
+}
+
+var _ ent.Mutation = (*MediaDateMutation)(nil)
+
+// mediadateOption allows management of the mutation configuration using functional options.
+type mediadateOption func(*MediaDateMutation)
+
+// newMediaDateMutation creates new mutation for the MediaDate entity.
+func newMediaDateMutation(c config, op Op, opts ...mediadateOption) *MediaDateMutation {
+	m := &MediaDateMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeMediaDate,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withMediaDateID sets the ID field of the mutation.
+func withMediaDateID(id int) mediadateOption {
+	return func(m *MediaDateMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *MediaDate
+		)
+		m.oldValue = func(ctx context.Context) (*MediaDate, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().MediaDate.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withMediaDate sets the old MediaDate of the mutation.
+func withMediaDate(node *MediaDate) mediadateOption {
+	return func(m *MediaDateMutation) {
+		m.oldValue = func(context.Context) (*MediaDate, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m MediaDateMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m MediaDateMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *MediaDateMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *MediaDateMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().MediaDate.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetMediaID sets the "media_id" field.
+func (m *MediaDateMutation) SetMediaID(s string) {
+	m.media = &s
+}
+
+// MediaID returns the value of the "media_id" field in the mutation.
+func (m *MediaDateMutation) MediaID() (r string, exists bool) {
+	v := m.media
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMediaID returns the old "media_id" field's value of the MediaDate entity.
+// If the MediaDate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MediaDateMutation) OldMediaID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMediaID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMediaID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMediaID: %w", err)
+	}
+	return oldValue.MediaID, nil
+}
+
+// ResetMediaID resets all changes to the "media_id" field.
+func (m *MediaDateMutation) ResetMediaID() {
+	m.media = nil
+}
+
+// SetDateID sets the "date_id" field.
+func (m *MediaDateMutation) SetDateID(i int) {
+	m.date = &i
+}
+
+// DateID returns the value of the "date_id" field in the mutation.
+func (m *MediaDateMutation) DateID() (r int, exists bool) {
+	v := m.date
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDateID returns the old "date_id" field's value of the MediaDate entity.
+// If the MediaDate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MediaDateMutation) OldDateID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDateID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDateID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDateID: %w", err)
+	}
+	return oldValue.DateID, nil
+}
+
+// ResetDateID resets all changes to the "date_id" field.
+func (m *MediaDateMutation) ResetDateID() {
+	m.date = nil
+}
+
+// SetValue sets the "value" field.
+func (m *MediaDateMutation) SetValue(t time.Time) {
+	m.value = &t
+}
+
+// Value returns the value of the "value" field in the mutation.
+func (m *MediaDateMutation) Value() (r time.Time, exists bool) {
+	v := m.value
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldValue returns the old "value" field's value of the MediaDate entity.
+// If the MediaDate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MediaDateMutation) OldValue(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldValue is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldValue requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldValue: %w", err)
+	}
+	return oldValue.Value, nil
+}
+
+// ResetValue resets all changes to the "value" field.
+func (m *MediaDateMutation) ResetValue() {
+	m.value = nil
+}
+
+// ClearMedia clears the "media" edge to the Media entity.
+func (m *MediaDateMutation) ClearMedia() {
+	m.clearedmedia = true
+	m.clearedFields[mediadate.FieldMediaID] = struct{}{}
+}
+
+// MediaCleared reports if the "media" edge to the Media entity was cleared.
+func (m *MediaDateMutation) MediaCleared() bool {
+	return m.clearedmedia
+}
+
+// MediaIDs returns the "media" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// MediaID instead. It exists only for internal usage by the builders.
+func (m *MediaDateMutation) MediaIDs() (ids []string) {
+	if id := m.media; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetMedia resets all changes to the "media" edge.
+func (m *MediaDateMutation) ResetMedia() {
+	m.media = nil
+	m.clearedmedia = false
+}
+
+// ClearDate clears the "date" edge to the Date entity.
+func (m *MediaDateMutation) ClearDate() {
+	m.cleareddate = true
+	m.clearedFields[mediadate.FieldDateID] = struct{}{}
+}
+
+// DateCleared reports if the "date" edge to the Date entity was cleared.
+func (m *MediaDateMutation) DateCleared() bool {
+	return m.cleareddate
+}
+
+// DateIDs returns the "date" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// DateID instead. It exists only for internal usage by the builders.
+func (m *MediaDateMutation) DateIDs() (ids []int) {
+	if id := m.date; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetDate resets all changes to the "date" edge.
+func (m *MediaDateMutation) ResetDate() {
+	m.date = nil
+	m.cleareddate = false
+}
+
+// Where appends a list predicates to the MediaDateMutation builder.
+func (m *MediaDateMutation) Where(ps ...predicate.MediaDate) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the MediaDateMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *MediaDateMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.MediaDate, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *MediaDateMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *MediaDateMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (MediaDate).
+func (m *MediaDateMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *MediaDateMutation) Fields() []string {
+	fields := make([]string, 0, 3)
+	if m.media != nil {
+		fields = append(fields, mediadate.FieldMediaID)
+	}
+	if m.date != nil {
+		fields = append(fields, mediadate.FieldDateID)
+	}
+	if m.value != nil {
+		fields = append(fields, mediadate.FieldValue)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *MediaDateMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case mediadate.FieldMediaID:
+		return m.MediaID()
+	case mediadate.FieldDateID:
+		return m.DateID()
+	case mediadate.FieldValue:
+		return m.Value()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *MediaDateMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case mediadate.FieldMediaID:
+		return m.OldMediaID(ctx)
+	case mediadate.FieldDateID:
+		return m.OldDateID(ctx)
+	case mediadate.FieldValue:
+		return m.OldValue(ctx)
+	}
+	return nil, fmt.Errorf("unknown MediaDate field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MediaDateMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case mediadate.FieldMediaID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMediaID(v)
+		return nil
+	case mediadate.FieldDateID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDateID(v)
+		return nil
+	case mediadate.FieldValue:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetValue(v)
+		return nil
+	}
+	return fmt.Errorf("unknown MediaDate field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *MediaDateMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *MediaDateMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MediaDateMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown MediaDate numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *MediaDateMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *MediaDateMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *MediaDateMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown MediaDate nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *MediaDateMutation) ResetField(name string) error {
+	switch name {
+	case mediadate.FieldMediaID:
+		m.ResetMediaID()
+		return nil
+	case mediadate.FieldDateID:
+		m.ResetDateID()
+		return nil
+	case mediadate.FieldValue:
+		m.ResetValue()
+		return nil
+	}
+	return fmt.Errorf("unknown MediaDate field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *MediaDateMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.media != nil {
+		edges = append(edges, mediadate.EdgeMedia)
+	}
+	if m.date != nil {
+		edges = append(edges, mediadate.EdgeDate)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *MediaDateMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case mediadate.EdgeMedia:
+		if id := m.media; id != nil {
+			return []ent.Value{*id}
+		}
+	case mediadate.EdgeDate:
+		if id := m.date; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *MediaDateMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *MediaDateMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *MediaDateMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedmedia {
+		edges = append(edges, mediadate.EdgeMedia)
+	}
+	if m.cleareddate {
+		edges = append(edges, mediadate.EdgeDate)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *MediaDateMutation) EdgeCleared(name string) bool {
+	switch name {
+	case mediadate.EdgeMedia:
+		return m.clearedmedia
+	case mediadate.EdgeDate:
+		return m.cleareddate
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *MediaDateMutation) ClearEdge(name string) error {
+	switch name {
+	case mediadate.EdgeMedia:
+		m.ClearMedia()
+		return nil
+	case mediadate.EdgeDate:
+		m.ClearDate()
+		return nil
+	}
+	return fmt.Errorf("unknown MediaDate unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *MediaDateMutation) ResetEdge(name string) error {
+	switch name {
+	case mediadate.EdgeMedia:
+		m.ResetMedia()
+		return nil
+	case mediadate.EdgeDate:
+		m.ResetDate()
+		return nil
+	}
+	return fmt.Errorf("unknown MediaDate edge %s", name)
 }
 
 // TagMutation represents an operation that mutates the Tag nodes in the graph.

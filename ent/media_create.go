@@ -4,11 +4,12 @@ package ent
 
 import (
 	"context"
+	"era/booru/ent/date"
 	"era/booru/ent/media"
+	"era/booru/ent/mediadate"
 	"era/booru/ent/tag"
 	"errors"
 	"fmt"
-	"time"
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
@@ -53,20 +54,6 @@ func (mc *MediaCreate) SetNillableDuration(i *int16) *MediaCreate {
 	return mc
 }
 
-// SetUploadDate sets the "upload_date" field.
-func (mc *MediaCreate) SetUploadDate(t time.Time) *MediaCreate {
-	mc.mutation.SetUploadDate(t)
-	return mc
-}
-
-// SetNillableUploadDate sets the "upload_date" field if the given value is not nil.
-func (mc *MediaCreate) SetNillableUploadDate(t *time.Time) *MediaCreate {
-	if t != nil {
-		mc.SetUploadDate(*t)
-	}
-	return mc
-}
-
 // SetID sets the "id" field.
 func (mc *MediaCreate) SetID(s string) *MediaCreate {
 	mc.mutation.SetID(s)
@@ -86,6 +73,36 @@ func (mc *MediaCreate) AddTags(t ...*Tag) *MediaCreate {
 		ids[i] = t[i].ID
 	}
 	return mc.AddTagIDs(ids...)
+}
+
+// AddDateIDs adds the "dates" edge to the Date entity by IDs.
+func (mc *MediaCreate) AddDateIDs(ids ...int) *MediaCreate {
+	mc.mutation.AddDateIDs(ids...)
+	return mc
+}
+
+// AddDates adds the "dates" edges to the Date entity.
+func (mc *MediaCreate) AddDates(d ...*Date) *MediaCreate {
+	ids := make([]int, len(d))
+	for i := range d {
+		ids[i] = d[i].ID
+	}
+	return mc.AddDateIDs(ids...)
+}
+
+// AddMediaDateIDs adds the "media_dates" edge to the MediaDate entity by IDs.
+func (mc *MediaCreate) AddMediaDateIDs(ids ...int) *MediaCreate {
+	mc.mutation.AddMediaDateIDs(ids...)
+	return mc
+}
+
+// AddMediaDates adds the "media_dates" edges to the MediaDate entity.
+func (mc *MediaCreate) AddMediaDates(m ...*MediaDate) *MediaCreate {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return mc.AddMediaDateIDs(ids...)
 }
 
 // Mutation returns the MediaMutation object of the builder.
@@ -187,10 +204,6 @@ func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 		_spec.SetField(media.FieldDuration, field.TypeInt16, value)
 		_node.Duration = &value
 	}
-	if value, ok := mc.mutation.UploadDate(); ok {
-		_spec.SetField(media.FieldUploadDate, field.TypeTime, value)
-		_node.UploadDate = &value
-	}
 	if nodes := mc.mutation.TagsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2M,
@@ -200,6 +213,38 @@ func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(tag.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := mc.mutation.DatesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.DatesTable,
+			Columns: media.DatesPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(date.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := mc.mutation.MediaDatesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaDatesTable,
+			Columns: []string{media.MediaDatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediadate.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

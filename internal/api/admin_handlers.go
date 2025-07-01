@@ -11,9 +11,12 @@ import (
 	"time"
 
 	"era/booru/ent"
+	"era/booru/ent/date"
 	"era/booru/ent/media"
+	"era/booru/ent/mediadate"
 	"era/booru/ent/tag"
 	"era/booru/internal/config"
+	db2 "era/booru/internal/db"
 	"era/booru/internal/ingest"
 	minio "era/booru/internal/minio"
 	"era/booru/internal/search"
@@ -70,7 +73,10 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		// Remove the HasTags() filter to export all media
-		items, err := db.Media.Query().WithTags().All(ctx)
+		items, err := db.Media.Query().
+			WithTags().
+			WithDates(func(q *ent.DateQuery) { q.WithMediaDates() }).
+			All(ctx)
 		if err != nil {
 			log.Printf("export tags: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -94,23 +100,32 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 		}
 
 		for _, m := range items {
-			// Remove the check for len(m.Edges.Tags) == 0 to export all media
 			tags := make([]string, len(m.Edges.Tags))
 			for i, t := range m.Edges.Tags {
 				tags[i] = t.Name
 			}
 
-			// Handle nil UploadDate
-			uploadDate := ""
-			if m.UploadDate != nil {
-				uploadDate = m.UploadDate.Format("2006-01-02")
+			dates := make([]struct {
+				Name  string `json:"name"`
+				Value string `json:"value"`
+			}, 0)
+			for _, d := range m.Edges.Dates {
+				if len(d.Edges.MediaDates) > 0 {
+					dates = append(dates, struct {
+						Name  string `json:"name"`
+						Value string `json:"value"`
+					}{Name: d.Name, Value: d.Edges.MediaDates[0].Value.Format("2006-01-02")})
+				}
 			}
 
 			if err := enc.Encode(struct {
-				ID         string   `json:"id"`
-				Tags       []string `json:"tags"`
-				UploadDate string   `json:"upload_date"`
-			}{ID: m.ID, Tags: tags, UploadDate: uploadDate}); err != nil {
+				ID    string   `json:"id"`
+				Tags  []string `json:"tags"`
+				Dates []struct {
+					Name  string `json:"name"`
+					Value string `json:"value"`
+				} `json:"dates"`
+			}{ID: m.ID, Tags: tags, Dates: dates}); err != nil {
 				log.Printf("encode record %s: %v", m.ID, err)
 				return
 			}
@@ -144,9 +159,12 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 
 		for {
 			var item struct {
-				ID         string   `json:"id"`
-				Tags       []string `json:"tags"`
-				UploadDate string   `json:"upload_date"`
+				ID    string   `json:"id"`
+				Tags  []string `json:"tags"`
+				Dates []struct {
+					Name  string `json:"name"`
+					Value string `json:"value"`
+				} `json:"dates"`
 			}
 			if err := dec.Decode(&item); err != nil {
 				if err == io.EOF {
@@ -158,7 +176,10 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 			}
 
 			// Don't skip - process every record to potentially remove "tagme"
-			mobj, err := db.Media.Query().Where(media.IDEQ(item.ID)).WithTags().Only(ctx)
+			mobj, err := db.Media.Query().Where(media.IDEQ(item.ID)).
+				WithTags().
+				WithDates(func(q *ent.DateQuery) { q.WithMediaDates() }).
+				Only(ctx)
 			if ent.IsNotFound(err) {
 				continue // Skip if media doesn't exist
 			}
@@ -177,21 +198,26 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				}
 			}
 
-			// 2) Parse import date and choose earliest (keep existing if it's earlier)
-			var importDate *time.Time
-			var shouldUpdateDate bool
-			if item.UploadDate != "" {
-				if t, err := time.Parse("2006-01-02", item.UploadDate); err == nil {
-					importDate = &t
-					currentDate := mobj.UploadDate
-					if currentDate == nil {
-						// No existing date, use import date
-						shouldUpdateDate = true
-					} else if importDate.Before(*currentDate) {
-						// Import date is earlier, use it
-						shouldUpdateDate = true
-					}
-					// If current date is earlier or equal, don't update
+			// 2) Handle incoming dates
+			for _, d := range item.Dates {
+				t, err := time.Parse("2006-01-02", d.Value)
+				if err != nil {
+					continue
+				}
+				dt, err := db2.FindOrCreateDate(ctx, db, d.Name)
+				if err != nil {
+					log.Printf("date lookup %s: %v", d.Name, err)
+					continue
+				}
+				md, err := db.MediaDate.Query().Where(mediadate.HasMediaWith(media.IDEQ(item.ID))).
+					Where(mediadate.HasDateWith(date.IDEQ(dt.ID))).Only(ctx)
+				if ent.IsNotFound(err) {
+					_, err = db.MediaDate.Create().SetMediaID(item.ID).SetDateID(dt.ID).SetValue(t).Save(ctx)
+				} else if err == nil {
+					_, err = md.Update().SetValue(t).Save(ctx)
+				}
+				if err != nil {
+					log.Printf("update date %s for %s: %v", d.Name, item.ID, err)
 				}
 			}
 
@@ -238,10 +264,7 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 			}
 
 			// Update date if we should (import date is earlier)
-			if shouldUpdateDate && importDate != nil {
-				upd = upd.SetUploadDate(*importDate)
-				changes = append(changes, fmt.Sprintf("updated date to %s", item.UploadDate))
-			}
+			// Dates handled separately above
 
 			// Only save if we have something to update
 			if len(changes) > 0 {

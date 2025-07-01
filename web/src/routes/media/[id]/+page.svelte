@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/state'
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import TabNav from '$lib/components/TabNav.svelte';
@@ -56,7 +56,17 @@
 				<p>Format: {media.format}</p>
 				<p>Dimensions: {media.width}×{media.height}</p>
 				<p>Size: {(media.size / 1024 / 1024).toFixed(2)} MB</p>
-				<p>Uploaded: {new Date(media.upload_date).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+				{#each media.dates as d (d.name)}
+					{#if d.name === 'upload'}
+						<p>
+							Uploaded: {new Date(d.value).toLocaleDateString(undefined, {
+								day: '2-digit',
+								month: 'short',
+								year: 'numeric'
+							})}
+						</p>
+					{/if}
+				{/each}
 			</div>
 			{#if media.tags.length}
 				<div class="text-sm">

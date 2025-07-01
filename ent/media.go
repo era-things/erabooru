@@ -6,7 +6,6 @@ import (
 	"era/booru/ent/media"
 	"fmt"
 	"strings"
-	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
@@ -26,8 +25,6 @@ type Media struct {
 	Height int16 `json:"height,omitempty"`
 	// Duration in seconds for video or audio
 	Duration *int16 `json:"duration,omitempty"`
-	// Date when the file was uploaded
-	UploadDate *time.Time `json:"upload_date,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the MediaQuery when eager-loading is set.
 	Edges        MediaEdges `json:"edges"`
@@ -38,9 +35,13 @@ type Media struct {
 type MediaEdges struct {
 	// Tags associated with the media item, used for categorization
 	Tags []*Tag `json:"tags,omitempty"`
+	// Date entries associated with the media item
+	Dates []*Date `json:"dates,omitempty"`
+	// MediaDates holds the value of the media_dates edge.
+	MediaDates []*MediaDate `json:"media_dates,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [3]bool
 }
 
 // TagsOrErr returns the Tags value or an error if the edge
@@ -52,6 +53,24 @@ func (e MediaEdges) TagsOrErr() ([]*Tag, error) {
 	return nil, &NotLoadedError{edge: "tags"}
 }
 
+// DatesOrErr returns the Dates value or an error if the edge
+// was not loaded in eager-loading.
+func (e MediaEdges) DatesOrErr() ([]*Date, error) {
+	if e.loadedTypes[1] {
+		return e.Dates, nil
+	}
+	return nil, &NotLoadedError{edge: "dates"}
+}
+
+// MediaDatesOrErr returns the MediaDates value or an error if the edge
+// was not loaded in eager-loading.
+func (e MediaEdges) MediaDatesOrErr() ([]*MediaDate, error) {
+	if e.loadedTypes[2] {
+		return e.MediaDates, nil
+	}
+	return nil, &NotLoadedError{edge: "media_dates"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*Media) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -61,8 +80,6 @@ func (*Media) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case media.FieldID, media.FieldFormat:
 			values[i] = new(sql.NullString)
-		case media.FieldUploadDate:
-			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
 		}
@@ -109,13 +126,6 @@ func (m *Media) assignValues(columns []string, values []any) error {
 				m.Duration = new(int16)
 				*m.Duration = int16(value.Int64)
 			}
-		case media.FieldUploadDate:
-			if value, ok := values[i].(*sql.NullTime); !ok {
-				return fmt.Errorf("unexpected type %T for field upload_date", values[i])
-			} else if value.Valid {
-				m.UploadDate = new(time.Time)
-				*m.UploadDate = value.Time
-			}
 		default:
 			m.selectValues.Set(columns[i], values[i])
 		}
@@ -132,6 +142,16 @@ func (m *Media) Value(name string) (ent.Value, error) {
 // QueryTags queries the "tags" edge of the Media entity.
 func (m *Media) QueryTags() *TagQuery {
 	return NewMediaClient(m.config).QueryTags(m)
+}
+
+// QueryDates queries the "dates" edge of the Media entity.
+func (m *Media) QueryDates() *DateQuery {
+	return NewMediaClient(m.config).QueryDates(m)
+}
+
+// QueryMediaDates queries the "media_dates" edge of the Media entity.
+func (m *Media) QueryMediaDates() *MediaDateQuery {
+	return NewMediaClient(m.config).QueryMediaDates(m)
 }
 
 // Update returns a builder for updating this Media.
@@ -169,11 +189,6 @@ func (m *Media) String() string {
 	if v := m.Duration; v != nil {
 		builder.WriteString("duration=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
-	builder.WriteString(", ")
-	if v := m.UploadDate; v != nil {
-		builder.WriteString("upload_date=")
-		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteByte(')')
 	return builder.String()

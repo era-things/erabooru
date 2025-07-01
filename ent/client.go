@@ -11,7 +11,9 @@ import (
 
 	"era/booru/ent/migrate"
 
+	"era/booru/ent/date"
 	"era/booru/ent/media"
+	"era/booru/ent/mediadate"
 	"era/booru/ent/tag"
 
 	"entgo.io/ent"
@@ -25,8 +27,12 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// Date is the client for interacting with the Date builders.
+	Date *DateClient
 	// Media is the client for interacting with the Media builders.
 	Media *MediaClient
+	// MediaDate is the client for interacting with the MediaDate builders.
+	MediaDate *MediaDateClient
 	// Tag is the client for interacting with the Tag builders.
 	Tag *TagClient
 }
@@ -40,7 +46,9 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.Date = NewDateClient(c.config)
 	c.Media = NewMediaClient(c.config)
+	c.MediaDate = NewMediaDateClient(c.config)
 	c.Tag = NewTagClient(c.config)
 }
 
@@ -132,10 +140,12 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:    ctx,
-		config: cfg,
-		Media:  NewMediaClient(cfg),
-		Tag:    NewTagClient(cfg),
+		ctx:       ctx,
+		config:    cfg,
+		Date:      NewDateClient(cfg),
+		Media:     NewMediaClient(cfg),
+		MediaDate: NewMediaDateClient(cfg),
+		Tag:       NewTagClient(cfg),
 	}, nil
 }
 
@@ -153,17 +163,19 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:    ctx,
-		config: cfg,
-		Media:  NewMediaClient(cfg),
-		Tag:    NewTagClient(cfg),
+		ctx:       ctx,
+		config:    cfg,
+		Date:      NewDateClient(cfg),
+		Media:     NewMediaClient(cfg),
+		MediaDate: NewMediaDateClient(cfg),
+		Tag:       NewTagClient(cfg),
 	}, nil
 }
 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		Media.
+//		Date.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -185,26 +197,199 @@ func (c *Client) Close() error {
 // Use adds the mutation hooks to all the entity clients.
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
+	c.Date.Use(hooks...)
 	c.Media.Use(hooks...)
+	c.MediaDate.Use(hooks...)
 	c.Tag.Use(hooks...)
 }
 
 // Intercept adds the query interceptors to all the entity clients.
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
+	c.Date.Intercept(interceptors...)
 	c.Media.Intercept(interceptors...)
+	c.MediaDate.Intercept(interceptors...)
 	c.Tag.Intercept(interceptors...)
 }
 
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *DateMutation:
+		return c.Date.mutate(ctx, m)
 	case *MediaMutation:
 		return c.Media.mutate(ctx, m)
+	case *MediaDateMutation:
+		return c.MediaDate.mutate(ctx, m)
 	case *TagMutation:
 		return c.Tag.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// DateClient is a client for the Date schema.
+type DateClient struct {
+	config
+}
+
+// NewDateClient returns a client for the Date from the given config.
+func NewDateClient(c config) *DateClient {
+	return &DateClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `date.Hooks(f(g(h())))`.
+func (c *DateClient) Use(hooks ...Hook) {
+	c.hooks.Date = append(c.hooks.Date, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `date.Intercept(f(g(h())))`.
+func (c *DateClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Date = append(c.inters.Date, interceptors...)
+}
+
+// Create returns a builder for creating a Date entity.
+func (c *DateClient) Create() *DateCreate {
+	mutation := newDateMutation(c.config, OpCreate)
+	return &DateCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Date entities.
+func (c *DateClient) CreateBulk(builders ...*DateCreate) *DateCreateBulk {
+	return &DateCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *DateClient) MapCreateBulk(slice any, setFunc func(*DateCreate, int)) *DateCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &DateCreateBulk{err: fmt.Errorf("calling to DateClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*DateCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &DateCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Date.
+func (c *DateClient) Update() *DateUpdate {
+	mutation := newDateMutation(c.config, OpUpdate)
+	return &DateUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *DateClient) UpdateOne(d *Date) *DateUpdateOne {
+	mutation := newDateMutation(c.config, OpUpdateOne, withDate(d))
+	return &DateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *DateClient) UpdateOneID(id int) *DateUpdateOne {
+	mutation := newDateMutation(c.config, OpUpdateOne, withDateID(id))
+	return &DateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Date.
+func (c *DateClient) Delete() *DateDelete {
+	mutation := newDateMutation(c.config, OpDelete)
+	return &DateDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *DateClient) DeleteOne(d *Date) *DateDeleteOne {
+	return c.DeleteOneID(d.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *DateClient) DeleteOneID(id int) *DateDeleteOne {
+	builder := c.Delete().Where(date.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &DateDeleteOne{builder}
+}
+
+// Query returns a query builder for Date.
+func (c *DateClient) Query() *DateQuery {
+	return &DateQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeDate},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Date entity by its id.
+func (c *DateClient) Get(ctx context.Context, id int) (*Date, error) {
+	return c.Query().Where(date.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *DateClient) GetX(ctx context.Context, id int) *Date {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryMedia queries the media edge of a Date.
+func (c *DateClient) QueryMedia(d *Date) *MediaQuery {
+	query := (&MediaClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := d.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(date.Table, date.FieldID, id),
+			sqlgraph.To(media.Table, media.FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, true, date.MediaTable, date.MediaPrimaryKey...),
+		)
+		fromV = sqlgraph.Neighbors(d.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMediaDates queries the media_dates edge of a Date.
+func (c *DateClient) QueryMediaDates(d *Date) *MediaDateQuery {
+	query := (&MediaDateClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := d.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(date.Table, date.FieldID, id),
+			sqlgraph.To(mediadate.Table, mediadate.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, true, date.MediaDatesTable, date.MediaDatesColumn),
+		)
+		fromV = sqlgraph.Neighbors(d.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *DateClient) Hooks() []Hook {
+	return c.hooks.Date
+}
+
+// Interceptors returns the client interceptors.
+func (c *DateClient) Interceptors() []Interceptor {
+	return c.inters.Date
+}
+
+func (c *DateClient) mutate(ctx context.Context, m *DateMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&DateCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&DateUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&DateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&DateDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Date mutation op: %q", m.Op())
 	}
 }
 
@@ -332,6 +517,38 @@ func (c *MediaClient) QueryTags(m *Media) *TagQuery {
 	return query
 }
 
+// QueryDates queries the dates edge of a Media.
+func (c *MediaClient) QueryDates(m *Media) *DateQuery {
+	query := (&DateClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(media.Table, media.FieldID, id),
+			sqlgraph.To(date.Table, date.FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, false, media.DatesTable, media.DatesPrimaryKey...),
+		)
+		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMediaDates queries the media_dates edge of a Media.
+func (c *MediaClient) QueryMediaDates(m *Media) *MediaDateQuery {
+	query := (&MediaDateClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(media.Table, media.FieldID, id),
+			sqlgraph.To(mediadate.Table, mediadate.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, true, media.MediaDatesTable, media.MediaDatesColumn),
+		)
+		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *MediaClient) Hooks() []Hook {
 	return c.hooks.Media
@@ -354,6 +571,171 @@ func (c *MediaClient) mutate(ctx context.Context, m *MediaMutation) (Value, erro
 		return (&MediaDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Media mutation op: %q", m.Op())
+	}
+}
+
+// MediaDateClient is a client for the MediaDate schema.
+type MediaDateClient struct {
+	config
+}
+
+// NewMediaDateClient returns a client for the MediaDate from the given config.
+func NewMediaDateClient(c config) *MediaDateClient {
+	return &MediaDateClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `mediadate.Hooks(f(g(h())))`.
+func (c *MediaDateClient) Use(hooks ...Hook) {
+	c.hooks.MediaDate = append(c.hooks.MediaDate, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `mediadate.Intercept(f(g(h())))`.
+func (c *MediaDateClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MediaDate = append(c.inters.MediaDate, interceptors...)
+}
+
+// Create returns a builder for creating a MediaDate entity.
+func (c *MediaDateClient) Create() *MediaDateCreate {
+	mutation := newMediaDateMutation(c.config, OpCreate)
+	return &MediaDateCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MediaDate entities.
+func (c *MediaDateClient) CreateBulk(builders ...*MediaDateCreate) *MediaDateCreateBulk {
+	return &MediaDateCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MediaDateClient) MapCreateBulk(slice any, setFunc func(*MediaDateCreate, int)) *MediaDateCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MediaDateCreateBulk{err: fmt.Errorf("calling to MediaDateClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MediaDateCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MediaDateCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MediaDate.
+func (c *MediaDateClient) Update() *MediaDateUpdate {
+	mutation := newMediaDateMutation(c.config, OpUpdate)
+	return &MediaDateUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MediaDateClient) UpdateOne(md *MediaDate) *MediaDateUpdateOne {
+	mutation := newMediaDateMutation(c.config, OpUpdateOne, withMediaDate(md))
+	return &MediaDateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MediaDateClient) UpdateOneID(id int) *MediaDateUpdateOne {
+	mutation := newMediaDateMutation(c.config, OpUpdateOne, withMediaDateID(id))
+	return &MediaDateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MediaDate.
+func (c *MediaDateClient) Delete() *MediaDateDelete {
+	mutation := newMediaDateMutation(c.config, OpDelete)
+	return &MediaDateDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MediaDateClient) DeleteOne(md *MediaDate) *MediaDateDeleteOne {
+	return c.DeleteOneID(md.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MediaDateClient) DeleteOneID(id int) *MediaDateDeleteOne {
+	builder := c.Delete().Where(mediadate.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MediaDateDeleteOne{builder}
+}
+
+// Query returns a query builder for MediaDate.
+func (c *MediaDateClient) Query() *MediaDateQuery {
+	return &MediaDateQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMediaDate},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MediaDate entity by its id.
+func (c *MediaDateClient) Get(ctx context.Context, id int) (*MediaDate, error) {
+	return c.Query().Where(mediadate.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MediaDateClient) GetX(ctx context.Context, id int) *MediaDate {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryMedia queries the media edge of a MediaDate.
+func (c *MediaDateClient) QueryMedia(md *MediaDate) *MediaQuery {
+	query := (&MediaClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := md.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mediadate.Table, mediadate.FieldID, id),
+			sqlgraph.To(media.Table, media.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, mediadate.MediaTable, mediadate.MediaColumn),
+		)
+		fromV = sqlgraph.Neighbors(md.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryDate queries the date edge of a MediaDate.
+func (c *MediaDateClient) QueryDate(md *MediaDate) *DateQuery {
+	query := (&DateClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := md.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mediadate.Table, mediadate.FieldID, id),
+			sqlgraph.To(date.Table, date.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, mediadate.DateTable, mediadate.DateColumn),
+		)
+		fromV = sqlgraph.Neighbors(md.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MediaDateClient) Hooks() []Hook {
+	return c.hooks.MediaDate
+}
+
+// Interceptors returns the client interceptors.
+func (c *MediaDateClient) Interceptors() []Interceptor {
+	return c.inters.MediaDate
+}
+
+func (c *MediaDateClient) mutate(ctx context.Context, m *MediaDateMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MediaDateCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MediaDateUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MediaDateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MediaDateDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MediaDate mutation op: %q", m.Op())
 	}
 }
 
@@ -509,9 +891,9 @@ func (c *TagClient) mutate(ctx context.Context, m *TagMutation) (Value, error) {
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Media, Tag []ent.Hook
+		Date, Media, MediaDate, Tag []ent.Hook
 	}
 	inters struct {
-		Media, Tag []ent.Interceptor
+		Date, Media, MediaDate, Tag []ent.Interceptor
 	}
 )

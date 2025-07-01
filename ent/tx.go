@@ -12,8 +12,12 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// Date is the client for interacting with the Date builders.
+	Date *DateClient
 	// Media is the client for interacting with the Media builders.
 	Media *MediaClient
+	// MediaDate is the client for interacting with the MediaDate builders.
+	MediaDate *MediaDateClient
 	// Tag is the client for interacting with the Tag builders.
 	Tag *TagClient
 
@@ -147,7 +151,9 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.Date = NewDateClient(tx.config)
 	tx.Media = NewMediaClient(tx.config)
+	tx.MediaDate = NewMediaDateClient(tx.config)
 	tx.Tag = NewTagClient(tx.config)
 }
 
@@ -158,7 +164,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: Media.QueryXXX(), the query will be executed
+// applies a query, for example: Date.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

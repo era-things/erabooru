@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"era/booru/ent"
 
@@ -91,14 +92,28 @@ func SearchMedia(expr string, limit, offset int) ([]*ent.Media, int, error) {
 	items := make([]*ent.Media, 0, len(res.Hits))
 
 	for _, hit := range res.Hits {
-		var m ent.Media
+		var out struct {
+			ent.Media
+			Dates map[string]string `json:"dates"`
+		}
 		b, err := json.Marshal(hit.Fields)
 		//log.Printf("search hit: %s", string(b))
 		if err != nil {
 			return nil, 0, err
 		}
-		if err := json.Unmarshal(b, &m); err != nil {
+		if err := json.Unmarshal(b, &out); err != nil {
 			return nil, 0, err
+		}
+		m := out.Media
+		if len(out.Dates) > 0 {
+			m.Edges.Dates = make([]*ent.Date, 0, len(out.Dates))
+			for name, val := range out.Dates {
+				t, _ := time.Parse("2006-01-02", val)
+				m.Edges.Dates = append(m.Edges.Dates, &ent.Date{
+					Name:  name,
+					Edges: ent.DateEdges{MediaDates: []*ent.MediaDate{{Value: t}}},
+				})
+			}
 		}
 		items = append(items, &m)
 	}
@@ -133,12 +148,22 @@ func IndexMedia(m *ent.Media) error {
 	log.Printf("indexing media %s", m.ID)
 	doc := struct {
 		ent.Media
-		Tags []string `json:"tags"`
+		Tags  []string          `json:"tags"`
+		Dates map[string]string `json:"dates"`
 	}{Media: *m}
 	if m.Edges.Tags != nil {
 		doc.Tags = make([]string, len(m.Edges.Tags))
 		for i, t := range m.Edges.Tags {
 			doc.Tags[i] = t.Name
+		}
+	}
+	if m.Edges.Dates != nil {
+		doc.Dates = make(map[string]string, len(m.Edges.Dates))
+		for _, d := range m.Edges.Dates {
+			if len(d.Edges.MediaDates) > 0 {
+				v := d.Edges.MediaDates[0].Value.Format("2006-01-02")
+				doc.Dates[d.Name] = v
+			}
 		}
 	}
 	return IDX.Index(string(m.ID), doc)
@@ -164,7 +189,10 @@ func Close() error {
 
 // IndexAllMedia indexes all media records from the database.
 func IndexAllMedia(ctx context.Context, db *ent.Client) error {
-	items, err := db.Media.Query().WithTags().All(ctx)
+	items, err := db.Media.Query().
+		WithTags().
+		WithDates(func(q *ent.DateQuery) { q.WithMediaDates() }).
+		All(ctx)
 	if err != nil {
 		return err
 	}

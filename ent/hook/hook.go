@@ -8,6 +8,18 @@ import (
 	"fmt"
 )
 
+// The DateFunc type is an adapter to allow the use of ordinary
+// function as Date mutator.
+type DateFunc func(context.Context, *ent.DateMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f DateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.DateMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DateMutation", m)
+}
+
 // The MediaFunc type is an adapter to allow the use of ordinary
 // function as Media mutator.
 type MediaFunc func(context.Context, *ent.MediaMutation) (ent.Value, error)
@@ -18,6 +30,18 @@ func (f MediaFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MediaMutation", m)
+}
+
+// The MediaDateFunc type is an adapter to allow the use of ordinary
+// function as MediaDate mutator.
+type MediaDateFunc func(context.Context, *ent.MediaDateMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MediaDateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MediaDateMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MediaDateMutation", m)
 }
 
 // The TagFunc type is an adapter to allow the use of ordinary

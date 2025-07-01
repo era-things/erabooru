@@ -1,10 +1,15 @@
+export interface MediaDate {
+	name: string;
+	value: string;
+}
+
 export interface MediaItem {
 	id: string;
 	url: string;
 	width: number;
 	height: number;
 	format: string;
-	upload_date: Date;
+	dates: MediaDate[];
 }
 
 export interface MediaDetail extends MediaItem {
