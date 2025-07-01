@@ -4,12 +4,13 @@ package ent
 
 import (
 	"context"
+	"era/booru/ent/date"
 	"era/booru/ent/media"
+	"era/booru/ent/mediadate"
 	"era/booru/ent/predicate"
 	"era/booru/ent/tag"
 	"errors"
 	"fmt"
-	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -56,26 +57,6 @@ func (mu *MediaUpdate) ClearDuration() *MediaUpdate {
 	return mu
 }
 
-// SetUploadDate sets the "upload_date" field.
-func (mu *MediaUpdate) SetUploadDate(t time.Time) *MediaUpdate {
-	mu.mutation.SetUploadDate(t)
-	return mu
-}
-
-// SetNillableUploadDate sets the "upload_date" field if the given value is not nil.
-func (mu *MediaUpdate) SetNillableUploadDate(t *time.Time) *MediaUpdate {
-	if t != nil {
-		mu.SetUploadDate(*t)
-	}
-	return mu
-}
-
-// ClearUploadDate clears the value of the "upload_date" field.
-func (mu *MediaUpdate) ClearUploadDate() *MediaUpdate {
-	mu.mutation.ClearUploadDate()
-	return mu
-}
-
 // AddTagIDs adds the "tags" edge to the Tag entity by IDs.
 func (mu *MediaUpdate) AddTagIDs(ids ...int) *MediaUpdate {
 	mu.mutation.AddTagIDs(ids...)
@@ -89,6 +70,36 @@ func (mu *MediaUpdate) AddTags(t ...*Tag) *MediaUpdate {
 		ids[i] = t[i].ID
 	}
 	return mu.AddTagIDs(ids...)
+}
+
+// AddDateIDs adds the "dates" edge to the Date entity by IDs.
+func (mu *MediaUpdate) AddDateIDs(ids ...int) *MediaUpdate {
+	mu.mutation.AddDateIDs(ids...)
+	return mu
+}
+
+// AddDates adds the "dates" edges to the Date entity.
+func (mu *MediaUpdate) AddDates(d ...*Date) *MediaUpdate {
+	ids := make([]int, len(d))
+	for i := range d {
+		ids[i] = d[i].ID
+	}
+	return mu.AddDateIDs(ids...)
+}
+
+// AddMediaDateIDs adds the "media_dates" edge to the MediaDate entity by IDs.
+func (mu *MediaUpdate) AddMediaDateIDs(ids ...int) *MediaUpdate {
+	mu.mutation.AddMediaDateIDs(ids...)
+	return mu
+}
+
+// AddMediaDates adds the "media_dates" edges to the MediaDate entity.
+func (mu *MediaUpdate) AddMediaDates(m ...*MediaDate) *MediaUpdate {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return mu.AddMediaDateIDs(ids...)
 }
 
 // Mutation returns the MediaMutation object of the builder.
@@ -115,6 +126,48 @@ func (mu *MediaUpdate) RemoveTags(t ...*Tag) *MediaUpdate {
 		ids[i] = t[i].ID
 	}
 	return mu.RemoveTagIDs(ids...)
+}
+
+// ClearDates clears all "dates" edges to the Date entity.
+func (mu *MediaUpdate) ClearDates() *MediaUpdate {
+	mu.mutation.ClearDates()
+	return mu
+}
+
+// RemoveDateIDs removes the "dates" edge to Date entities by IDs.
+func (mu *MediaUpdate) RemoveDateIDs(ids ...int) *MediaUpdate {
+	mu.mutation.RemoveDateIDs(ids...)
+	return mu
+}
+
+// RemoveDates removes "dates" edges to Date entities.
+func (mu *MediaUpdate) RemoveDates(d ...*Date) *MediaUpdate {
+	ids := make([]int, len(d))
+	for i := range d {
+		ids[i] = d[i].ID
+	}
+	return mu.RemoveDateIDs(ids...)
+}
+
+// ClearMediaDates clears all "media_dates" edges to the MediaDate entity.
+func (mu *MediaUpdate) ClearMediaDates() *MediaUpdate {
+	mu.mutation.ClearMediaDates()
+	return mu
+}
+
+// RemoveMediaDateIDs removes the "media_dates" edge to MediaDate entities by IDs.
+func (mu *MediaUpdate) RemoveMediaDateIDs(ids ...int) *MediaUpdate {
+	mu.mutation.RemoveMediaDateIDs(ids...)
+	return mu
+}
+
+// RemoveMediaDates removes "media_dates" edges to MediaDate entities.
+func (mu *MediaUpdate) RemoveMediaDates(m ...*MediaDate) *MediaUpdate {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return mu.RemoveMediaDateIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -162,12 +215,6 @@ func (mu *MediaUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if mu.mutation.DurationCleared() {
 		_spec.ClearField(media.FieldDuration, field.TypeInt16)
 	}
-	if value, ok := mu.mutation.UploadDate(); ok {
-		_spec.SetField(media.FieldUploadDate, field.TypeTime, value)
-	}
-	if mu.mutation.UploadDateCleared() {
-		_spec.ClearField(media.FieldUploadDate, field.TypeTime)
-	}
 	if mu.mutation.TagsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2M,
@@ -206,6 +253,96 @@ func (mu *MediaUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(tag.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if mu.mutation.DatesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.DatesTable,
+			Columns: media.DatesPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(date.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := mu.mutation.RemovedDatesIDs(); len(nodes) > 0 && !mu.mutation.DatesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.DatesTable,
+			Columns: media.DatesPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(date.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := mu.mutation.DatesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.DatesTable,
+			Columns: media.DatesPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(date.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if mu.mutation.MediaDatesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaDatesTable,
+			Columns: []string{media.MediaDatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediadate.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := mu.mutation.RemovedMediaDatesIDs(); len(nodes) > 0 && !mu.mutation.MediaDatesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaDatesTable,
+			Columns: []string{media.MediaDatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediadate.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := mu.mutation.MediaDatesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaDatesTable,
+			Columns: []string{media.MediaDatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediadate.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -260,26 +397,6 @@ func (muo *MediaUpdateOne) ClearDuration() *MediaUpdateOne {
 	return muo
 }
 
-// SetUploadDate sets the "upload_date" field.
-func (muo *MediaUpdateOne) SetUploadDate(t time.Time) *MediaUpdateOne {
-	muo.mutation.SetUploadDate(t)
-	return muo
-}
-
-// SetNillableUploadDate sets the "upload_date" field if the given value is not nil.
-func (muo *MediaUpdateOne) SetNillableUploadDate(t *time.Time) *MediaUpdateOne {
-	if t != nil {
-		muo.SetUploadDate(*t)
-	}
-	return muo
-}
-
-// ClearUploadDate clears the value of the "upload_date" field.
-func (muo *MediaUpdateOne) ClearUploadDate() *MediaUpdateOne {
-	muo.mutation.ClearUploadDate()
-	return muo
-}
-
 // AddTagIDs adds the "tags" edge to the Tag entity by IDs.
 func (muo *MediaUpdateOne) AddTagIDs(ids ...int) *MediaUpdateOne {
 	muo.mutation.AddTagIDs(ids...)
@@ -293,6 +410,36 @@ func (muo *MediaUpdateOne) AddTags(t ...*Tag) *MediaUpdateOne {
 		ids[i] = t[i].ID
 	}
 	return muo.AddTagIDs(ids...)
+}
+
+// AddDateIDs adds the "dates" edge to the Date entity by IDs.
+func (muo *MediaUpdateOne) AddDateIDs(ids ...int) *MediaUpdateOne {
+	muo.mutation.AddDateIDs(ids...)
+	return muo
+}
+
+// AddDates adds the "dates" edges to the Date entity.
+func (muo *MediaUpdateOne) AddDates(d ...*Date) *MediaUpdateOne {
+	ids := make([]int, len(d))
+	for i := range d {
+		ids[i] = d[i].ID
+	}
+	return muo.AddDateIDs(ids...)
+}
+
+// AddMediaDateIDs adds the "media_dates" edge to the MediaDate entity by IDs.
+func (muo *MediaUpdateOne) AddMediaDateIDs(ids ...int) *MediaUpdateOne {
+	muo.mutation.AddMediaDateIDs(ids...)
+	return muo
+}
+
+// AddMediaDates adds the "media_dates" edges to the MediaDate entity.
+func (muo *MediaUpdateOne) AddMediaDates(m ...*MediaDate) *MediaUpdateOne {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return muo.AddMediaDateIDs(ids...)
 }
 
 // Mutation returns the MediaMutation object of the builder.
@@ -319,6 +466,48 @@ func (muo *MediaUpdateOne) RemoveTags(t ...*Tag) *MediaUpdateOne {
 		ids[i] = t[i].ID
 	}
 	return muo.RemoveTagIDs(ids...)
+}
+
+// ClearDates clears all "dates" edges to the Date entity.
+func (muo *MediaUpdateOne) ClearDates() *MediaUpdateOne {
+	muo.mutation.ClearDates()
+	return muo
+}
+
+// RemoveDateIDs removes the "dates" edge to Date entities by IDs.
+func (muo *MediaUpdateOne) RemoveDateIDs(ids ...int) *MediaUpdateOne {
+	muo.mutation.RemoveDateIDs(ids...)
+	return muo
+}
+
+// RemoveDates removes "dates" edges to Date entities.
+func (muo *MediaUpdateOne) RemoveDates(d ...*Date) *MediaUpdateOne {
+	ids := make([]int, len(d))
+	for i := range d {
+		ids[i] = d[i].ID
+	}
+	return muo.RemoveDateIDs(ids...)
+}
+
+// ClearMediaDates clears all "media_dates" edges to the MediaDate entity.
+func (muo *MediaUpdateOne) ClearMediaDates() *MediaUpdateOne {
+	muo.mutation.ClearMediaDates()
+	return muo
+}
+
+// RemoveMediaDateIDs removes the "media_dates" edge to MediaDate entities by IDs.
+func (muo *MediaUpdateOne) RemoveMediaDateIDs(ids ...int) *MediaUpdateOne {
+	muo.mutation.RemoveMediaDateIDs(ids...)
+	return muo
+}
+
+// RemoveMediaDates removes "media_dates" edges to MediaDate entities.
+func (muo *MediaUpdateOne) RemoveMediaDates(m ...*MediaDate) *MediaUpdateOne {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return muo.RemoveMediaDateIDs(ids...)
 }
 
 // Where appends a list predicates to the MediaUpdate builder.
@@ -396,12 +585,6 @@ func (muo *MediaUpdateOne) sqlSave(ctx context.Context) (_node *Media, err error
 	if muo.mutation.DurationCleared() {
 		_spec.ClearField(media.FieldDuration, field.TypeInt16)
 	}
-	if value, ok := muo.mutation.UploadDate(); ok {
-		_spec.SetField(media.FieldUploadDate, field.TypeTime, value)
-	}
-	if muo.mutation.UploadDateCleared() {
-		_spec.ClearField(media.FieldUploadDate, field.TypeTime)
-	}
 	if muo.mutation.TagsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2M,
@@ -440,6 +623,96 @@ func (muo *MediaUpdateOne) sqlSave(ctx context.Context) (_node *Media, err error
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(tag.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if muo.mutation.DatesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.DatesTable,
+			Columns: media.DatesPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(date.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := muo.mutation.RemovedDatesIDs(); len(nodes) > 0 && !muo.mutation.DatesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.DatesTable,
+			Columns: media.DatesPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(date.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := muo.mutation.DatesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.DatesTable,
+			Columns: media.DatesPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(date.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if muo.mutation.MediaDatesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaDatesTable,
+			Columns: []string{media.MediaDatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediadate.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := muo.mutation.RemovedMediaDatesIDs(); len(nodes) > 0 && !muo.mutation.MediaDatesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaDatesTable,
+			Columns: []string{media.MediaDatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediadate.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := muo.mutation.MediaDatesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaDatesTable,
+			Columns: []string{media.MediaDatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediadate.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

@@ -71,13 +71,13 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string) gi
 			}
 
 			url := fmt.Sprintf("%s/%s/%s", minioPrefix, bucket, key)
+
 			out[i] = gin.H{
-				"id":          mitem.ID,
-				"url":         url,
-				"width":       mitem.Width,
-				"height":      mitem.Height,
-				"format":      mitem.Format,
-				"upload_date": mitem.UploadDate,
+				"id":     mitem.ID,
+				"url":    url,
+				"width":  mitem.Width,
+				"height": mitem.Height,
+				"format": mitem.Format,
 			}
 		}
 		c.JSON(http.StatusOK, gin.H{"media": out, "total": total})
@@ -91,7 +91,10 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 			return
 		}
 
-		item, err := db.Media.Query().Where(media.IDEQ(id)).WithTags().Only(c.Request.Context())
+		item, err := db.Media.Query().Where(media.IDEQ(id)).
+			WithTags().
+			WithDates(func(q *ent.DateQuery) { q.WithMediaDates() }).
+			Only(c.Request.Context())
 		if err != nil {
 			log.Printf("get media %s: %v", id, err)
 			c.AbortWithStatus(http.StatusNotFound)
@@ -110,16 +113,25 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 		for i, t := range item.Edges.Tags {
 			tags[i] = t.Name
 		}
+		dates := make([]gin.H, 0)
+		for _, d := range item.Edges.Dates {
+			if len(d.Edges.MediaDates) > 0 {
+				dates = append(dates, gin.H{
+					"name":  d.Name,
+					"value": d.Edges.MediaDates[0].Value,
+				})
+			}
+		}
 		c.JSON(http.StatusOK, gin.H{
-			"id":          item.ID,
-			"url":         url,
-			"width":       item.Width,
-			"height":      item.Height,
-			"format":      item.Format,
-			"duration":    item.Duration,
-			"upload_date": item.UploadDate,
-			"size":        stat.Size,
-			"tags":        tags,
+			"id":       item.ID,
+			"url":      url,
+			"width":    item.Width,
+			"height":   item.Height,
+			"format":   item.Format,
+			"duration": item.Duration,
+			"size":     stat.Size,
+			"tags":     tags,
+			"dates":    dates,
 		})
 	}
 }

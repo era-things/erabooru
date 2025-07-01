@@ -6,8 +6,14 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// Date is the predicate function for date builders.
+type Date func(*sql.Selector)
+
 // Media is the predicate function for media builders.
 type Media func(*sql.Selector)
+
+// MediaDate is the predicate function for mediadate builders.
+type MediaDate func(*sql.Selector)
 
 // Tag is the predicate function for tag builders.
 type Tag func(*sql.Selector)

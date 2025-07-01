@@ -8,6 +8,17 @@ import (
 )
 
 var (
+	// DatesColumns holds the columns for the "dates" table.
+	DatesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "name", Type: field.TypeString, Unique: true},
+	}
+	// DatesTable holds the schema information for the "dates" table.
+	DatesTable = &schema.Table{
+		Name:       "dates",
+		Columns:    DatesColumns,
+		PrimaryKey: []*schema.Column{DatesColumns[0]},
+	}
 	// MediaColumns holds the columns for the "media" table.
 	MediaColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
@@ -15,13 +26,46 @@ var (
 		{Name: "width", Type: field.TypeInt16},
 		{Name: "height", Type: field.TypeInt16},
 		{Name: "duration", Type: field.TypeInt16, Nullable: true},
-		{Name: "upload_date", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "date"}},
 	}
 	// MediaTable holds the schema information for the "media" table.
 	MediaTable = &schema.Table{
 		Name:       "media",
 		Columns:    MediaColumns,
 		PrimaryKey: []*schema.Column{MediaColumns[0]},
+	}
+	// MediaDatesColumns holds the columns for the "media_dates" table.
+	MediaDatesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "value", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "date"}},
+		{Name: "media_id", Type: field.TypeString},
+		{Name: "date_id", Type: field.TypeInt},
+	}
+	// MediaDatesTable holds the schema information for the "media_dates" table.
+	MediaDatesTable = &schema.Table{
+		Name:       "media_dates",
+		Columns:    MediaDatesColumns,
+		PrimaryKey: []*schema.Column{MediaDatesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "media_dates_media_media",
+				Columns:    []*schema.Column{MediaDatesColumns[2]},
+				RefColumns: []*schema.Column{MediaColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "media_dates_dates_date",
+				Columns:    []*schema.Column{MediaDatesColumns[3]},
+				RefColumns: []*schema.Column{DatesColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "mediadate_media_id_date_id",
+				Unique:  true,
+				Columns: []*schema.Column{MediaDatesColumns[2], MediaDatesColumns[3]},
+			},
+		},
 	}
 	// TagsColumns holds the columns for the "tags" table.
 	TagsColumns = []*schema.Column{
@@ -62,13 +106,17 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		DatesTable,
 		MediaTable,
+		MediaDatesTable,
 		TagsTable,
 		MediaTagsTable,
 	}
 )
 
 func init() {
+	MediaDatesTable.ForeignKeys[0].RefTable = MediaTable
+	MediaDatesTable.ForeignKeys[1].RefTable = DatesTable
 	MediaTagsTable.ForeignKeys[0].RefTable = MediaTable
 	MediaTagsTable.ForeignKeys[1].RefTable = TagsTable
 }

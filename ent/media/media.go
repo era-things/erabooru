@@ -20,10 +20,12 @@ const (
 	FieldHeight = "height"
 	// FieldDuration holds the string denoting the duration field in the database.
 	FieldDuration = "duration"
-	// FieldUploadDate holds the string denoting the upload_date field in the database.
-	FieldUploadDate = "upload_date"
 	// EdgeTags holds the string denoting the tags edge name in mutations.
 	EdgeTags = "tags"
+	// EdgeDates holds the string denoting the dates edge name in mutations.
+	EdgeDates = "dates"
+	// EdgeMediaDates holds the string denoting the media_dates edge name in mutations.
+	EdgeMediaDates = "media_dates"
 	// Table holds the table name of the media in the database.
 	Table = "media"
 	// TagsTable is the table that holds the tags relation/edge. The primary key declared below.
@@ -31,6 +33,18 @@ const (
 	// TagsInverseTable is the table name for the Tag entity.
 	// It exists in this package in order to avoid circular dependency with the "tag" package.
 	TagsInverseTable = "tags"
+	// DatesTable is the table that holds the dates relation/edge. The primary key declared below.
+	DatesTable = "media_dates"
+	// DatesInverseTable is the table name for the Date entity.
+	// It exists in this package in order to avoid circular dependency with the "date" package.
+	DatesInverseTable = "dates"
+	// MediaDatesTable is the table that holds the media_dates relation/edge.
+	MediaDatesTable = "media_dates"
+	// MediaDatesInverseTable is the table name for the MediaDate entity.
+	// It exists in this package in order to avoid circular dependency with the "mediadate" package.
+	MediaDatesInverseTable = "media_dates"
+	// MediaDatesColumn is the table column denoting the media_dates relation/edge.
+	MediaDatesColumn = "media_id"
 )
 
 // Columns holds all SQL columns for media fields.
@@ -40,13 +54,15 @@ var Columns = []string{
 	FieldWidth,
 	FieldHeight,
 	FieldDuration,
-	FieldUploadDate,
 }
 
 var (
 	// TagsPrimaryKey and TagsColumn2 are the table columns denoting the
 	// primary key for the tags relation (M2M).
 	TagsPrimaryKey = []string{"media_id", "tag_id"}
+	// DatesPrimaryKey and DatesColumn2 are the table columns denoting the
+	// primary key for the dates relation (M2M).
+	DatesPrimaryKey = []string{"media_id", "date_id"}
 )
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -92,11 +108,6 @@ func ByDuration(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDuration, opts...).ToFunc()
 }
 
-// ByUploadDate orders the results by the upload_date field.
-func ByUploadDate(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldUploadDate, opts...).ToFunc()
-}
-
 // ByTagsCount orders the results by tags count.
 func ByTagsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -110,10 +121,52 @@ func ByTags(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newTagsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByDatesCount orders the results by dates count.
+func ByDatesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newDatesStep(), opts...)
+	}
+}
+
+// ByDates orders the results by dates terms.
+func ByDates(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newDatesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByMediaDatesCount orders the results by media_dates count.
+func ByMediaDatesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newMediaDatesStep(), opts...)
+	}
+}
+
+// ByMediaDates orders the results by media_dates terms.
+func ByMediaDates(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newMediaDatesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newTagsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(TagsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2M, false, TagsTable, TagsPrimaryKey...),
+	)
+}
+func newDatesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(DatesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2M, false, DatesTable, DatesPrimaryKey...),
+	)
+}
+func newMediaDatesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(MediaDatesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, true, MediaDatesTable, MediaDatesColumn),
 	)
 }

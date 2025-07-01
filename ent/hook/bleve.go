@@ -36,13 +36,23 @@ func SyncBleve() ent.Hook {
 					if !ok {
 						return v, nil
 					}
-					mobj, err = mv.Client().Media.Query().Where(media.IDEQ(id)).WithTags().Only(ctx)
+                                       mobj, err = mv.Client().Media.Query().Where(media.IDEQ(id)).
+                                               WithTags().
+                                               WithDates(func(q *ent.DateQuery) {
+                                                       q.WithMediaDates()
+                                               }).
+                                               Only(ctx)
 					if err != nil {
 						return nil, err
 					}
 				} else {
 					// Reload to include tags for indexing
-					mobj, err = mv.Client().Media.Query().Where(media.IDEQ(mobj.ID)).WithTags().Only(ctx)
+                                       mobj, err = mv.Client().Media.Query().Where(media.IDEQ(mobj.ID)).
+                                               WithTags().
+                                               WithDates(func(q *ent.DateQuery) {
+                                                       q.WithMediaDates()
+                                               }).
+                                               Only(ctx)
 					if err != nil {
 						return nil, err
 					}

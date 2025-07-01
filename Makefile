@@ -70,6 +70,7 @@ test:
 .PHONY: clean
 clean:
 	rm -rf $(BIN_DIR) $(WEB_DIR)/.svelte-kit/output
+	git fetch --prune && git branch --merged | egrep -v "(^\*|main|dev)" | xargs -n 1 git branch -d
 	@echo "🧹  Cleaned build artifacts"
 
 .PHONY: clean-all

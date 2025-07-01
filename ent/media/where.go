@@ -4,7 +4,6 @@ package media
 
 import (
 	"era/booru/ent/predicate"
-	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -83,11 +82,6 @@ func Height(v int16) predicate.Media {
 // Duration applies equality check predicate on the "duration" field. It's identical to DurationEQ.
 func Duration(v int16) predicate.Media {
 	return predicate.Media(sql.FieldEQ(FieldDuration, v))
-}
-
-// UploadDate applies equality check predicate on the "upload_date" field. It's identical to UploadDateEQ.
-func UploadDate(v time.Time) predicate.Media {
-	return predicate.Media(sql.FieldEQ(FieldUploadDate, v))
 }
 
 // FormatEQ applies the EQ predicate on the "format" field.
@@ -285,56 +279,6 @@ func DurationNotNil() predicate.Media {
 	return predicate.Media(sql.FieldNotNull(FieldDuration))
 }
 
-// UploadDateEQ applies the EQ predicate on the "upload_date" field.
-func UploadDateEQ(v time.Time) predicate.Media {
-	return predicate.Media(sql.FieldEQ(FieldUploadDate, v))
-}
-
-// UploadDateNEQ applies the NEQ predicate on the "upload_date" field.
-func UploadDateNEQ(v time.Time) predicate.Media {
-	return predicate.Media(sql.FieldNEQ(FieldUploadDate, v))
-}
-
-// UploadDateIn applies the In predicate on the "upload_date" field.
-func UploadDateIn(vs ...time.Time) predicate.Media {
-	return predicate.Media(sql.FieldIn(FieldUploadDate, vs...))
-}
-
-// UploadDateNotIn applies the NotIn predicate on the "upload_date" field.
-func UploadDateNotIn(vs ...time.Time) predicate.Media {
-	return predicate.Media(sql.FieldNotIn(FieldUploadDate, vs...))
-}
-
-// UploadDateGT applies the GT predicate on the "upload_date" field.
-func UploadDateGT(v time.Time) predicate.Media {
-	return predicate.Media(sql.FieldGT(FieldUploadDate, v))
-}
-
-// UploadDateGTE applies the GTE predicate on the "upload_date" field.
-func UploadDateGTE(v time.Time) predicate.Media {
-	return predicate.Media(sql.FieldGTE(FieldUploadDate, v))
-}
-
-// UploadDateLT applies the LT predicate on the "upload_date" field.
-func UploadDateLT(v time.Time) predicate.Media {
-	return predicate.Media(sql.FieldLT(FieldUploadDate, v))
-}
-
-// UploadDateLTE applies the LTE predicate on the "upload_date" field.
-func UploadDateLTE(v time.Time) predicate.Media {
-	return predicate.Media(sql.FieldLTE(FieldUploadDate, v))
-}
-
-// UploadDateIsNil applies the IsNil predicate on the "upload_date" field.
-func UploadDateIsNil() predicate.Media {
-	return predicate.Media(sql.FieldIsNull(FieldUploadDate))
-}
-
-// UploadDateNotNil applies the NotNil predicate on the "upload_date" field.
-func UploadDateNotNil() predicate.Media {
-	return predicate.Media(sql.FieldNotNull(FieldUploadDate))
-}
-
 // HasTags applies the HasEdge predicate on the "tags" edge.
 func HasTags() predicate.Media {
 	return predicate.Media(func(s *sql.Selector) {
@@ -350,6 +294,52 @@ func HasTags() predicate.Media {
 func HasTagsWith(preds ...predicate.Tag) predicate.Media {
 	return predicate.Media(func(s *sql.Selector) {
 		step := newTagsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasDates applies the HasEdge predicate on the "dates" edge.
+func HasDates() predicate.Media {
+	return predicate.Media(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, false, DatesTable, DatesPrimaryKey...),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasDatesWith applies the HasEdge predicate on the "dates" edge with a given conditions (other predicates).
+func HasDatesWith(preds ...predicate.Date) predicate.Media {
+	return predicate.Media(func(s *sql.Selector) {
+		step := newDatesStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasMediaDates applies the HasEdge predicate on the "media_dates" edge.
+func HasMediaDates() predicate.Media {
+	return predicate.Media(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, true, MediaDatesTable, MediaDatesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasMediaDatesWith applies the HasEdge predicate on the "media_dates" edge with a given conditions (other predicates).
+func HasMediaDatesWith(preds ...predicate.MediaDate) predicate.Media {
+	return predicate.Media(func(s *sql.Selector) {
+		step := newMediaDatesStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)
