@@ -24,6 +24,7 @@ func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *co
 	r.GET("/api/media/:id", getMediaHandler(db, m, cfg))
 	r.POST("/api/media/upload-url", uploadURLHandler(m, cfg))
 	r.POST("/api/media/:id/tags", updateMediaTagsHandler(db))
+	r.POST("/api/media/:id/dates", updateMediaDatesHandler(db))
 	r.DELETE("/api/media/:id", deleteMediaHandler(db, m))
 }
 
@@ -174,15 +175,44 @@ func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
 
 		clean := normalizeTags(body.Tags)
 
-		tagIDs, err := db.FindOrCreateTags(c.Request.Context(), dbClient, clean)
-		if err != nil {
-			log.Printf("error handling tags: %v", err)
+		if err := db.SetMediaTags(c.Request.Context(), dbClient, id, clean); err != nil {
+			log.Printf("update media tags %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
+		c.Status(http.StatusOK)
+	}
+}
 
-		if _, err := dbClient.Media.UpdateOneID(id).ClearTags().AddTagIDs(tagIDs...).Save(c.Request.Context()); err != nil {
-			log.Printf("update media tags %s: %v", id, err)
+func updateMediaDatesHandler(dbClient *ent.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := idParam(c)
+		if !ok {
+			return
+		}
+
+		var body struct {
+			Dates []struct {
+				Name  string `json:"name"`
+				Value string `json:"value"`
+			} `json:"dates"`
+		}
+		if err := c.BindJSON(&body); err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		vals := make([]db.DateValue, 0, len(body.Dates))
+		for _, d := range body.Dates {
+			t, err := time.Parse("2006-01-02", d.Value)
+			if err != nil {
+				continue
+			}
+			vals = append(vals, db.DateValue{Name: d.Name, Value: t})
+		}
+
+		if err := db.SetMediaDates(c.Request.Context(), dbClient, id, vals); err != nil {
+			log.Printf("update media dates %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
