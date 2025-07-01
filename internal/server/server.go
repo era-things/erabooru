@@ -63,6 +63,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		if _, err := database.Media.UpdateOneID(mediaID).AddTagIDs(tagme.ID).Save(ctx); err != nil {
 			log.Printf("add tagme: %v", err)
 		}
+		log.Printf("processed %s (%s)", object, mediaID)
 	})
 
 	r := gin.New()

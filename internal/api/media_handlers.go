@@ -89,6 +89,7 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 	return func(c *gin.Context) {
 		id, ok := idParam(c)
 		if !ok {
+			log.Printf("invalid media ID: %s", c.Param("id"))
 			return
 		}
 
