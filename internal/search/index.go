@@ -11,12 +11,19 @@ import (
 	"time"
 
 	"era/booru/ent"
-	"era/booru/ent/attribute"
 	"era/booru/ent/mediaattribute"
 
 	"github.com/blevesearch/bleve/v2"
 	q "github.com/blevesearch/bleve/v2/search/query"
 )
+
+// uploadDatePropertyID holds the attribute ID for the built-in upload date property.
+var uploadDatePropertyID int
+
+// SetUploadDatePropertyID configures the package with the ID of the upload date property.
+func SetUploadDatePropertyID(id int) {
+	uploadDatePropertyID = id
+}
 
 // parseQuery turns a string like "width>300 type=image" into a Bleve query.
 // Numeric fields support range comparisons (> < >= <= =) while string fields
@@ -147,7 +154,7 @@ func IndexMedia(ctx context.Context, db *ent.Client, m *ent.Media) error {
 	var uploadDate *time.Time
 	ma, err := db.MediaAttribute.Query().
 		Where(mediaattribute.MediaIDEQ(m.ID)).
-		Where(mediaattribute.HasAttributeWith(attribute.NameEQ("Upload Date"))).
+		Where(mediaattribute.AttributeIDEQ(uploadDatePropertyID)).
 		Only(ctx)
 	if err == nil && ma.Value != nil {
 		if t, err2 := time.Parse("2006-01-02", *ma.Value); err2 == nil {

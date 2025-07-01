@@ -52,7 +52,7 @@ func AnalyzeImage(ctx context.Context, m *minio.Client, db *ent.Client, object s
 		return "", err
 	}
 
-	if err := dbhelpers.SetUploadDate(ctx, db, media.ID, time.Now().UTC()); err != nil {
+	if err := dbhelpers.SetDateProperty(ctx, db, media.ID, dbhelpers.UploadDatePropertyID, time.Now().UTC()); err != nil {
 		log.Printf("set upload date: %v", err)
 	}
 
@@ -106,7 +106,7 @@ func AnalyzeVideo(ctx context.Context, cfg *config.Config, m *minio.Client, db *
 		return "", err
 	}
 
-	if err := dbhelpers.SetUploadDate(ctx, db, media.ID, time.Now().UTC()); err != nil {
+	if err := dbhelpers.SetDateProperty(ctx, db, media.ID, dbhelpers.UploadDatePropertyID, time.Now().UTC()); err != nil {
 		log.Printf("set upload date: %v", err)
 	}
 

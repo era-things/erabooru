@@ -40,21 +40,17 @@ func FindOrCreateProperty(ctx context.Context, db *ent.Client, name string, typ 
 	return at, err
 }
 
-// SetUploadDate stores the upload date value as a date property on the media item.
-func SetUploadDate(ctx context.Context, db *ent.Client, mediaID string, t time.Time) error {
-	prop, err := FindOrCreateProperty(ctx, db, "Upload Date", attribute.TypeDate)
-	if err != nil {
-		return err
-	}
+// SetDateProperty stores a date property value on the media item.
+func SetDateProperty(ctx context.Context, db *ent.Client, mediaID string, attrID int, t time.Time) error {
 	val := t.Format("2006-01-02")
 	ma, err := db.MediaAttribute.Query().
 		Where(mediaattribute.MediaIDEQ(mediaID)).
-		Where(mediaattribute.AttributeIDEQ(prop.ID)).
+		Where(mediaattribute.AttributeIDEQ(attrID)).
 		Only(ctx)
 	if ent.IsNotFound(err) {
 		_, err = db.MediaAttribute.Create().
 			SetMediaID(mediaID).
-			SetAttributeID(prop.ID).
+			SetAttributeID(attrID).
 			SetValue(val).
 			Save(ctx)
 		return err
@@ -66,18 +62,11 @@ func SetUploadDate(ctx context.Context, db *ent.Client, mediaID string, t time.T
 	return err
 }
 
-// GetUploadDate retrieves the upload date property for a media item.
-func GetUploadDate(ctx context.Context, db *ent.Client, mediaID string) (*time.Time, error) {
-	prop, err := db.Attribute.Query().Where(attribute.NameEQ("Upload Date")).Only(ctx)
-	if ent.IsNotFound(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
+// GetDateProperty retrieves the date property for a media item.
+func GetDateProperty(ctx context.Context, db *ent.Client, mediaID string, attrID int) (*time.Time, error) {
 	ma, err := db.MediaAttribute.Query().
 		Where(mediaattribute.MediaIDEQ(mediaID)).
-		Where(mediaattribute.AttributeIDEQ(prop.ID)).
+		Where(mediaattribute.AttributeIDEQ(attrID)).
 		Only(ctx)
 	if ent.IsNotFound(err) {
 		return nil, nil

@@ -110,7 +110,7 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 		for i, t := range item.Edges.Tags {
 			tags[i] = t.Name
 		}
-		date, _ := dbhelpers.GetUploadDate(c.Request.Context(), db, item.ID)
+		date, _ := dbhelpers.GetDateProperty(c.Request.Context(), db, item.ID, dbhelpers.UploadDatePropertyID)
 		c.JSON(http.StatusOK, gin.H{
 			"id":          item.ID,
 			"url":         url,
@@ -163,7 +163,7 @@ func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
 
 		clean := normalizeTags(body.Tags)
 
-               tagIDs, err := dbhelpers.FindOrCreateTags(c.Request.Context(), dbClient, clean)
+		tagIDs, err := dbhelpers.FindOrCreateTags(c.Request.Context(), dbClient, clean)
 		if err != nil {
 			log.Printf("error handling tags: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)

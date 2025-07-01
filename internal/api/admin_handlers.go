@@ -102,7 +102,7 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 			}
 
 			uploadDate := ""
-			if d, err := dbhelpers.GetUploadDate(ctx, db, m.ID); err == nil && d != nil {
+			if d, err := dbhelpers.GetDateProperty(ctx, db, m.ID, dbhelpers.UploadDatePropertyID); err == nil && d != nil {
 				uploadDate = d.Format("2006-01-02")
 			}
 
@@ -183,7 +183,7 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 			if item.UploadDate != "" {
 				if t, err := time.Parse("2006-01-02", item.UploadDate); err == nil {
 					importDate = &t
-					currentDate, err := dbhelpers.GetUploadDate(ctx, db, item.ID)
+					currentDate, err := dbhelpers.GetDateProperty(ctx, db, item.ID, dbhelpers.UploadDatePropertyID)
 					if err == nil {
 						if currentDate == nil {
 							shouldUpdateDate = true
@@ -248,7 +248,7 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 					return
 				}
 				if shouldUpdateDate && importDate != nil {
-					if err := dbhelpers.SetUploadDate(ctx, db, item.ID, *importDate); err != nil {
+					if err := dbhelpers.SetDateProperty(ctx, db, item.ID, dbhelpers.UploadDatePropertyID, *importDate); err != nil {
 						log.Printf("set upload date for %s: %v", item.ID, err)
 						c.AbortWithStatus(http.StatusInternalServerError)
 						return

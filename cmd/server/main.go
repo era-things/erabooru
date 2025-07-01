@@ -41,6 +41,10 @@ func main() {
 		log.Fatalf("connect db: %v", err)
 	}
 
+	if err := db.InitDefaultProperties(context.Background(), database); err != nil {
+		log.Fatalf("init default properties: %v", err)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
