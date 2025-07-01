@@ -45,6 +45,14 @@
 			alert('Failed to save');
 		}
 	}
+
+	function formatDate(date: string): string {
+		return new Date(date).toLocaleDateString(undefined, {
+			day: '2-digit',
+			month: 'short',
+			year: 'numeric'
+		});
+	}
 </script>
 
 <TabNav active="media" />
@@ -57,15 +65,9 @@
 				<p>Dimensions: {media.width}×{media.height}</p>
 				<p>Size: {(media.size / 1024 / 1024).toFixed(2)} MB</p>
 				{#each media.dates as d (d.name)}
-					{#if d.name === 'upload'}
-						<p>
-							Uploaded: {new Date(d.value).toLocaleDateString(undefined, {
-								day: '2-digit',
-								month: 'short',
-								year: 'numeric'
-							})}
-						</p>
-					{/if}
+					<p>
+						{d.name} date: {formatDate(d.value)}
+					</p>
 				{/each}
 			</div>
 			{#if media.tags.length}

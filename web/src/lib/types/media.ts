@@ -9,10 +9,10 @@ export interface MediaItem {
 	width: number;
 	height: number;
 	format: string;
-	dates: MediaDate[];
 }
 
 export interface MediaDetail extends MediaItem {
 	size: number;
 	tags: string[];
+	dates: MediaDate[];
 }

@@ -71,22 +71,13 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string) gi
 			}
 
 			url := fmt.Sprintf("%s/%s/%s", minioPrefix, bucket, key)
-			dates := make([]gin.H, 0)
-			for _, d := range mitem.Edges.Dates {
-				if len(d.Edges.MediaDates) > 0 {
-					dates = append(dates, gin.H{
-						"name":  d.Name,
-						"value": d.Edges.MediaDates[0].Value,
-					})
-				}
-			}
+
 			out[i] = gin.H{
 				"id":     mitem.ID,
 				"url":    url,
 				"width":  mitem.Width,
 				"height": mitem.Height,
 				"format": mitem.Format,
-				"dates":  dates,
 			}
 		}
 		c.JSON(http.StatusOK, gin.H{"media": out, "total": total})
