@@ -41,10 +41,50 @@ These instructions apply to all files in the `web/` directory.
   $host().dispatchEvent(new CustomEvent('hello'));
   ```
 
-### `$derived` vs `$derived.by`
-- Use `$derived(expression)` for simple derived values based on an expression.
-- Use `$derived.by(() => {...})` when you need a callback to compute the value. The callback runs whenever the dependencies inside it change.
-- Do not confuse the two forms.
+## `Runed` library
+This project have Runed installed. Runed is handy library with rune-based helper functions. Here is names of those function, whole descriptions can be found [here](https://runed.dev/docs)
+#### ELEMENTS
+- `activeElement`
+- `ElementRect`
+- `ElementSize`
+- `IsFocusWithin`
+- `IsInViewport`
+- `ScrollState`
+- `TextareaAutosize`
+- `useIntersectionObserver`
+- `useMutationObserver`
+- `useResizeObserver`
+
+#### BROWSER
+- `useEventListener`
+
+#### SENSORS
+- `IsIdle`
+- `onClickOutside`
+- `PressedKeys`
+- `useGeolocation`
+
+#### ANIMATION
+- `AnimationFrames`
+
+#### UTILITIES
+- `useDebounce`
+
+#### REACTIVITY
+- `extract`
+- `resource`
+- `watch`
+
+#### STATE
+- `Context`
+- `Debounced`
+- `FiniteStateMachine`
+- `PersistedState`
+- `Previous`
+- `StateHistory`
+
+#### COMPONENT
+- `IsMounted`
 
 ## Formatting
 Run `npm run lint` inside this folder before committing frontend changes to ensure Prettier and ESLint pass.
