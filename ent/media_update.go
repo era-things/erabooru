@@ -9,7 +9,6 @@ import (
 	"era/booru/ent/predicate"
 	"errors"
 	"fmt"
-	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -53,26 +52,6 @@ func (mu *MediaUpdate) AddDuration(i int16) *MediaUpdate {
 // ClearDuration clears the value of the "duration" field.
 func (mu *MediaUpdate) ClearDuration() *MediaUpdate {
 	mu.mutation.ClearDuration()
-	return mu
-}
-
-// SetUploadDate sets the "upload_date" field.
-func (mu *MediaUpdate) SetUploadDate(t time.Time) *MediaUpdate {
-	mu.mutation.SetUploadDate(t)
-	return mu
-}
-
-// SetNillableUploadDate sets the "upload_date" field if the given value is not nil.
-func (mu *MediaUpdate) SetNillableUploadDate(t *time.Time) *MediaUpdate {
-	if t != nil {
-		mu.SetUploadDate(*t)
-	}
-	return mu
-}
-
-// ClearUploadDate clears the value of the "upload_date" field.
-func (mu *MediaUpdate) ClearUploadDate() *MediaUpdate {
-	mu.mutation.ClearUploadDate()
 	return mu
 }
 
@@ -161,12 +140,6 @@ func (mu *MediaUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if mu.mutation.DurationCleared() {
 		_spec.ClearField(media.FieldDuration, field.TypeInt16)
-	}
-	if value, ok := mu.mutation.UploadDate(); ok {
-		_spec.SetField(media.FieldUploadDate, field.TypeTime, value)
-	}
-	if mu.mutation.UploadDateCleared() {
-		_spec.ClearField(media.FieldUploadDate, field.TypeTime)
 	}
 	if mu.mutation.TagsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -257,26 +230,6 @@ func (muo *MediaUpdateOne) AddDuration(i int16) *MediaUpdateOne {
 // ClearDuration clears the value of the "duration" field.
 func (muo *MediaUpdateOne) ClearDuration() *MediaUpdateOne {
 	muo.mutation.ClearDuration()
-	return muo
-}
-
-// SetUploadDate sets the "upload_date" field.
-func (muo *MediaUpdateOne) SetUploadDate(t time.Time) *MediaUpdateOne {
-	muo.mutation.SetUploadDate(t)
-	return muo
-}
-
-// SetNillableUploadDate sets the "upload_date" field if the given value is not nil.
-func (muo *MediaUpdateOne) SetNillableUploadDate(t *time.Time) *MediaUpdateOne {
-	if t != nil {
-		muo.SetUploadDate(*t)
-	}
-	return muo
-}
-
-// ClearUploadDate clears the value of the "upload_date" field.
-func (muo *MediaUpdateOne) ClearUploadDate() *MediaUpdateOne {
-	muo.mutation.ClearUploadDate()
 	return muo
 }
 
@@ -395,12 +348,6 @@ func (muo *MediaUpdateOne) sqlSave(ctx context.Context) (_node *Media, err error
 	}
 	if muo.mutation.DurationCleared() {
 		_spec.ClearField(media.FieldDuration, field.TypeInt16)
-	}
-	if value, ok := muo.mutation.UploadDate(); ok {
-		_spec.SetField(media.FieldUploadDate, field.TypeTime, value)
-	}
-	if muo.mutation.UploadDateCleared() {
-		_spec.ClearField(media.FieldUploadDate, field.TypeTime)
 	}
 	if muo.mutation.TagsCleared() {
 		edge := &sqlgraph.EdgeSpec{

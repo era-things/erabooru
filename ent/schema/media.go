@@ -2,7 +2,6 @@ package schema
 
 import (
 	"entgo.io/ent"
-	"entgo.io/ent/dialect"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 )
@@ -33,11 +32,6 @@ func (Media) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("Duration in seconds for video or audio"),
-		field.Time("upload_date").
-			Optional().
-			Nillable().
-			SchemaType(map[string]string{dialect.Postgres: "date"}).
-			Comment("Date when the file was uploaded"),
 	}
 }
 

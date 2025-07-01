@@ -47,7 +47,7 @@ func SyncBleve() ent.Hook {
 						return nil, err
 					}
 				}
-				if ierr := search.IndexMedia(mobj); ierr != nil {
+				if ierr := search.IndexMedia(ctx, mv.Client(), mobj); ierr != nil {
 					return nil, ierr
 				}
 			}

@@ -10,7 +10,7 @@ import (
 	"era/booru/ent"
 	"era/booru/ent/media"
 	"era/booru/internal/config"
-	"era/booru/internal/db"
+	dbhelpers "era/booru/internal/db"
 	"era/booru/internal/minio"
 	"era/booru/internal/search"
 
@@ -110,6 +110,7 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 		for i, t := range item.Edges.Tags {
 			tags[i] = t.Name
 		}
+		date, _ := dbhelpers.GetUploadDate(c.Request.Context(), db, item.ID)
 		c.JSON(http.StatusOK, gin.H{
 			"id":          item.ID,
 			"url":         url,
@@ -117,7 +118,7 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 			"height":      item.Height,
 			"format":      item.Format,
 			"duration":    item.Duration,
-			"upload_date": item.UploadDate,
+			"upload_date": date,
 			"size":        stat.Size,
 			"tags":        tags,
 		})
@@ -162,7 +163,7 @@ func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
 
 		clean := normalizeTags(body.Tags)
 
-		tagIDs, err := db.FindOrCreateTags(c.Request.Context(), dbClient, clean)
+               tagIDs, err := dbhelpers.FindOrCreateTags(c.Request.Context(), dbClient, clean)
 		if err != nil {
 			log.Printf("error handling tags: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
