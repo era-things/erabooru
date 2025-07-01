@@ -5,7 +5,6 @@ import (
 
 	"era/booru/ent"
 	"era/booru/ent/attribute"
-	"era/booru/internal/search"
 )
 
 var UploadDatePropertyID int
@@ -17,6 +16,5 @@ func InitDefaultProperties(ctx context.Context, db *ent.Client) error {
 		return err
 	}
 	UploadDatePropertyID = prop.ID
-	search.SetUploadDatePropertyID(prop.ID)
 	return nil
 }

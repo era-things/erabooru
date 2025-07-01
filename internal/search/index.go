@@ -3,27 +3,18 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"era/booru/ent"
+	"era/booru/ent/attribute"
+	"era/booru/ent/mediaattribute"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
-	"time"
-
-	"era/booru/ent"
-	"era/booru/ent/mediaattribute"
 
 	"github.com/blevesearch/bleve/v2"
 	q "github.com/blevesearch/bleve/v2/search/query"
 )
-
-// uploadDatePropertyID holds the attribute ID for the built-in upload date property.
-var uploadDatePropertyID int
-
-// SetUploadDatePropertyID configures the package with the ID of the upload date property.
-func SetUploadDatePropertyID(id int) {
-	uploadDatePropertyID = id
-}
 
 // parseQuery turns a string like "width>300 type=image" into a Bleve query.
 // Numeric fields support range comparisons (> < >= <= =) while string fields
@@ -86,14 +77,20 @@ func parseQuery(expr string) q.Query {
 
 // SearchMedia executes a query against the Bleve index and returns the matching
 // Media documents. It does not touch the Postgres database.
+type PropertyDoc struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
 type MediaDoc struct {
-	ID         string     `json:"id"`
-	Format     string     `json:"format"`
-	Width      int16      `json:"width"`
-	Height     int16      `json:"height"`
-	Duration   *int16     `json:"duration,omitempty"`
-	UploadDate *time.Time `json:"upload_date,omitempty"`
-	Tags       []string   `json:"tags,omitempty"`
+	ID         string        `json:"id"`
+	Format     string        `json:"format"`
+	Width      int16         `json:"width"`
+	Height     int16         `json:"height"`
+	Duration   *int16        `json:"duration,omitempty"`
+	Tags       []string      `json:"tags,omitempty"`
+	Properties []PropertyDoc `json:"properties,omitempty"`
 }
 
 func SearchMedia(expr string, limit, offset int) ([]*MediaDoc, int, error) {
@@ -151,14 +148,25 @@ func IndexMedia(ctx context.Context, db *ent.Client, m *ent.Media) error {
 		return fmt.Errorf("index not open")
 	}
 	log.Printf("indexing media %s", m.ID)
-	var uploadDate *time.Time
-	ma, err := db.MediaAttribute.Query().
+	props := []PropertyDoc{}
+	pas, err := db.MediaAttribute.Query().
 		Where(mediaattribute.MediaIDEQ(m.ID)).
-		Where(mediaattribute.AttributeIDEQ(uploadDatePropertyID)).
-		Only(ctx)
-	if err == nil && ma.Value != nil {
-		if t, err2 := time.Parse("2006-01-02", *ma.Value); err2 == nil {
-			uploadDate = &t
+		WithAttribute().
+		All(ctx)
+	if err == nil {
+		for _, ma := range pas {
+			if ma.Edges.Attribute == nil || ma.Edges.Attribute.Type == attribute.TypeTag {
+				continue
+			}
+			val := ""
+			if ma.Value != nil {
+				val = *ma.Value
+			}
+			props = append(props, PropertyDoc{
+				Name:  ma.Edges.Attribute.Name,
+				Type:  string(ma.Edges.Attribute.Type),
+				Value: val,
+			})
 		}
 	}
 
@@ -168,7 +176,7 @@ func IndexMedia(ctx context.Context, db *ent.Client, m *ent.Media) error {
 		Width:      m.Width,
 		Height:     m.Height,
 		Duration:   m.Duration,
-		UploadDate: uploadDate,
+		Properties: props,
 	}
 	if m.Edges.Tags != nil {
 		doc.Tags = make([]string, len(m.Edges.Tags))

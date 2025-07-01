@@ -4,17 +4,19 @@
 	import { goto } from '$app/navigation';
 	import TabNav from '$lib/components/TabNav.svelte';
 	import { fetchMediaDetail, deleteMedia, updateMediaTags } from '$lib/api';
-	import type { MediaDetail } from '$lib/types/media';
+import type { MediaDetail } from '$lib/types/media';
 
-	let media: MediaDetail | null = null;
+let media: MediaDetail | null = null;
+let uploadDate: string | null = null;
 	let tagsInput = '';
 	let edit = false;
 
 	onMount(async () => {
 		const id = page.params.id;
-		try {
-			media = await fetchMediaDetail(id);
-			tagsInput = media?.tags.map((t) => t.replace(/ /g, '_')).join(' ') ?? '';
+                try {
+                        media = await fetchMediaDetail(id);
+                        uploadDate = media?.properties.find((p) => p.name === 'Upload Date')?.value ?? null;
+                        tagsInput = media?.tags.map((t) => t.replace(/ /g, '_')).join(' ') ?? '';
 		} catch (err) {
 			console.error('failed to load media', err);
 		}
@@ -56,7 +58,9 @@
 				<p>Format: {media.format}</p>
 				<p>Dimensions: {media.width}×{media.height}</p>
 				<p>Size: {(media.size / 1024 / 1024).toFixed(2)} MB</p>
-				<p>Uploaded: {new Date(media.upload_date).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                               {#if uploadDate}
+                                       <p>Uploaded: {new Date(uploadDate).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                               {/if}
 			</div>
 			{#if media.tags.length}
 				<div class="text-sm">

@@ -101,16 +101,36 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 				tags[i] = t.Name
 			}
 
-			uploadDate := ""
-			if d, err := dbhelpers.GetDateProperty(ctx, db, m.ID, dbhelpers.UploadDatePropertyID); err == nil && d != nil {
-				uploadDate = d.Format("2006-01-02")
+			props, err := dbhelpers.ListProperties(ctx, db, m.ID)
+			if err != nil {
+				log.Printf("list properties %s: %v", m.ID, err)
+				return
+			}
+			outProps := make([]struct {
+				Name  string `json:"name"`
+				Type  string `json:"type"`
+				Value string `json:"value"`
+			}, 0, len(props))
+			for _, p := range props {
+				if p.Value == nil {
+					continue
+				}
+				outProps = append(outProps, struct {
+					Name  string `json:"name"`
+					Type  string `json:"type"`
+					Value string `json:"value"`
+				}{Name: p.Name, Type: string(p.Type), Value: *p.Value})
 			}
 
 			if err := enc.Encode(struct {
 				ID         string   `json:"id"`
 				Tags       []string `json:"tags"`
-				UploadDate string   `json:"upload_date"`
-			}{ID: m.ID, Tags: tags, UploadDate: uploadDate}); err != nil {
+				Properties []struct {
+					Name  string `json:"name"`
+					Type  string `json:"type"`
+					Value string `json:"value"`
+				} `json:"properties"`
+			}{ID: m.ID, Tags: tags, Properties: outProps}); err != nil {
 				log.Printf("encode record %s: %v", m.ID, err)
 				return
 			}
@@ -146,7 +166,11 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 			var item struct {
 				ID         string   `json:"id"`
 				Tags       []string `json:"tags"`
-				UploadDate string   `json:"upload_date"`
+				Properties []struct {
+					Name  string `json:"name"`
+					Type  string `json:"type"`
+					Value string `json:"value"`
+				} `json:"properties"`
 			}
 			if err := dec.Decode(&item); err != nil {
 				if err == io.EOF {
@@ -177,20 +201,27 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				}
 			}
 
-			// 2) Parse import date and choose earliest (keep existing if it's earlier)
-			var importDate *time.Time
-			var shouldUpdateDate bool
-			if item.UploadDate != "" {
-				if t, err := time.Parse("2006-01-02", item.UploadDate); err == nil {
-					importDate = &t
-					currentDate, err := dbhelpers.GetDateProperty(ctx, db, item.ID, dbhelpers.UploadDatePropertyID)
-					if err == nil {
-						if currentDate == nil {
-							shouldUpdateDate = true
-						} else if importDate.Before(*currentDate) {
-							shouldUpdateDate = true
-						}
+			// 2) Handle imported properties generically
+			var propertyChanges []string
+			for _, p := range item.Properties {
+				at, err := dbhelpers.FindOrCreateProperty(ctx, db, p.Name, attribute.Type(p.Type))
+				if err != nil {
+					log.Printf("lookup property %s: %v", p.Name, err)
+					c.AbortWithStatus(http.StatusInternalServerError)
+					return
+				}
+				switch attribute.Type(p.Type) {
+				case attribute.TypeDate:
+					t, err := time.Parse("2006-01-02", p.Value)
+					if err != nil {
+						continue
 					}
+					if err := dbhelpers.SetDateProperty(ctx, db, item.ID, at.ID, t); err != nil {
+						log.Printf("set date property %s: %v", p.Name, err)
+						c.AbortWithStatus(http.StatusInternalServerError)
+						return
+					}
+					propertyChanges = append(propertyChanges, fmt.Sprintf("set %s", p.Name))
 				}
 			}
 
@@ -236,25 +267,14 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				changes = append(changes, fmt.Sprintf("added %d tags", len(toAdd)))
 			}
 
-			if shouldUpdateDate && importDate != nil {
-				changes = append(changes, fmt.Sprintf("updated date to %s", item.UploadDate))
-			}
+			changes = append(changes, propertyChanges...)
 
-			// Only save if we have something to update
 			if len(changes) > 0 {
 				if _, err := upd.Save(ctx); err != nil {
 					log.Printf("update media %s: %v", item.ID, err)
 					c.AbortWithStatus(http.StatusInternalServerError)
 					return
 				}
-				if shouldUpdateDate && importDate != nil {
-					if err := dbhelpers.SetDateProperty(ctx, db, item.ID, dbhelpers.UploadDatePropertyID, *importDate); err != nil {
-						log.Printf("set upload date for %s: %v", item.ID, err)
-						c.AbortWithStatus(http.StatusInternalServerError)
-						return
-					}
-				}
-
 				log.Printf("updated media %s: %s", item.ID, strings.Join(changes, ", "))
 			}
 		}

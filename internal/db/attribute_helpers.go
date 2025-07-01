@@ -83,3 +83,39 @@ func GetDateProperty(ctx context.Context, db *ent.Client, mediaID string, attrID
 	}
 	return &parsed, nil
 }
+
+// Property represents a non-tag attribute attached to a media item.
+type Property struct {
+	Name  string
+	Type  attribute.Type
+	Value *string
+}
+
+// ListProperties returns all non-tag properties for the given media item.
+func ListProperties(ctx context.Context, db *ent.Client, mediaID string) ([]Property, error) {
+	items, err := db.MediaAttribute.Query().
+		Where(mediaattribute.MediaIDEQ(mediaID)).
+		WithAttribute().
+		All(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	props := make([]Property, 0, len(items))
+	for _, ma := range items {
+		if ma.Edges.Attribute == nil {
+			continue
+		}
+		if ma.Edges.Attribute.Type == attribute.TypeTag {
+			continue
+		}
+		props = append(props, Property{
+			Name:  ma.Edges.Attribute.Name,
+			Type:  ma.Edges.Attribute.Type,
+			Value: ma.Value,
+		})
+	}
+	return props, nil
+}

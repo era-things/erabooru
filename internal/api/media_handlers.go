@@ -72,12 +72,12 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string) gi
 
 			url := fmt.Sprintf("%s/%s/%s", minioPrefix, bucket, key)
 			out[i] = gin.H{
-				"id":          mitem.ID,
-				"url":         url,
-				"width":       mitem.Width,
-				"height":      mitem.Height,
-				"format":      mitem.Format,
-				"upload_date": mitem.UploadDate,
+				"id":         mitem.ID,
+				"url":        url,
+				"width":      mitem.Width,
+				"height":     mitem.Height,
+				"format":     mitem.Format,
+				"properties": mitem.Properties,
 			}
 		}
 		c.JSON(http.StatusOK, gin.H{"media": out, "total": total})
@@ -110,17 +110,17 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 		for i, t := range item.Edges.Tags {
 			tags[i] = t.Name
 		}
-		date, _ := dbhelpers.GetDateProperty(c.Request.Context(), db, item.ID, dbhelpers.UploadDatePropertyID)
+		props, _ := dbhelpers.ListProperties(c.Request.Context(), db, item.ID)
 		c.JSON(http.StatusOK, gin.H{
-			"id":          item.ID,
-			"url":         url,
-			"width":       item.Width,
-			"height":      item.Height,
-			"format":      item.Format,
-			"duration":    item.Duration,
-			"upload_date": date,
-			"size":        stat.Size,
-			"tags":        tags,
+			"id":         item.ID,
+			"url":        url,
+			"width":      item.Width,
+			"height":     item.Height,
+			"format":     item.Format,
+			"duration":   item.Duration,
+			"size":       stat.Size,
+			"tags":       tags,
+			"properties": props,
 		})
 	}
 }
