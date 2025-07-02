@@ -8,11 +8,7 @@ import (
 )
 
 type Config struct {
-	DBHost                string
-	DBPort                string
-	DBUser                string
-	DBPassword            string
-	DBName                string
+	PostgresDSN           string
 	MinioUser             string
 	MinioPassword         string
 	MinioBucket           string
@@ -31,11 +27,7 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		DBHost:                getEnv("POSTGRES_HOST"),
-		DBPort:                getEnv("POSTGRES_PORT"),
-		DBUser:                getEnv("POSTGRES_USER"),
-		DBPassword:            getEnv("POSTGRES_PASSWORD"),
-		DBName:                getEnv("POSTGRES_DB"),
+		PostgresDSN:           getEnv("POSTGRES_DSN"),
 		MinioUser:             getEnv("MINIO_ROOT_USER"),
 		MinioPassword:         getEnv("MINIO_ROOT_PASSWORD"),
 		MinioBucket:           getEnv("MINIO_BUCKET"),

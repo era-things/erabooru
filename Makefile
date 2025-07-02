@@ -65,6 +65,13 @@ test:
 ## -race
 
 # ──────────────────────────────────────────
+# TESTS
+# ──────────────────────────────────────────
+.PHONY: integration-test
+integration-test:
+	RUN_INTEGRATION_TESTS=1 $(GO) test ./internal/integration -v
+
+# ──────────────────────────────────────────
 # CLEAN
 # ──────────────────────────────────────────
 .PHONY: clean

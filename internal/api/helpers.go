@@ -7,18 +7,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// idParam extracts the :id parameter as an int or aborts with BadRequest.
+// idParam extracts the :id parameter and validates it or aborts the request with a 400 Bad Request status.
 func idParam(c *gin.Context) (string, bool) {
 	id := c.Param("id")
 	if len(id) != 32 {
 		c.AbortWithStatus(http.StatusBadRequest)
-		return "", false
+		return "Filename length should be exactly 32 characters", false
 	}
-	// Optionally, check if it's valid hex
+	// Check if it's valid hex
 	for _, ch := range id {
 		if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')) {
 			c.AbortWithStatus(http.StatusBadRequest)
-			return "", false
+			return "Invalid filename: must be a hexadecimal string", false
 		}
 	}
 	return id, true

@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"fmt"
 
 	"era/booru/ent"
 	"era/booru/ent/hook"
@@ -16,8 +15,7 @@ import (
 
 // New creates a new ent.Client connected to Postgres and runs migrations.
 func New(cfg *config.Config) (*ent.Client, error) {
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
+	dsn := cfg.PostgresDSN
 
 	client, err := ent.Open("postgres", dsn)
 	if err != nil {

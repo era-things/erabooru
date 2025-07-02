@@ -27,3 +27,14 @@ func FindOrCreateTags(ctx context.Context, db *ent.Client, tagNames []string) ([
 	}
 	return tagIDs, nil
 }
+
+// SetMediaTags replaces all tags on the given media item with the provided list.
+// The tags slice should already be normalized (trimmed and deduplicated).
+func SetMediaTags(ctx context.Context, db *ent.Client, mediaID string, tags []string) error {
+	tagIDs, err := FindOrCreateTags(ctx, db, tags)
+	if err != nil {
+		return err
+	}
+	_, err = db.Media.UpdateOneID(mediaID).ClearTags().AddTagIDs(tagIDs...).Save(ctx)
+	return err
+}

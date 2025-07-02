@@ -35,6 +35,13 @@ func RegisterAdminRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *co
 func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
+
+		if err := db.Schema.Create(ctx); err != nil {
+			log.Printf("schema create: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
 		if err := search.Rebuild(ctx, db, cfg.BlevePath); err != nil {
 			log.Printf("regenerate index: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
