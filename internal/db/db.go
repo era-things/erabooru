@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"database/sql"
 
 	"era/booru/ent"
 	"era/booru/ent/hook"
@@ -11,12 +10,13 @@ import (
 	"era/booru/internal/config"
 
 	"entgo.io/ent/dialect/sql/schema"
+	"github.com/jackc/pgx/v5"
 	_ "github.com/lib/pq"
 	"github.com/riverqueue/river"
 )
 
 // New creates a new ent.Client connected to Postgres and runs migrations.
-func New(cfg *config.Config, q *river.Client[*sql.Tx]) (*ent.Client, error) {
+func New(cfg *config.Config, q *river.Client[pgx.Tx]) (*ent.Client, error) {
 	dsn := cfg.PostgresDSN
 
 	client, err := ent.Open("postgres", dsn)

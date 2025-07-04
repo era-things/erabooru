@@ -6,11 +6,12 @@ require (
 	entgo.io/ent v0.14.4
 	github.com/blevesearch/bleve/v2 v2.5.2
 	github.com/gin-gonic/gin v1.10.1
+	github.com/jackc/pgx/v5 v5.7.5
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9
-	github.com/minio/minio-go/v7 v7.0.92
+	github.com/minio/minio-go/v7 v7.0.94
 	github.com/riverqueue/river v0.23.1
-	github.com/riverqueue/river/riverdriver/riverdatabasesql v0.23.1
+	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.23.1
 	github.com/testcontainers/testcontainers-go v0.37.0
 	github.com/testcontainers/testcontainers-go/modules/minio v0.37.0
 	github.com/zeebo/xxh3 v1.0.2
@@ -79,7 +80,6 @@ require (
 	github.com/hashicorp/hcl/v2 v2.13.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.7.5 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect

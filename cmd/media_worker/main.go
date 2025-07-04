@@ -1,8 +1,8 @@
+// cmd/media_worker/main.go
 package main
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"os/signal"
 	"syscall"
@@ -13,6 +13,7 @@ import (
 	"era/booru/internal/queue"
 	qworkers "era/booru/internal/queue/workers"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 )
 
@@ -25,29 +26,46 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Create pgxpool
+	pool, err := pgxpool.New(ctx, cfg.PostgresDSN)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer pool.Close()
+
+	// Create workers
 	workers := river.NewWorkers()
-	dbpool, err := sql.Open("postgres", cfg.PostgresDSN)
+
+	// Create River client using your queue.NewClient (handles migration automatically)
+	client, err := queue.NewClient(ctx, pool, workers, queue.ClientTypeMediaWorker)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	client, err := queue.NewClient(dbpool, workers)
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	// Now create database with River client
 	database, err := db.New(cfg, client)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// Initialize MinIO
 	m, err := minio.New(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	river.AddWorker(workers, &qworkers.ProcessWorker{Minio: m, DB: database, Cfg: cfg, Queue: client})
+	// Register worker
+	river.AddWorker(workers, &qworkers.ProcessWorker{
+		Minio: m,
+		DB:    database,
+		Cfg:   cfg,
+	})
 
+	river.AddWorker(workers, &qworkers.IndexWorker{
+		DB: database,
+	})
+
+	// Start processing
 	if err := client.Start(ctx); err != nil {
 		log.Fatal(err)
 	}

@@ -2,11 +2,12 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"era/booru/ent"
 	"era/booru/internal/api"
@@ -16,6 +17,7 @@ import (
 	"era/booru/internal/queue"
 	qworkers "era/booru/internal/queue/workers"
 	"era/booru/internal/search"
+
 	"github.com/riverqueue/river"
 )
 
@@ -25,8 +27,8 @@ type Server struct {
 	DB     *ent.Client
 	Minio  *minio.Client
 	Cfg    *config.Config
-	Queue  *river.Client[*sql.Tx]
-	DBPool *sql.DB
+	Queue  *river.Client[pgx.Tx] // Changed from *sql.Tx
+	DBPool *pgxpool.Pool         // Changed from *sql.DB
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -43,12 +45,15 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 	workers := river.NewWorkers()
-	dbpool, err := sql.Open("postgres", cfg.PostgresDSN)
+	pool, err := pgxpool.New(ctx, cfg.PostgresDSN)
 	if err != nil {
+		search.Close()
 		return nil, err
 	}
-	riverClient, err := queue.NewClient(dbpool, workers)
+
+	riverClient, err := queue.NewClient(ctx, pool, workers, queue.ClientTypeServer)
 	if err != nil {
+		search.Close()
 		return nil, err
 	}
 
@@ -57,14 +62,21 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		search.Close()
 		return nil, err
 	}
+
 	river.AddWorker(workers, &qworkers.IndexWorker{DB: database})
 	if err := riverClient.Start(ctx); err != nil {
 		return nil, err
 	}
+	river.AddWorker(workers, &qworkers.ProcessWorker{
+		Minio: m,
+		DB:    database,
+		Cfg:   cfg,
+	})
 
 	srvCtx, cancel := context.WithCancel(ctx)
 
 	go m.Watch(srvCtx, func(ctx context.Context, object, contentType string) {
+		log.Printf("object %s uploaded with content type %s", object, contentType)
 		args := queue.ProcessArgs{Bucket: m.Bucket, Key: object, ContentType: contentType}
 		if err := queue.Enqueue(ctx, riverClient, args); err != nil {
 			log.Printf("enqueue process %s: %v", object, err)
@@ -84,7 +96,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		Minio:  m,
 		Cfg:    cfg,
 		Queue:  riverClient,
-		DBPool: dbpool,
+		DBPool: pool,
 		ctx:    srvCtx,
 		cancel: cancel,
 	}

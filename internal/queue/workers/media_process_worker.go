@@ -2,25 +2,21 @@ package workers
 
 import (
 	"context"
-	"crypto/sha256"
-	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
 	"era/booru/ent"
-	"era/booru/ent/media"
 	"era/booru/internal/config"
 	"era/booru/internal/db"
 	"era/booru/internal/minio"
 	"era/booru/internal/processing"
 	"era/booru/internal/queue"
-	"era/booru/internal/search"
 
 	mc "github.com/minio/minio-go/v7"
 	"github.com/riverqueue/river"
@@ -32,28 +28,76 @@ type ProcessWorker struct {
 	Minio *minio.Client
 	DB    *ent.Client
 	Cfg   *config.Config
-	Queue *river.Client[*sql.Tx]
 }
 
 func (w *ProcessWorker) Work(ctx context.Context, job *river.Job[queue.ProcessArgs]) error {
+	log.Printf("Processing task started for bucket %s, key %s, content type %s", job.Args.Bucket, job.Args.Key, job.Args.ContentType)
 	bucket := job.Args.Bucket
 	if bucket == "" {
 		bucket = w.Minio.Bucket
 	}
 	if strings.HasPrefix(job.Args.ContentType, "video/") {
-		id, err := w.processVideo(ctx, bucket, job.Args.Key)
-		if err != nil {
-			return err
-		}
-		return queue.Enqueue(ctx, w.Queue, queue.IndexArgs{ID: id})
+		_, err := w.processVideo(ctx, bucket, job.Args.Key)
+		return err
 	}
-	id, err := w.processImage(ctx, bucket, job.Args.Key)
+	_, err := w.processImage(ctx, bucket, job.Args.Key)
+	return err
+}
+
+func (w *ProcessWorker) saveMediaToDB(ctx context.Context, key, format string, width, height, duration int) error {
+	tx, err := w.DB.Tx(ctx)
 	if err != nil {
 		return err
 	}
-	return queue.Enqueue(ctx, w.Queue, queue.IndexArgs{ID: id})
+	defer tx.Rollback()
+
+	// Find or create the tagme tag first
+	tagme, err := db.FindOrCreateTag(ctx, tx.Client(), "tagme")
+	if err != nil {
+		return err
+	}
+
+	mediaCreate := tx.Media.Create().
+		SetID(key).
+		SetFormat(format).
+		SetWidth(int16(width)).
+		SetHeight(int16(height))
+
+	// Only set duration for videos
+	if duration > 0 {
+		mediaCreate = mediaCreate.SetDuration(int16(duration))
+	}
+
+	// Add tags during creation instead of after
+	mediaCreate = mediaCreate.AddTagIDs(tagme.ID)
+
+	mediaObj, err := mediaCreate.Save(ctx)
+	if err != nil {
+		if ent.IsConstraintError(err) {
+			// Media already exists, just return success
+			return nil
+		}
+		return err
+	}
+
+	// Create upload date record
+	dt, err := db.FindOrCreateDate(ctx, tx.Client(), "upload")
+	if err != nil {
+		return err
+	}
+	if _, err := tx.MediaDate.Create().
+		SetMediaID(mediaObj.ID).
+		SetDateID(dt.ID).
+		SetValue(time.Now().UTC()).
+		Save(ctx); err != nil {
+		return err
+	}
+
+	// Commit the transaction - this will trigger SyncBleve only once
+	return tx.Commit()
 }
 
+// Simplified processImage function
 func (w *ProcessWorker) processImage(ctx context.Context, bucket, key string) (string, error) {
 	rc, err := w.Minio.GetObject(ctx, bucket, key, mc.GetObjectOptions{})
 	if err != nil {
@@ -71,36 +115,15 @@ func (w *ProcessWorker) processImage(ctx context.Context, bucket, key string) (s
 		return "", err
 	}
 
-	mediaObj, err := w.DB.Media.Create().
-		SetID(key).
-		SetFormat(meta.Format).
-		SetWidth(int16(meta.Width)).
-		SetHeight(int16(meta.Height)).
-		Save(ctx)
-	if err != nil {
+	// Use common database save function
+	if err := w.saveMediaToDB(ctx, key, meta.Format, meta.Width, meta.Height, 0); err != nil {
 		return "", err
 	}
 
-	dt, err := db.FindOrCreateDate(ctx, w.DB, "upload")
-	if err != nil {
-		return "", err
-	}
-	if _, err := w.DB.MediaDate.Create().
-		SetMediaID(mediaObj.ID).
-		SetDateID(dt.ID).
-		SetValue(time.Now().UTC()).
-		Save(ctx); err != nil {
-		return "", err
-	}
-
-	tagme, err := db.FindOrCreateTag(ctx, w.DB, "tagme")
-	if err == nil {
-		_, _ = w.DB.Media.UpdateOneID(mediaObj.ID).AddTagIDs(tagme.ID).Save(ctx)
-	}
-
-	return mediaObj.ID, nil
+	return key, nil
 }
 
+// Simplified processVideo function
 func (w *ProcessWorker) processVideo(ctx context.Context, bucket, key string) (string, error) {
 	scheme := "http://"
 	if w.Cfg.MinioSSL {
@@ -182,57 +205,11 @@ func (w *ProcessWorker) processVideo(ctx context.Context, bucket, key string) (s
 		return "", err
 	}
 	defer obj.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, obj); err != nil {
-		return "", err
-	}
-	_ = hex.EncodeToString(h.Sum(nil))
 
-	mediaObj, err := w.DB.Media.Create().
-		SetID(key).
-		SetFormat(format).
-		SetWidth(int16(width)).
-		SetHeight(int16(height)).
-		SetDuration(int16(duration)).
-		Save(ctx)
-	if err != nil {
+	// Use common database save function
+	if err := w.saveMediaToDB(ctx, key, format, width, height, duration); err != nil {
 		return "", err
 	}
 
-	dt, err := db.FindOrCreateDate(ctx, w.DB, "upload")
-	if err != nil {
-		return "", err
-	}
-	if _, err := w.DB.MediaDate.Create().
-		SetMediaID(mediaObj.ID).
-		SetDateID(dt.ID).
-		SetValue(time.Now().UTC()).
-		Save(ctx); err != nil {
-		return "", err
-	}
-	tagme, err := db.FindOrCreateTag(ctx, w.DB, "tagme")
-	if err == nil {
-		_, _ = w.DB.Media.UpdateOneID(mediaObj.ID).AddTagIDs(tagme.ID).Save(ctx)
-	}
-	return mediaObj.ID, nil
-}
-
-// IndexWorker updates the Bleve index for a media item.
-type IndexWorker struct {
-	river.WorkerDefaults[queue.IndexArgs]
-	DB *ent.Client
-}
-
-func (w *IndexWorker) Work(ctx context.Context, job *river.Job[queue.IndexArgs]) error {
-	mobj, err := w.DB.Media.Query().Where(media.IDEQ(job.Args.ID)).
-		WithTags().
-		WithDates(func(q *ent.DateQuery) { q.WithMediaDates() }).
-		Only(ctx)
-	if ent.IsNotFound(err) {
-		return search.DeleteMedia(job.Args.ID)
-	}
-	if err != nil {
-		return err
-	}
-	return search.IndexMedia(mobj)
+	return key, nil
 }
