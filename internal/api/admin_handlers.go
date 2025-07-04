@@ -1,11 +1,11 @@
 package api
 
 import (
-        "compress/gzip"
-        "encoding/json"
-        "fmt"
-        "io"
-        "log"
+	"compress/gzip"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -16,22 +16,22 @@ import (
 	"era/booru/ent/mediadate"
 	"era/booru/ent/tag"
 	"era/booru/internal/config"
-        db2 "era/booru/internal/db"
-        minio "era/booru/internal/minio"
-        "era/booru/internal/search"
-       "era/booru/internal/tasks"
+	db2 "era/booru/internal/db"
+	minio "era/booru/internal/minio"
+	"era/booru/internal/search"
+	"era/booru/internal/tasks"
 
-        "github.com/gin-gonic/gin"
-       "github.com/jackc/pgx/v5"
-       "github.com/riverqueue/river"
-        mc "github.com/minio/minio-go/v7"
+	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
+	mc "github.com/minio/minio-go/v7"
+	"github.com/riverqueue/river"
 )
 
 // RegisterAdminRoutes registers admin-only endpoints.
 func RegisterAdminRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx]) {
-       r.POST("/api/admin/regenerate", regenerateHandler(db, m, cfg, riverClient))
-       r.GET("/api/admin/export-tags", exportTagsHandler(db))
-       r.POST("/api/admin/import-tags", importTagsHandler(db))
+	r.POST("/api/admin/regenerate", regenerateHandler(db, m, cfg, riverClient))
+	r.GET("/api/admin/export-tags", exportTagsHandler(db))
+	r.POST("/api/admin/import-tags", importTagsHandler(db, riverClient))
 }
 
 func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx]) gin.HandlerFunc {
@@ -71,9 +71,9 @@ func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config, rive
 				continue
 			}
 
-                        if _, err := riverClient.Insert(ctx, tasks.AnalyzeArgs{Object: obj.Key, ContentType: info.ContentType}, nil); err != nil {
-                                log.Printf("enqueue %s: %v", obj.Key, err)
-                        }
+			if _, err := riverClient.Insert(ctx, tasks.AnalyzeArgs{Object: obj.Key, ContentType: info.ContentType}, nil); err != nil {
+				log.Printf("enqueue %s: %v", obj.Key, err)
+			}
 		}
 
 		c.Status(http.StatusOK)
@@ -144,7 +144,7 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 	}
 }
 
-func importTagsHandler(db *ent.Client) gin.HandlerFunc {
+func importTagsHandler(db *ent.Client, riverClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 
@@ -284,8 +284,12 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 					c.AbortWithStatus(http.StatusInternalServerError)
 					return
 				}
-
 				log.Printf("updated media %s: %s", item.ID, strings.Join(changes, ", "))
+			}
+			if riverClient != nil {
+				if _, err := riverClient.Insert(ctx, tasks.IndexArgs{ID: item.ID}, nil); err != nil {
+					log.Printf("enqueue index %s: %v", item.ID, err)
+				}
 			}
 		}
 

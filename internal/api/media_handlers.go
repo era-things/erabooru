@@ -13,19 +13,22 @@ import (
 	"era/booru/internal/db"
 	"era/booru/internal/minio"
 	"era/booru/internal/search"
+	"era/booru/internal/tasks"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	mc "github.com/minio/minio-go/v7"
+	"github.com/riverqueue/river"
 )
 
-func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config) {
+func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx]) {
 	r.GET("/api/media", listMediaHandler(cfg))
 	r.GET("/api/media/previews", listPreviewsHandler(cfg))
 	r.GET("/api/media/:id", getMediaHandler(db, m, cfg))
 	r.POST("/api/media/upload-url", uploadURLHandler(m, cfg))
-	r.POST("/api/media/:id/tags", updateMediaTagsHandler(db))
-	r.POST("/api/media/:id/dates", updateMediaDatesHandler(db))
-	r.DELETE("/api/media/:id", deleteMediaHandler(db, m))
+	r.POST("/api/media/:id/tags", updateMediaTagsHandler(db, riverClient))
+	r.POST("/api/media/:id/dates", updateMediaDatesHandler(db, riverClient))
+	r.DELETE("/api/media/:id", deleteMediaHandler(db, m, riverClient))
 }
 
 func listMediaHandler(cfg *config.Config) gin.HandlerFunc {
@@ -159,7 +162,7 @@ func uploadURLHandler(m *minio.Client, cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
-func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
+func updateMediaTagsHandler(dbClient *ent.Client, riverClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := idParam(c)
 		if !ok {
@@ -181,11 +184,16 @@ func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
+		if riverClient != nil {
+			if _, err := riverClient.Insert(c.Request.Context(), tasks.IndexArgs{ID: id}, nil); err != nil {
+				log.Printf("enqueue index %s: %v", id, err)
+			}
+		}
 		c.Status(http.StatusOK)
 	}
 }
 
-func updateMediaDatesHandler(dbClient *ent.Client) gin.HandlerFunc {
+func updateMediaDatesHandler(dbClient *ent.Client, riverClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := idParam(c)
 		if !ok {
@@ -217,11 +225,16 @@ func updateMediaDatesHandler(dbClient *ent.Client) gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
+		if riverClient != nil {
+			if _, err := riverClient.Insert(c.Request.Context(), tasks.IndexArgs{ID: id}, nil); err != nil {
+				log.Printf("enqueue index %s: %v", id, err)
+			}
+		}
 		c.Status(http.StatusOK)
 	}
 }
 
-func deleteMediaHandler(db *ent.Client, m *minio.Client) gin.HandlerFunc {
+func deleteMediaHandler(db *ent.Client, m *minio.Client, riverClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := idParam(c)
 		if !ok {
@@ -238,6 +251,12 @@ func deleteMediaHandler(db *ent.Client, m *minio.Client) gin.HandlerFunc {
 			log.Printf("delete media %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
+		}
+
+		if riverClient != nil {
+			if _, err := riverClient.Insert(c.Request.Context(), tasks.IndexArgs{ID: id}, nil); err != nil {
+				log.Printf("enqueue index delete %s: %v", id, err)
+			}
 		}
 
 		c.Status(http.StatusOK)

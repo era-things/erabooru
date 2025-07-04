@@ -1,13 +1,15 @@
 package ingest
 
 import (
-	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
+	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,43 +75,108 @@ func AnalyzeImage(ctx context.Context, m *minio.Client, db *ent.Client, object s
 // AnalyzeVideo asks the video worker to create a preview and extract metadata
 // for the video object, then saves the metadata in Postgres.
 func AnalyzeVideo(ctx context.Context, cfg *config.Config, m *minio.Client, db *ent.Client, object string) (string, error) {
-	reqBody := struct {
-		Bucket string `json:"bucket"`
-		Key    string `json:"key"`
-	}{Bucket: m.Bucket, Key: object}
+	scheme := "http://"
+	if cfg.MinioSSL {
+		scheme = "https://"
+	}
+	src := fmt.Sprintf("%s%s/%s/%s", scheme,
+		cfg.MinioInternalEndpoint,
+		strings.TrimPrefix(m.Bucket, "/"),
+		strings.TrimPrefix(object, "/"))
 
-	b, _ := json.Marshal(reqBody)
-	resp, err := http.Post(cfg.VideoWorkerURL+"/process", "application/json", bytes.NewReader(b))
+	probeOut, err := exec.Command("ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", src).Output()
 	if err != nil {
-		log.Printf("video worker request: %v", err)
+		log.Printf("ffprobe %s: %v", object, err)
 		return "", err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("video worker status: %s", resp.Status)
-		return "", fmt.Errorf("video worker returned status %s", resp.Status)
+	var probe struct {
+		Streams []struct {
+			Width     int    `json:"width"`
+			Height    int    `json:"height"`
+			Duration  string `json:"duration"`
+			CodecType string `json:"codec_type"`
+		} `json:"streams"`
+		Format struct {
+			FormatName string `json:"format_name"`
+			Duration   string `json:"duration"`
+		} `json:"format"`
 	}
-
-	var out struct {
-		PreviewKey string `json:"preview_key"`
-		Format     string `json:"format"`
-		Width      int    `json:"width"`
-		Height     int    `json:"height"`
-		Duration   int    `json:"duration"`
-		Hash       string `json:"hash"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		log.Printf("decode video worker response: %v", err)
+	if err := json.Unmarshal(probeOut, &probe); err != nil {
+		log.Printf("probe decode %s: %v", object, err)
 		return "", err
 	}
+	width, height := 0, 0
+	duration := 0
+	for _, s := range probe.Streams {
+		if s.CodecType == "video" {
+			if s.Width > width {
+				width = s.Width
+			}
+			if s.Height > height {
+				height = s.Height
+			}
+			if s.Duration != "" {
+				if f, err := strconv.ParseFloat(s.Duration, 64); err == nil && int(f+0.5) > duration {
+					duration = int(f + 0.5)
+				}
+			}
+		}
+	}
+	if duration == 0 && probe.Format.Duration != "" {
+		if f, err := strconv.ParseFloat(probe.Format.Duration, 64); err == nil {
+			duration = int(f + 0.5)
+		}
+	}
+	format := probe.Format.FormatName
+	for f := range config.SupportedVideoFormats {
+		if strings.Contains(format, f) {
+			format = f
+			break
+		}
+	}
+
+	cmd := exec.Command("ffmpeg",
+		"-ss", "00:00:02", "-i", src, "-y", "-loglevel", "error",
+		"-vframes", "1", "-vf", "scale=320:-2",
+		"-q:v", "3", "-f", "image2", "pipe:1")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Printf("pipe %s: %v", object, err)
+		return "", err
+	}
+	if err := cmd.Start(); err != nil {
+		log.Printf("ffmpeg start %s: %v", object, err)
+		return "", err
+	}
+	previewKey := object
+	if _, err := m.PutPreviewJpeg(ctx, previewKey, stdout); err != nil {
+		log.Printf("upload preview %s: %v", object, err)
+		return "", err
+	}
+	if err := cmd.Wait(); err != nil {
+		log.Printf("ffmpeg wait %s: %v", object, err)
+		return "", err
+	}
+
+	obj, err := m.GetObject(ctx, m.Bucket, object, mc.GetObjectOptions{})
+	if err != nil {
+		log.Printf("get object %s: %v", object, err)
+		return "", err
+	}
+	defer obj.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, obj); err != nil {
+		log.Printf("hash %s: %v", object, err)
+		return "", err
+	}
+	_ = hex.EncodeToString(h.Sum(nil))
 
 	media, err := db.Media.Create().
-		SetID(reqBody.Key).
-		SetFormat(out.Format).
-		SetWidth(int16(out.Width)).
-		SetHeight(int16(out.Height)).
-		SetDuration(int16(out.Duration)).
+		SetID(object).
+		SetFormat(format).
+		SetWidth(int16(width)).
+		SetHeight(int16(height)).
+		SetDuration(int16(duration)).
 		Save(ctx)
 	if err != nil {
 		log.Printf("create video media: %v", err)
