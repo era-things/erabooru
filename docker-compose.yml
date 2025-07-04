@@ -87,11 +87,11 @@ services:
     ports:
       - "8080:8080"
       
-  video-worker:
-    image: booru:video-worker
+  media-worker:
+    image: booru:media-worker
     build:
       context: .
-      dockerfile: cmd/video_worker/Dockerfile
+      dockerfile: cmd/media_worker/Dockerfile
     env_file:
       - .env
     environment:

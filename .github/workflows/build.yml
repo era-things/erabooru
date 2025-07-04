@@ -85,11 +85,11 @@ jobs:
           type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-api:latest
         cache-to: type=gha,mode=max,scope=api
 
-    - name: Build + push video-worker
+    - name: Build + push media-worker
       uses: docker/build-push-action@v6
       with:
         context: .
-        file: cmd/video_worker/Dockerfile
+        file: cmd/media_worker/Dockerfile
         platforms: linux/amd64,linux/arm64
         push: ${{ github.event_name != 'pull_request' }}
         tags: |

@@ -6,14 +6,19 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"era/booru/ent"
 	"era/booru/internal/api"
 	"era/booru/internal/config"
 	"era/booru/internal/db"
-	"era/booru/internal/ingest"
 	"era/booru/internal/minio"
+	"era/booru/internal/queue"
+	qworkers "era/booru/internal/queue/workers"
 	"era/booru/internal/search"
+
+	"github.com/riverqueue/river"
 )
 
 // Server bundles initialized services and the Gin router.
@@ -22,6 +27,8 @@ type Server struct {
 	DB     *ent.Client
 	Minio  *minio.Client
 	Cfg    *config.Config
+	Queue  *river.Client[pgx.Tx] // Changed from *sql.Tx
+	DBPool *pgxpool.Pool         // Changed from *sql.DB
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -37,33 +44,43 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		search.Close()
 		return nil, err
 	}
-
-	database, err := db.New(cfg)
+	workers := river.NewWorkers()
+	pool, err := pgxpool.New(ctx, cfg.PostgresDSN)
 	if err != nil {
 		search.Close()
 		return nil, err
 	}
 
+	riverClient, err := queue.NewClient(ctx, pool, workers, queue.ClientTypeServer)
+	if err != nil {
+		search.Close()
+		return nil, err
+	}
+
+	database, err := db.New(cfg, riverClient)
+	if err != nil {
+		search.Close()
+		return nil, err
+	}
+
+	river.AddWorker(workers, &qworkers.IndexWorker{DB: database})
+	if err := riverClient.Start(ctx); err != nil {
+		return nil, err
+	}
+	river.AddWorker(workers, &qworkers.ProcessWorker{
+		Minio: m,
+		DB:    database,
+		Cfg:   cfg,
+	})
+
 	srvCtx, cancel := context.WithCancel(ctx)
 
 	go m.Watch(srvCtx, func(ctx context.Context, object, contentType string) {
-		mediaID, err := ingest.Process(ctx, cfg, m, database, object, contentType)
-		if err != nil {
-			log.Printf("process %s: %v", object, err)
-			return
+		log.Printf("object %s uploaded with content type %s", object, contentType)
+		args := queue.ProcessArgs{Bucket: m.Bucket, Key: object, ContentType: contentType}
+		if err := queue.Enqueue(ctx, riverClient, args); err != nil {
+			log.Printf("enqueue process %s: %v", object, err)
 		}
-		if mediaID == "" {
-			return
-		}
-		tagme, err := db.FindOrCreateTag(ctx, database, "tagme")
-		if err != nil {
-			log.Printf("tagme lookup: %v", err)
-			return
-		}
-		if _, err := database.Media.UpdateOneID(mediaID).AddTagIDs(tagme.ID).Save(ctx); err != nil {
-			log.Printf("add tagme: %v", err)
-		}
-		log.Printf("processed %s (%s)", object, mediaID)
 	})
 
 	r := gin.New()
@@ -78,6 +95,8 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		DB:     database,
 		Minio:  m,
 		Cfg:    cfg,
+		Queue:  riverClient,
+		DBPool: pool,
 		ctx:    srvCtx,
 		cancel: cancel,
 	}
@@ -92,6 +111,12 @@ func (s *Server) Run(addr string) error {
 // Close shuts down background resources.
 func (s *Server) Close() {
 	s.cancel()
+	if s.Queue != nil {
+		s.Queue.Stop(context.Background())
+	}
+	if s.DBPool != nil {
+		s.DBPool.Close()
+	}
 	s.DB.Close()
 	search.Close()
 }

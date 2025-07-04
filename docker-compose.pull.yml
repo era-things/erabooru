@@ -6,8 +6,8 @@ services:
     volumes:
       - ./bleve-index:/data/bleve
 
-  video-worker:
-    image: ghcr.io/era-things/erabooru-video:latest
+  media-worker:
+    image: ghcr.io/era-things/erabooru-media:latest
     build: null
 
   caddy:
