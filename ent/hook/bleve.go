@@ -2,15 +2,16 @@ package hook
 
 import (
 	"context"
+	"database/sql"
 
 	"era/booru/ent"
-	"era/booru/ent/media"
-	"era/booru/internal/search"
+	"era/booru/internal/queue"
+	"github.com/riverqueue/river"
 )
 
 // SyncBleve returns a hook that keeps the Bleve index in sync with
 // PostgreSQL metadata for Media entities.
-func SyncBleve() ent.Hook {
+func SyncBleve(q *river.Client[*sql.Tx]) ent.Hook {
 	return func(next ent.Mutator) ent.Mutator {
 		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
 			v, err := next.Mutate(ctx, m)
@@ -22,45 +23,24 @@ func SyncBleve() ent.Hook {
 				return v, nil
 			}
 
-			switch {
-			case mv.Op().Is(ent.OpDelete | ent.OpDeleteOne):
-				if id, ok := mv.ID(); ok {
-					if derr := search.DeleteMedia(id); derr != nil {
-						return nil, derr
-					}
+			var id string
+			if mv.Op().Is(ent.OpDelete | ent.OpDeleteOne) {
+				if v, ok := mv.ID(); ok {
+					id = v
 				}
-			default:
-				mobj, ok := v.(*ent.Media)
-				if !ok {
-					id, ok := mv.ID()
-					if !ok {
-						return v, nil
-					}
-                                       mobj, err = mv.Client().Media.Query().Where(media.IDEQ(id)).
-                                               WithTags().
-                                               WithDates(func(q *ent.DateQuery) {
-                                                       q.WithMediaDates()
-                                               }).
-                                               Only(ctx)
-					if err != nil {
-						return nil, err
-					}
-				} else {
-					// Reload to include tags for indexing
-                                       mobj, err = mv.Client().Media.Query().Where(media.IDEQ(mobj.ID)).
-                                               WithTags().
-                                               WithDates(func(q *ent.DateQuery) {
-                                                       q.WithMediaDates()
-                                               }).
-                                               Only(ctx)
-					if err != nil {
-						return nil, err
-					}
-				}
-				if ierr := search.IndexMedia(mobj); ierr != nil {
-					return nil, ierr
+			} else {
+				if v, ok := v.(*ent.Media); ok {
+					id = v.ID
+				} else if v, ok := mv.ID(); ok {
+					id = v
 				}
 			}
+			if id != "" && q != nil {
+				if err := queue.Enqueue(ctx, q, queue.IndexArgs{ID: id}); err != nil {
+					return nil, err
+				}
+			}
+			// indexing is deferred to queue worker
 			return v, nil
 		})
 	}
