@@ -28,10 +28,6 @@ func SyncBleve(q *river.Client[pgx.Tx]) ent.Hook {
 				return v, nil
 			}
 
-			mvId, _ := mv.ID()
-			// Add debug logging
-			log.Printf("SyncBleve hook triggered: Op=%s, ID=%v", mv.Op(), mvId)
-
 			if mv.Op().Is(ent.OpCreate | ent.OpUpdateOne | ent.OpDeleteOne) {
 				var id string
 				if mv.Op().Is(ent.OpDelete | ent.OpDeleteOne) {
