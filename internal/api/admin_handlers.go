@@ -2,6 +2,7 @@ package api
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,22 +18,27 @@ import (
 	"era/booru/ent/tag"
 	"era/booru/internal/config"
 	db2 "era/booru/internal/db"
-	"era/booru/internal/ingest"
 	minio "era/booru/internal/minio"
+	"era/booru/internal/queue"
 	"era/booru/internal/search"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	mc "github.com/minio/minio-go/v7"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivermigrate"
 )
 
 // RegisterAdminRoutes registers admin-only endpoints.
-func RegisterAdminRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config) {
-	r.POST("/api/admin/regenerate", regenerateHandler(db, m, cfg))
+func RegisterAdminRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx]) {
+	r.POST("/api/admin/regenerate", regenerateHandler(db, m, cfg, riverClient))
 	r.GET("/api/admin/export-tags", exportTagsHandler(db))
 	r.POST("/api/admin/import-tags", importTagsHandler(db))
 }
 
-func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.HandlerFunc {
+func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 
@@ -42,12 +48,20 @@ func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.
 			return
 		}
 
+		if err := recreateRiverTables(ctx, cfg.PostgresDSN); err != nil {
+			log.Printf("river tables recreate: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
 		if err := search.Rebuild(ctx, db, cfg.BlevePath); err != nil {
 			log.Printf("regenerate index: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
-		// Iterate over all objects in the bucket and regenerate missing metadata
+
+		// Iterate over all objects in the bucket and enqueue processing jobs
+		enqueuedCount := 0
 		for obj := range m.ListObjects(ctx, m.Bucket, mc.ListObjectsOptions{Recursive: true}) {
 			if obj.Err != nil {
 				log.Printf("list object %s: %v", obj.Key, obj.Err)
@@ -69,10 +83,28 @@ func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.
 				continue
 			}
 
-			ingest.Process(ctx, cfg, m, db, obj.Key, info.ContentType)
+			// Enqueue processing job instead of processing directly
+			_, err = riverClient.Insert(ctx, queue.ProcessArgs{
+				Bucket:      m.Bucket,
+				Key:         obj.Key,
+				ContentType: info.ContentType,
+			}, &river.InsertOpts{
+				Queue: "process", // Send to process queue for media worker
+			})
+			if err != nil {
+				log.Printf("enqueue process job for %s: %v", obj.Key, err)
+				continue
+			}
+
+			enqueuedCount++
+			log.Printf("enqueued processing job for %s", obj.Key)
 		}
 
-		c.Status(http.StatusOK)
+		log.Printf("regenerate completed, enqueued %d processing jobs", enqueuedCount)
+		c.JSON(http.StatusOK, gin.H{
+			"message":       "regenerate completed",
+			"jobs_enqueued": enqueuedCount,
+		})
 	}
 }
 
@@ -287,4 +319,20 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 
 		c.Status(http.StatusOK)
 	}
+}
+
+func recreateRiverTables(ctx context.Context, dsn string) error {
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
+	if err != nil {
+		return err
+	}
+
+	_, err = migrator.Migrate(ctx, rivermigrate.DirectionUp, nil)
+	return err
 }
