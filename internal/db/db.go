@@ -24,14 +24,12 @@ func New(cfg *config.Config, q *river.Client[pgx.Tx]) (*ent.Client, error) {
 		return nil, err
 	}
 
-	// Auto migrate if we are in dev mode
+	// Auto migrate (Later: make it work like that only in devmode)
 	opts := []schema.MigrateOption{}
-	if cfg.DevMode {
-		opts = append(opts,
-			migrate.WithDropColumn(true),
-			migrate.WithDropIndex(true),
-		)
-	}
+	opts = append(opts,
+		migrate.WithDropColumn(true),
+		migrate.WithDropIndex(true),
+	)
 
 	if err := client.Schema.Create(context.Background(), opts...); err != nil {
 		return nil, err
