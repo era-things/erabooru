@@ -16,12 +16,19 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
 	"github.com/testcontainers/testcontainers-go"
 	tcminio "github.com/testcontainers/testcontainers-go/modules/minio"
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"era/booru/internal/config"
+	"era/booru/internal/db"
+	"era/booru/internal/minio"
 	"era/booru/internal/processing"
+	"era/booru/internal/queue"
+	qworkers "era/booru/internal/queue/workers"
 	"era/booru/internal/server"
 
 	"time"
@@ -145,6 +152,13 @@ func TestExportImportCycle(t *testing.T) {
 	}
 	defer srv.Close()
 
+	// Start the media worker
+	mediaWorker, err := startMediaWorker(ctx, cfg)
+	if err != nil {
+		t.Fatalf("media worker: %v", err)
+	}
+	defer mediaWorker.Stop()
+
 	ts := httptest.NewServer(srv.Router)
 	defer ts.Close()
 	client := ts.Client()
@@ -259,6 +273,8 @@ func TestExportImportCycle(t *testing.T) {
 		t.Fatalf("reset via container Exec failed (%d): %s", code, out)
 	}
 
+	time.Sleep(2 * time.Second)
+
 	resp, err = client.Post(ts.URL+"/api/admin/regenerate", "application/json", nil)
 	if err != nil {
 		t.Fatalf("regenerate request: %v", err)
@@ -268,6 +284,10 @@ func TestExportImportCycle(t *testing.T) {
 		t.Fatalf("regenerate response %d", resp.StatusCode)
 	}
 
+	waitFor(img1Hash)
+	waitFor(img2Hash)
+	waitFor(img3Hash)
+
 	resp, err = client.Post(ts.URL+"/api/admin/import-tags", "application/gzip", bytes.NewReader(first))
 	if err != nil {
 		t.Fatalf("import request: %v", err)
@@ -276,6 +296,8 @@ func TestExportImportCycle(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("import response %d", resp.StatusCode)
 	}
+
+	time.Sleep(1 * time.Second)
 
 	resp, err = client.Get(ts.URL + "/api/admin/export-tags")
 	if err != nil {
@@ -296,5 +318,65 @@ func TestExportImportCycle(t *testing.T) {
 
 	if !reflect.DeepEqual(items1, items2) {
 		t.Fatalf("export/import mismatch")
+	}
+}
+
+func startMediaWorker(ctx context.Context, cfg *config.Config) (*MediaWorkerWrapper, error) {
+	pool, err := pgxpool.New(ctx, cfg.PostgresDSN)
+	if err != nil {
+		return nil, err
+	}
+
+	workers := river.NewWorkers()
+	client, err := queue.NewClient(ctx, pool, workers, queue.ClientTypeMediaWorker)
+	if err != nil {
+		return nil, err
+	}
+
+	database, err := db.New(cfg, client)
+	if err != nil {
+		return nil, err
+	}
+
+	m, err := minio.New(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Register BOTH workers (even though media worker only processes ProcessWorker)
+	river.AddWorker(workers, &qworkers.ProcessWorker{
+		Minio: m,
+		DB:    database,
+		Cfg:   cfg,
+	})
+
+	// Add this - needed for media worker to enqueue index jobs
+	river.AddWorker(workers, &qworkers.IndexWorker{
+		DB: database,
+	})
+
+	if err := client.Start(ctx); err != nil {
+		return nil, err
+	}
+
+	return &MediaWorkerWrapper{
+		client: client,
+		pool:   pool,
+		ctx:    ctx,
+	}, nil
+}
+
+type MediaWorkerWrapper struct {
+	client *river.Client[pgx.Tx]
+	pool   *pgxpool.Pool
+	ctx    context.Context
+}
+
+func (w *MediaWorkerWrapper) Stop() {
+	if w.client != nil {
+		w.client.Stop(context.Background())
+	}
+	if w.pool != nil {
+		w.pool.Close()
 	}
 }

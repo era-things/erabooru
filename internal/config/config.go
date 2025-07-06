@@ -18,8 +18,7 @@ type Config struct {
 	MinioPublicPrefix     string // e.g., "/minio"
 	BlevePath             string // path to Bleve index, e.g., "/data/bleve"
 	MinioSSL              bool
-	VideoWorkerURL        string // address of the video worker service
-	DevMode               bool   // enable development features like auto migration
+	DevMode               bool // enable development features like auto migration
 }
 
 func Load() (*Config, error) {
@@ -37,7 +36,6 @@ func Load() (*Config, error) {
 		MinioPublicPrefix:     getEnv("MINIO_PUBLIC_PREFIX"),            // e.g., "/minio" for Caddy reverse proxy
 		BlevePath:             getEnv("BLEVE_PATH"),
 		MinioSSL:              getEnv("MINIO_SSL") == "true",
-		VideoWorkerURL:        getEnv("VIDEO_WORKER_URL"),
 		DevMode:               getEnv("DEV_MODE") == "true",
 	}
 	return cfg, nil
