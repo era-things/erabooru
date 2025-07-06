@@ -136,7 +136,6 @@ func TestExportImportCycle(t *testing.T) {
 	os.Setenv("MINIO_PUBLIC_HOST", "")
 	os.Setenv("MINIO_PUBLIC_PREFIX", "boorubucket")
 	os.Setenv("MINIO_SSL", "false")
-	os.Setenv("VIDEO_WORKER_URL", "http://invalid")
 	os.Setenv("DEV_MODE", "true")
 	bleveDir := filepath.Join(t.TempDir(), "bleve")
 	os.Setenv("BLEVE_PATH", bleveDir)
@@ -174,7 +173,7 @@ func TestExportImportCycle(t *testing.T) {
 			if resp != nil {
 				resp.Body.Close()
 			}
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(600 * time.Millisecond)
 		}
 		t.Fatalf("media %s not ingested", id)
 	}
@@ -264,6 +263,11 @@ func TestExportImportCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse export: %v", err)
 	}
+	t.Logf("First export has %d items", len(items1))
+
+	srv.Close()
+	mediaWorker.Stop()
+	ts.Close()
 
 	// purge db via container
 	if code, out, err := pgC.Exec(ctx, []string{
@@ -275,6 +279,24 @@ func TestExportImportCycle(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 
+	srv, err = server.New(ctx, cfg)
+	if err != nil {
+		t.Fatalf("restart server: %v", err)
+	}
+	defer srv.Close()
+
+	mediaWorker, err = startMediaWorker(ctx, cfg)
+	if err != nil {
+		t.Fatalf("restart media worker: %v", err)
+	}
+	defer mediaWorker.Stop()
+
+	// Create new HTTP test server
+	ts = httptest.NewServer(srv.Router)
+	defer ts.Close()
+	client = ts.Client()
+
+	// Now regenerate should work without River errors
 	resp, err = client.Post(ts.URL+"/api/admin/regenerate", "application/json", nil)
 	if err != nil {
 		t.Fatalf("regenerate request: %v", err)
