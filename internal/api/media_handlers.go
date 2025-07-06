@@ -9,6 +9,7 @@ import (
 
 	"era/booru/ent"
 	"era/booru/ent/media"
+	"era/booru/ent/mediadate"
 	"era/booru/internal/config"
 	"era/booru/internal/db"
 	"era/booru/internal/minio"
@@ -95,7 +96,11 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 
 		item, err := db.Media.Query().Where(media.IDEQ(id)).
 			WithTags().
-			WithDates(func(q *ent.DateQuery) { q.WithMediaDates() }).
+			WithDates(func(q *ent.DateQuery) {
+				q.WithMediaDates(func(mdq *ent.MediaDateQuery) {
+					mdq.Where(mediadate.MediaIDEQ(id))
+				})
+			}).
 			Only(c.Request.Context())
 		if err != nil {
 			log.Printf("get media %s: %v", id, err)
@@ -207,7 +212,9 @@ func updateMediaDatesHandler(dbClient *ent.Client) gin.HandlerFunc {
 		for _, d := range body.Dates {
 			t, err := time.Parse("2006-01-02", d.Value)
 			if err != nil {
-				continue
+				log.Printf("parse date %s: %v", d.Value, err)
+				c.AbortWithStatus(http.StatusBadRequest)
+				return
 			}
 			vals = append(vals, db.DateValue{Name: d.Name, Value: t})
 		}
