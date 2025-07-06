@@ -3,6 +3,7 @@ package schema
 import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
@@ -28,7 +29,8 @@ func (MediaDate) Edges() []ent.Edge {
 		edge.To("media", Media.Type).
 			Field("media_id").
 			Unique().
-			Required(),
+			Required().
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.To("date", Date.Type).
 			Field("date_id").
 			Unique().

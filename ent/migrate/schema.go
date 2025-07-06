@@ -50,7 +50,7 @@ var (
 				Symbol:     "media_dates_media_media",
 				Columns:    []*schema.Column{MediaDatesColumns[2]},
 				RefColumns: []*schema.Column{MediaColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "media_dates_dates_date",
