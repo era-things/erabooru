@@ -17,7 +17,6 @@ import (
 	tcminio "github.com/testcontainers/testcontainers-go/modules/minio"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"era/booru/internal/config"
 	common "era/booru/internal/integration/common"
 	"era/booru/internal/server"
 
@@ -68,30 +67,14 @@ func TestExportImportCycle(t *testing.T) {
 	}
 	defer mC.Terminate(ctx)
 
-	common.WaitForPostgres(dsn, 30*time.Second)
+	common.WaitForPostgres(t, dsn, 30*time.Second)
 
 	minioAddr, err := mC.ConnectionString(ctx)
 	if err != nil {
 		t.Fatalf("minio addr: %v", err)
 	}
 
-	os.Setenv("POSTGRES_DSN", dsn)
-	os.Setenv("MINIO_ROOT_USER", "minioadmin")
-	os.Setenv("MINIO_ROOT_PASSWORD", "minio123")
-	os.Setenv("MINIO_BUCKET", "boorubucket")
-	os.Setenv("MINIO_PREVIEW_BUCKET", "previews")
-	os.Setenv("MINIO_INTERNAL_ENDPOINT", minioAddr)
-	os.Setenv("MINIO_PUBLIC_HOST", "")
-	os.Setenv("MINIO_PUBLIC_PREFIX", "boorubucket")
-	os.Setenv("MINIO_SSL", "false")
-	os.Setenv("DEV_MODE", "true")
-	bleveDir := filepath.Join(t.TempDir(), "bleve")
-	os.Setenv("BLEVE_PATH", bleveDir)
-
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
+	cfg := common.SetupEnv(t, dsn, minioAddr)
 
 	srv, err := server.New(ctx, cfg)
 	if err != nil {
@@ -100,45 +83,24 @@ func TestExportImportCycle(t *testing.T) {
 	defer srv.Close()
 
 	// Start the media worker
-	mediaWorker, err := common.StartMediaWorker(ctx, cfg)
-	if err != nil {
-		t.Fatalf("media worker: %v", err)
-	}
+	mediaWorker := common.StartMediaWorker(t, ctx, cfg)
 	defer mediaWorker.Stop()
 
 	ts := httptest.NewServer(srv.Router)
 	defer ts.Close()
 	client := ts.Client()
+	ec := common.NewClient(t, srv.Minio, client, ts.URL)
 
-	img1Hash, err := common.UploadAndWait(ctx, srv.Minio, client, ts.URL, filepath.Join("testdata", "img1.png"))
-	if err != nil {
-		t.Fatalf("upload img1: %v", err)
-	}
-	img2Hash, err := common.UploadAndWait(ctx, srv.Minio, client, ts.URL, filepath.Join("testdata", "img2.png"))
-	if err != nil {
-		t.Fatalf("upload img2: %v", err)
-	}
-	img3Hash, err := common.UploadAndWait(ctx, srv.Minio, client, ts.URL, filepath.Join("testdata", "img3.png"))
-	if err != nil {
-		t.Fatalf("upload img3: %v", err)
-	}
+	img1Hash := ec.UploadAndWait(ctx, filepath.Join("testdata", "img1.png"))
+	img2Hash := ec.UploadAndWait(ctx, filepath.Join("testdata", "img2.png"))
+	img3Hash := ec.UploadAndWait(ctx, filepath.Join("testdata", "img3.png"))
 
-	if err := common.AddTags(client, ts.URL, img1Hash, []string{"alpha"}); err != nil {
-		t.Fatalf("tags: %v", err)
-	}
-	if err := common.AddTags(client, ts.URL, img2Hash, []string{"beta"}); err != nil {
-		t.Fatalf("tags: %v", err)
-	}
-	if err := common.AddTags(client, ts.URL, img3Hash, []string{"gamma"}); err != nil {
-		t.Fatalf("tags: %v", err)
-	}
+	ec.AddTags(img1Hash, []string{"alpha"})
+	ec.AddTags(img2Hash, []string{"beta"})
+	ec.AddTags(img3Hash, []string{"gamma"})
 
-	if err := common.SetUploadDate(client, ts.URL, img1Hash, "2021-01-02"); err != nil {
-		t.Fatalf("set date: %v", err)
-	}
-	if err := common.SetUploadDate(client, ts.URL, img2Hash, "2022-02-03"); err != nil {
-		t.Fatalf("set date: %v", err)
-	}
+	ec.SetUploadDate(img1Hash, "2021-01-02")
+	ec.SetUploadDate(img2Hash, "2022-02-03")
 
 	resp, err := client.Get(ts.URL + "/api/admin/export-tags")
 	if err != nil {
@@ -149,10 +111,7 @@ func TestExportImportCycle(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("export response %d", resp.StatusCode)
 	}
-	items1, err := common.ParseExport(first)
-	if err != nil {
-		t.Fatalf("parse export: %v", err)
-	}
+	items1 := common.ParseExport(t, first)
 	t.Logf("First export has %d items", len(items1))
 
 	srv.Close()
@@ -175,16 +134,14 @@ func TestExportImportCycle(t *testing.T) {
 	}
 	defer srv.Close()
 
-	mediaWorker, err = common.StartMediaWorker(ctx, cfg)
-	if err != nil {
-		t.Fatalf("restart media worker: %v", err)
-	}
+	mediaWorker = common.StartMediaWorker(t, ctx, cfg)
 	defer mediaWorker.Stop()
 
 	// Create new HTTP test server
 	ts = httptest.NewServer(srv.Router)
 	defer ts.Close()
 	client = ts.Client()
+	ec = common.NewClient(t, srv.Minio, client, ts.URL)
 
 	// Now regenerate should work without River errors
 	resp, err = client.Post(ts.URL+"/api/admin/regenerate", "application/json", nil)
@@ -196,15 +153,9 @@ func TestExportImportCycle(t *testing.T) {
 		t.Fatalf("regenerate response %d", resp.StatusCode)
 	}
 
-	if err := common.WaitForMedia(client, ts.URL, img1Hash, 10*time.Second); err != nil {
-		t.Fatalf("wait img1: %v", err)
-	}
-	if err := common.WaitForMedia(client, ts.URL, img2Hash, 10*time.Second); err != nil {
-		t.Fatalf("wait img2: %v", err)
-	}
-	if err := common.WaitForMedia(client, ts.URL, img3Hash, 10*time.Second); err != nil {
-		t.Fatalf("wait img3: %v", err)
-	}
+	ec.WaitForMedia(img1Hash, 10*time.Second)
+	ec.WaitForMedia(img2Hash, 10*time.Second)
+	ec.WaitForMedia(img3Hash, 10*time.Second)
 
 	resp, err = client.Post(ts.URL+"/api/admin/import-tags", "application/gzip", bytes.NewReader(first))
 	if err != nil {
@@ -226,10 +177,7 @@ func TestExportImportCycle(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("re-export response %d", resp.StatusCode)
 	}
-	items2, err := common.ParseExport(second)
-	if err != nil {
-		t.Fatalf("parse second export: %v", err)
-	}
+	items2 := common.ParseExport(t, second)
 
 	sort.Slice(items1, func(i, j int) bool { return items1[i]["id"].(string) < items1[j]["id"].(string) })
 	sort.Slice(items2, func(i, j int) bool { return items2[i]["id"].(string) < items2[j]["id"].(string) })
