@@ -7,7 +7,7 @@ services:
       - ./bleve-index:/data/bleve
 
   media-worker:
-    image: ghcr.io/era-things/erabooru-media:latest
+    image: ghcr.io/era-things/erabooru-media-worker:latest
     build: null
 
   caddy:
