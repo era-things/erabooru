@@ -19,14 +19,17 @@ const (
 
 // NewClient creates a River client using the provided database pool and workers.
 func NewClient(ctx context.Context, pool *pgxpool.Pool, workers *river.Workers, clientType ClientType) (*river.Client[pgx.Tx], error) {
-	migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
-	if err != nil {
-		pool.Close()
-		return nil, err
-	}
-	if _, err := migrator.Migrate(ctx, rivermigrate.DirectionUp, nil); err != nil {
-		pool.Close()
-		return nil, err
+	// Only run migrations for the server, not workers
+	if clientType == ClientTypeServer {
+		migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
+		if err != nil {
+			pool.Close()
+			return nil, err
+		}
+		if _, err := migrator.Migrate(ctx, rivermigrate.DirectionUp, nil); err != nil {
+			pool.Close()
+			return nil, err
+		}
 	}
 
 	cfg := getConfigForClientType(clientType, workers)

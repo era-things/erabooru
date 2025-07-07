@@ -9,7 +9,3 @@ services:
   media-worker:
     image: ghcr.io/era-things/erabooru-media-worker:latest
     build: null
-
-  caddy:
-    ports:
-      - "80:80"
