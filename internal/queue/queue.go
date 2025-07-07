@@ -81,16 +81,12 @@ func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) e
 	return err
 }
 
-func WorkerEnqueue(ctx context.Context, queueName string, args river.JobArgs) error {
+func WorkerEnqueue(ctx context.Context, args river.JobArgs) error {
 	client := river.ClientFromContext[pgx.Tx](ctx)
-	if client != nil {
-		if _, err := client.Insert(ctx, args, &river.InsertOpts{
-			Queue: queueName,
-		}); err != nil {
-			return err
-		}
+	if client == nil {
+		return river.ErrNotFound
 	}
-	return nil
+	return Enqueue(ctx, client, args)
 }
 
 type ProcessArgs struct {

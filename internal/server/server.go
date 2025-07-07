@@ -57,7 +57,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
-	database, err := db.New(cfg, riverClient)
+	database, err := db.New(cfg, riverClient, true)
 	if err != nil {
 		search.Close()
 		return nil, err

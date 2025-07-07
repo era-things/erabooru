@@ -26,9 +26,11 @@ func (w *IndexWorker) Work(ctx context.Context, job *river.Job[queue.IndexArgs])
 		WithDates(func(q *ent.DateQuery) { q.WithMediaDates() }).
 		Only(ctx)
 	if ent.IsNotFound(err) {
+		log.Printf("Media with ID %s not found, deleting from index", job.Args.ID)
 		return search.DeleteMedia(job.Args.ID)
 	}
 	if err != nil {
+		log.Printf("Error retrieving media with ID %s: %v", job.Args.ID, err)
 		return err
 	}
 	return search.IndexMedia(mobj)

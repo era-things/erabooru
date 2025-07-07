@@ -43,7 +43,7 @@ func main() {
 	}
 
 	// Now create database with River client
-	database, err := db.New(cfg, client)
+	database, err := db.New(cfg, client, false)
 	if err != nil {
 		log.Fatal(err)
 	}

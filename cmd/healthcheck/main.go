@@ -16,9 +16,9 @@ func main() {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		os.Exit(1)
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
+		os.Exit(0)
 	}
 
-	os.Exit(0)
+	os.Exit(1)
 }

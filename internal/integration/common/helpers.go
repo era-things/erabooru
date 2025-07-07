@@ -79,7 +79,7 @@ func StartMediaWorker(t testing.TB, ctx context.Context, cfg *config.Config) *Me
 		t.Fatalf("client: %v", err)
 	}
 
-	database, err := db.New(cfg, client)
+	database, err := db.New(cfg, client, false)
 	if err != nil {
 		t.Fatalf("db: %v", err)
 	}

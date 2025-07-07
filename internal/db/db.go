@@ -16,7 +16,7 @@ import (
 )
 
 // New creates a new ent.Client connected to Postgres and runs migrations.
-func New(cfg *config.Config, q *river.Client[pgx.Tx]) (*ent.Client, error) {
+func New(cfg *config.Config, q *river.Client[pgx.Tx], useHookSync bool) (*ent.Client, error) {
 	dsn := cfg.PostgresDSN
 
 	client, err := ent.Open("postgres", dsn)
@@ -34,6 +34,8 @@ func New(cfg *config.Config, q *river.Client[pgx.Tx]) (*ent.Client, error) {
 	if err := client.Schema.Create(context.Background(), opts...); err != nil {
 		return nil, err
 	}
-	client.Media.Use(hook.SyncBleve(q))
+	if useHookSync {
+		client.Media.Use(hook.SyncBleve(q))
+	}
 	return client, nil
 }

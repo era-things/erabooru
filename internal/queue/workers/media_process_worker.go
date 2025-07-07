@@ -93,8 +93,16 @@ func (w *ProcessWorker) saveMediaToDB(ctx context.Context, key, format string, w
 		return err
 	}
 
-	// Commit the transaction - this will trigger SyncBleve only once
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	if err := queue.WorkerEnqueue(ctx, queue.IndexArgs{ID: key}); err != nil {
+		log.Printf("Failed to enqueue index job for ID %s: %v", key, err)
+		return err
+	}
+
+	return nil
 }
 
 // Simplified processImage function
