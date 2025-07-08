@@ -72,7 +72,7 @@ echo "MINIO_ROOT_USER from .env: $(grep MINIO_ROOT_USER .env || echo 'NOT FOUND'
 echo "→ Downloading compose files..."
 download_file "https://raw.githubusercontent.com/era-things/erabooru/main/docker-compose.yml" "docker-compose.yml"
 download_file "https://raw.githubusercontent.com/era-things/erabooru/main/docker-compose.pull.yml" "docker-compose.pull.yml"
-download_file "https://raw.githubusercontent.com/era-things/erabooru/main/Caddyfile.prod" "Caddyfile"
+download_file "https://raw.githubusercontent.com/era-things/erabooru/main/Caddyfile.prod" "Caddyfile.prod"
 
 # ────────────────────────────────────────────────────────────────
 # 3. Start services
