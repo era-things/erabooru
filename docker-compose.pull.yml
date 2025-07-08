@@ -4,7 +4,7 @@ services:
     image: ghcr.io/era-things/erabooru-api:latest
     build: null       
     volumes:
-      - ./bleve-index:/data/bleve
+      - bleve-index:/data/bleve
 
   media-worker:
     image: ghcr.io/era-things/erabooru-media-worker:latest
