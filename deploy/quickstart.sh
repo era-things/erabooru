@@ -30,18 +30,40 @@ cd "$DEST"
 download_file() {
     local url="$1"
     local output="$2"
-    local retries=3
     
-    for i in $(seq 1 $retries); do
-        if curl -fsSL "$url" -o "$output"; then
-            return 0
+    # Remove existing file/directory if it exists
+    if [[ -e "$output" ]]; then
+        rm -rf "$output"
+    fi
+    
+    echo "→ Downloading $output..."
+    
+    # Use different approach on Windows/Git Bash
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+        # Use Windows curl explicitly and force file creation
+        if curl.exe -fsSL "$url" --output "$output" 2>/dev/null; then
+            echo "✅ Downloaded $output"
+        elif powershell.exe -Command "Invoke-WebRequest -Uri '$url' -OutFile '$output'" 2>/dev/null; then
+            echo "✅ Downloaded $output (via PowerShell)"
+        else
+            echo "❌ Failed to download $url"
+            exit 1
         fi
-        echo "⚠️  Download failed (attempt $i/$retries), retrying..."
-        sleep 2
-    done
+    else
+        # Unix/Linux/macOS
+        if curl -fsSL "$url" -o "$output"; then
+            echo "✅ Downloaded $output"
+        else
+            echo "❌ Failed to download $url"
+            exit 1
+        fi
+    fi
     
-    echo "❌ Failed to download $url"
-    exit 1
+    # Verify the file was created properly
+    if [[ ! -f "$output" ]] || [[ ! -s "$output" ]]; then
+        echo "❌ Downloaded file is invalid or empty"
+        exit 1
+    fi
 }
 
 # ────────────────────────────────────────────────────────────────
