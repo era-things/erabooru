@@ -1,23 +1,23 @@
 <script lang="ts">
 	import Column from './Column.svelte';
 	import { distributeVertically, distributeRoundRobin } from '$lib/masonryDistribution';
-	import type { MediaItem } from '$lib/types/media';
+	import type { MediaPreviewItem } from '$lib/types/media';
 	import { ElementRect } from 'runed';
 
 	let {
 		items = [],
 		columnWidths = ['1fr', '1fr'],
 		scrollPosition = 0
-	} = $props<{
-		items: MediaItem[];
-		columnWidths: string[];
-		scrollPosition: number;
-	}>();
+	}: {
+		items: MediaPreviewItem[],
+		columnWidths: string[], 
+		scrollPosition: number
+	} = $props();
 
 	let columns = $derived(
 		items.length > columnWidths.length
-			? distributeVertically(items as MediaItem[], columnWidths.length)
-			: distributeRoundRobin(items as MediaItem[], columnWidths.length)
+			? distributeVertically(items, columnWidths.length)
+			: distributeRoundRobin(items, columnWidths.length)
 	);
 
 	let el = $state<HTMLElement>();

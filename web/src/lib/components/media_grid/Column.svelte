@@ -1,6 +1,6 @@
 <script lang="ts">
 	import MediaCard from '../media/MediaCard.svelte';
-	import type { MediaItem } from '$lib/types/media';
+	import type { MediaPreviewItem } from '$lib/types/media';
 	import { ElementSize } from 'runed';
 	import { browser } from '$app/environment';
 
@@ -9,7 +9,7 @@
 		scrolledPercentage = 0,
 		maxHeight
 	} = $props<{
-		items: MediaItem[];
+		items: MediaPreviewItem[];
 		scrolledPercentage: number;
 		maxHeight: number;
 	}>();
