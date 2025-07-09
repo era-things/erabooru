@@ -8,11 +8,11 @@
 		items = [],
 		columnWidths = ['1fr', '1fr'],
 		scrollPosition = 0
-	} = $props<{
-		items: MediaPreviewItem[];
-		columnWidths: string[];
-		scrollPosition: number;
-	}>();
+	}: {
+		items: MediaPreviewItem[],
+		columnWidths: string[], 
+		scrollPosition: number
+	} = $props();
 
 	let columns = $derived(
 		items.length > columnWidths.length
