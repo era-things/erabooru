@@ -23,7 +23,7 @@
 			src={item.url}
 			alt={'media ' + item.id}
 			class={'h-full w-full ' +
-				(needsCrop ? 'object-cover' : 'object-contain') +
+				(needsCrop ? 'object-cover' : '') +
 				' shadow' +
 				getBorderStyle(item.format)}
 			loading="lazy"
