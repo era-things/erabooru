@@ -10,6 +10,7 @@ import (
 	"era/booru/ent"
 	"era/booru/ent/media"
 	"era/booru/ent/mediadate"
+	"era/booru/ent/tag"
 	"era/booru/internal/config"
 	"era/booru/internal/db"
 	"era/booru/internal/minio"
@@ -116,9 +117,14 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 		}
 
 		url := fmt.Sprintf("%s/%s/%s", cfg.MinioPublicPrefix, cfg.MinioBucket, string(id))
-		tags := make([]string, len(item.Edges.Tags))
+		tags := make([]gin.H, len(item.Edges.Tags))
 		for i, t := range item.Edges.Tags {
-			tags[i] = t.Name
+			count, err := db.Tag.Query().Where(tag.IDEQ(t.ID)).QueryMedia().Count(c.Request.Context())
+			if err != nil {
+				log.Printf("count tag %s: %v", t.Name, err)
+				count = 0
+			}
+			tags[i] = gin.H{"name": t.Name, "count": count}
 		}
 		dates := make([]gin.H, 0)
 		for _, d := range item.Edges.Dates {

@@ -14,7 +14,7 @@
 		const id = page.params.id;
 		try {
 			media = await fetchMediaDetail(id);
-			tagsInput = media?.tags.map((t) => t.replace(/ /g, '_')).join(' ') ?? '';
+			tagsInput = media?.tags.map((t) => t.name.replace(/ /g, '_')).join(' ') ?? '';
 		} catch (err) {
 			console.error('failed to load media', err);
 		}
@@ -37,8 +37,8 @@
 		const tags = tagsInput.split(/\s+/).filter((t) => t.length > 0);
 		try {
 			await updateMediaTags(media.id, tags);
-			media.tags = tags;
-			tagsInput = media.tags.map((t) => t.replace(/ /g, '_')).join(' ');
+			media = await fetchMediaDetail(media.id);
+			tagsInput = media.tags.map((t) => t.name.replace(/ /g, '_')).join(' ');
 			edit = false;
 		} catch (err) {
 			console.error('failed to save tags', err);
@@ -74,8 +74,15 @@
 				<div class="text-sm">
 					<p class="font-semibold">Tags:</p>
 					<ul class="ml-4 list-disc">
-						{#each media.tags as t (t)}
-							<li>{t}</li>
+						{#each media.tags as t (t.name)}
+							<li>
+								<a
+									href={`/?q=${encodeURIComponent(t.name)}`}
+									class="text-blue-500 visited:text-blue-500 hover:underline"
+								>
+									{t.name} ({t.count})
+								</a>
+							</li>
 						{/each}
 					</ul>
 				</div>
