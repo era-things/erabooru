@@ -87,6 +87,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 	r.Use(api.GinLogger(), gin.Recovery(), api.CORSMiddleware())
 	r.GET("/health", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 	api.RegisterMediaRoutes(r, database, m, cfg)
+	api.RegisterTagRoutes(r, database)
 	api.RegisterAdminRoutes(r, database, m, cfg, riverClient)
 	api.RegisterStaticRoutes(r)
 

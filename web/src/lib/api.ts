@@ -1,4 +1,4 @@
-import type { MediaItem, MediaDetail } from './types/media';
+import type { MediaItem, MediaDetail, TagCount } from './types/media';
 
 const apiBase = '/api';
 
@@ -85,4 +85,10 @@ export async function importMediaTags(file: File): Promise<void> {
 		body: file
 	});
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+export async function fetchTags(): Promise<TagCount[]> {
+	const res = await fetch(`${apiBase}/tags`);
+	const data = await handleJson<{ tags: TagCount[] }>(res);
+	return data.tags;
 }
