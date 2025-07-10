@@ -13,8 +13,13 @@ export interface MediaItem {
 
 export interface MediaDetail extends MediaItem {
 	size: number;
-	tags: string[];
+	tags: TagCount[];
 	dates: MediaDate[];
+}
+
+export interface TagCount {
+	name: string;
+	count: number;
 }
 
 export interface MediaPreviewItem extends MediaItem {
