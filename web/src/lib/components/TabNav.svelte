@@ -9,7 +9,7 @@
 	import { PAGE_SIZE } from '$lib/constants';
 
 	let q: string = $state('');
-	let active: 'media' | 'upload' | 'settings' = $props();
+	let active: 'media' | 'upload' | 'tags' | 'settings' = $props();
 
 	onMount(() => {
 		q = get(page).url.searchParams.get('q') ?? '';
@@ -42,6 +42,16 @@
 			class:text-gray-500={active !== 'upload'}
 		>
 			Upload
+		</a>
+		<a
+			href="/tags"
+			class="-mb-px border-b-2 px-3 py-2"
+			class:!border-blue-500={active === 'tags'}
+			class:!text-blue-500={active === 'tags'}
+			class:border-transparent={active !== 'tags'}
+			class:text-gray-500={active !== 'tags'}
+		>
+			Tags
 		</a>
 		<a
 			href="/settings"
