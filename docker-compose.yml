@@ -34,21 +34,6 @@ services:
       timeout: 5s
       retries: 5
 
-  db-init:
-    image: pgvector/pgvector:pg15
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    entrypoint: >
-      /bin/sh -c "
-        until pg_isready -h db -U $POSTGRES_USER -d $POSTGRES_DB; do sleep 2; done;
-        psql -h db -U $POSTGRES_USER -d $POSTGRES_DB -c 'CREATE EXTENSION IF NOT EXISTS vector;'
-      "
-
   minio:
     image: quay.io/minio/minio
     command: server /data --console-address ":9001"
@@ -95,16 +80,14 @@ services:
       - POSTGRES_DSN=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
     volumes:
       - bleve-index:/data/bleve
-      depends_on:
-        db:
-          condition: service_healthy
-        db-init:
-          condition: service_completed_successfully
-        minio:
-          condition: service_started
-        caddy:
-          condition: service_started
-        bleve-init:
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      caddy:
+        condition: service_started
+      bleve-init:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/healthcheck"]
@@ -124,12 +107,10 @@ services:
       - .env
     environment:
       - POSTGRES_DSN=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
-      depends_on:
-        db:
-          condition: service_healthy
-        db-init:
-          condition: service_completed_successfully
-        minio:
-          condition: service_started
-        app:
-          condition: service_healthy
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      app:
+        condition: service_healthy
