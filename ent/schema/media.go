@@ -43,5 +43,8 @@ func (Media) Edges() []ent.Edge {
 		edge.To("dates", Date.Type).
 			Through("media_dates", MediaDate.Type).
 			Comment("Date entries associated with the media item"),
+		edge.To("vectors", Vector.Type).
+			Through("media_vectors", MediaVector.Type).
+			Comment("Vector entries associated with the media item"),
 	}
 }

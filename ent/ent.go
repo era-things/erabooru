@@ -7,7 +7,9 @@ import (
 	"era/booru/ent/date"
 	"era/booru/ent/media"
 	"era/booru/ent/mediadate"
+	"era/booru/ent/mediavector"
 	"era/booru/ent/tag"
+	"era/booru/ent/vector"
 	"errors"
 	"fmt"
 	"reflect"
@@ -76,10 +78,12 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			date.Table:      date.ValidColumn,
-			media.Table:     media.ValidColumn,
-			mediadate.Table: mediadate.ValidColumn,
-			tag.Table:       tag.ValidColumn,
+			date.Table:        date.ValidColumn,
+			media.Table:       media.ValidColumn,
+			mediadate.Table:   mediadate.ValidColumn,
+			mediavector.Table: mediavector.ValidColumn,
+			tag.Table:         tag.ValidColumn,
+			vector.Table:      vector.ValidColumn,
 		})
 	})
 	return columnCheck(table, column)

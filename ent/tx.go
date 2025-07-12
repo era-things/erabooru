@@ -18,8 +18,12 @@ type Tx struct {
 	Media *MediaClient
 	// MediaDate is the client for interacting with the MediaDate builders.
 	MediaDate *MediaDateClient
+	// MediaVector is the client for interacting with the MediaVector builders.
+	MediaVector *MediaVectorClient
 	// Tag is the client for interacting with the Tag builders.
 	Tag *TagClient
+	// Vector is the client for interacting with the Vector builders.
+	Vector *VectorClient
 
 	// lazily loaded.
 	client     *Client
@@ -154,7 +158,9 @@ func (tx *Tx) init() {
 	tx.Date = NewDateClient(tx.config)
 	tx.Media = NewMediaClient(tx.config)
 	tx.MediaDate = NewMediaDateClient(tx.config)
+	tx.MediaVector = NewMediaVectorClient(tx.config)
 	tx.Tag = NewTagClient(tx.config)
+	tx.Vector = NewVectorClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.

@@ -325,6 +325,29 @@ func HasDatesWith(preds ...predicate.Date) predicate.Media {
 	})
 }
 
+// HasVectors applies the HasEdge predicate on the "vectors" edge.
+func HasVectors() predicate.Media {
+	return predicate.Media(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, false, VectorsTable, VectorsPrimaryKey...),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasVectorsWith applies the HasEdge predicate on the "vectors" edge with a given conditions (other predicates).
+func HasVectorsWith(preds ...predicate.Vector) predicate.Media {
+	return predicate.Media(func(s *sql.Selector) {
+		step := newVectorsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasMediaDates applies the HasEdge predicate on the "media_dates" edge.
 func HasMediaDates() predicate.Media {
 	return predicate.Media(func(s *sql.Selector) {
@@ -340,6 +363,29 @@ func HasMediaDates() predicate.Media {
 func HasMediaDatesWith(preds ...predicate.MediaDate) predicate.Media {
 	return predicate.Media(func(s *sql.Selector) {
 		step := newMediaDatesStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasMediaVectors applies the HasEdge predicate on the "media_vectors" edge.
+func HasMediaVectors() predicate.Media {
+	return predicate.Media(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, true, MediaVectorsTable, MediaVectorsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasMediaVectorsWith applies the HasEdge predicate on the "media_vectors" edge with a given conditions (other predicates).
+func HasMediaVectorsWith(preds ...predicate.MediaVector) predicate.Media {
+	return predicate.Media(func(s *sql.Selector) {
+		step := newMediaVectorsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

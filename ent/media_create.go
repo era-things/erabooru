@@ -7,7 +7,9 @@ import (
 	"era/booru/ent/date"
 	"era/booru/ent/media"
 	"era/booru/ent/mediadate"
+	"era/booru/ent/mediavector"
 	"era/booru/ent/tag"
+	"era/booru/ent/vector"
 	"errors"
 	"fmt"
 
@@ -90,6 +92,21 @@ func (mc *MediaCreate) AddDates(d ...*Date) *MediaCreate {
 	return mc.AddDateIDs(ids...)
 }
 
+// AddVectorIDs adds the "vectors" edge to the Vector entity by IDs.
+func (mc *MediaCreate) AddVectorIDs(ids ...int) *MediaCreate {
+	mc.mutation.AddVectorIDs(ids...)
+	return mc
+}
+
+// AddVectors adds the "vectors" edges to the Vector entity.
+func (mc *MediaCreate) AddVectors(v ...*Vector) *MediaCreate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return mc.AddVectorIDs(ids...)
+}
+
 // AddMediaDateIDs adds the "media_dates" edge to the MediaDate entity by IDs.
 func (mc *MediaCreate) AddMediaDateIDs(ids ...int) *MediaCreate {
 	mc.mutation.AddMediaDateIDs(ids...)
@@ -103,6 +120,21 @@ func (mc *MediaCreate) AddMediaDates(m ...*MediaDate) *MediaCreate {
 		ids[i] = m[i].ID
 	}
 	return mc.AddMediaDateIDs(ids...)
+}
+
+// AddMediaVectorIDs adds the "media_vectors" edge to the MediaVector entity by IDs.
+func (mc *MediaCreate) AddMediaVectorIDs(ids ...int) *MediaCreate {
+	mc.mutation.AddMediaVectorIDs(ids...)
+	return mc
+}
+
+// AddMediaVectors adds the "media_vectors" edges to the MediaVector entity.
+func (mc *MediaCreate) AddMediaVectors(m ...*MediaVector) *MediaCreate {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return mc.AddMediaVectorIDs(ids...)
 }
 
 // Mutation returns the MediaMutation object of the builder.
@@ -236,6 +268,22 @@ func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := mc.mutation.VectorsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.VectorsTable,
+			Columns: media.VectorsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(vector.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	if nodes := mc.mutation.MediaDatesIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -245,6 +293,22 @@ func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(mediadate.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := mc.mutation.MediaVectorsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaVectorsTable,
+			Columns: []string{media.MediaVectorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediavector.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
