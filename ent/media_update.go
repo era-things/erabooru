@@ -7,8 +7,10 @@ import (
 	"era/booru/ent/date"
 	"era/booru/ent/media"
 	"era/booru/ent/mediadate"
+	"era/booru/ent/mediavector"
 	"era/booru/ent/predicate"
 	"era/booru/ent/tag"
+	"era/booru/ent/vector"
 	"errors"
 	"fmt"
 
@@ -87,6 +89,21 @@ func (mu *MediaUpdate) AddDates(d ...*Date) *MediaUpdate {
 	return mu.AddDateIDs(ids...)
 }
 
+// AddVectorIDs adds the "vectors" edge to the Vector entity by IDs.
+func (mu *MediaUpdate) AddVectorIDs(ids ...int) *MediaUpdate {
+	mu.mutation.AddVectorIDs(ids...)
+	return mu
+}
+
+// AddVectors adds the "vectors" edges to the Vector entity.
+func (mu *MediaUpdate) AddVectors(v ...*Vector) *MediaUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return mu.AddVectorIDs(ids...)
+}
+
 // AddMediaDateIDs adds the "media_dates" edge to the MediaDate entity by IDs.
 func (mu *MediaUpdate) AddMediaDateIDs(ids ...int) *MediaUpdate {
 	mu.mutation.AddMediaDateIDs(ids...)
@@ -100,6 +117,21 @@ func (mu *MediaUpdate) AddMediaDates(m ...*MediaDate) *MediaUpdate {
 		ids[i] = m[i].ID
 	}
 	return mu.AddMediaDateIDs(ids...)
+}
+
+// AddMediaVectorIDs adds the "media_vectors" edge to the MediaVector entity by IDs.
+func (mu *MediaUpdate) AddMediaVectorIDs(ids ...int) *MediaUpdate {
+	mu.mutation.AddMediaVectorIDs(ids...)
+	return mu
+}
+
+// AddMediaVectors adds the "media_vectors" edges to the MediaVector entity.
+func (mu *MediaUpdate) AddMediaVectors(m ...*MediaVector) *MediaUpdate {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return mu.AddMediaVectorIDs(ids...)
 }
 
 // Mutation returns the MediaMutation object of the builder.
@@ -149,6 +181,27 @@ func (mu *MediaUpdate) RemoveDates(d ...*Date) *MediaUpdate {
 	return mu.RemoveDateIDs(ids...)
 }
 
+// ClearVectors clears all "vectors" edges to the Vector entity.
+func (mu *MediaUpdate) ClearVectors() *MediaUpdate {
+	mu.mutation.ClearVectors()
+	return mu
+}
+
+// RemoveVectorIDs removes the "vectors" edge to Vector entities by IDs.
+func (mu *MediaUpdate) RemoveVectorIDs(ids ...int) *MediaUpdate {
+	mu.mutation.RemoveVectorIDs(ids...)
+	return mu
+}
+
+// RemoveVectors removes "vectors" edges to Vector entities.
+func (mu *MediaUpdate) RemoveVectors(v ...*Vector) *MediaUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return mu.RemoveVectorIDs(ids...)
+}
+
 // ClearMediaDates clears all "media_dates" edges to the MediaDate entity.
 func (mu *MediaUpdate) ClearMediaDates() *MediaUpdate {
 	mu.mutation.ClearMediaDates()
@@ -168,6 +221,27 @@ func (mu *MediaUpdate) RemoveMediaDates(m ...*MediaDate) *MediaUpdate {
 		ids[i] = m[i].ID
 	}
 	return mu.RemoveMediaDateIDs(ids...)
+}
+
+// ClearMediaVectors clears all "media_vectors" edges to the MediaVector entity.
+func (mu *MediaUpdate) ClearMediaVectors() *MediaUpdate {
+	mu.mutation.ClearMediaVectors()
+	return mu
+}
+
+// RemoveMediaVectorIDs removes the "media_vectors" edge to MediaVector entities by IDs.
+func (mu *MediaUpdate) RemoveMediaVectorIDs(ids ...int) *MediaUpdate {
+	mu.mutation.RemoveMediaVectorIDs(ids...)
+	return mu
+}
+
+// RemoveMediaVectors removes "media_vectors" edges to MediaVector entities.
+func (mu *MediaUpdate) RemoveMediaVectors(m ...*MediaVector) *MediaUpdate {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return mu.RemoveMediaVectorIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -305,6 +379,51 @@ func (mu *MediaUpdate) sqlSave(ctx context.Context) (n int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if mu.mutation.VectorsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.VectorsTable,
+			Columns: media.VectorsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(vector.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := mu.mutation.RemovedVectorsIDs(); len(nodes) > 0 && !mu.mutation.VectorsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.VectorsTable,
+			Columns: media.VectorsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(vector.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := mu.mutation.VectorsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.VectorsTable,
+			Columns: media.VectorsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(vector.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if mu.mutation.MediaDatesCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -343,6 +462,51 @@ func (mu *MediaUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(mediadate.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if mu.mutation.MediaVectorsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaVectorsTable,
+			Columns: []string{media.MediaVectorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediavector.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := mu.mutation.RemovedMediaVectorsIDs(); len(nodes) > 0 && !mu.mutation.MediaVectorsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaVectorsTable,
+			Columns: []string{media.MediaVectorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediavector.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := mu.mutation.MediaVectorsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaVectorsTable,
+			Columns: []string{media.MediaVectorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediavector.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -427,6 +591,21 @@ func (muo *MediaUpdateOne) AddDates(d ...*Date) *MediaUpdateOne {
 	return muo.AddDateIDs(ids...)
 }
 
+// AddVectorIDs adds the "vectors" edge to the Vector entity by IDs.
+func (muo *MediaUpdateOne) AddVectorIDs(ids ...int) *MediaUpdateOne {
+	muo.mutation.AddVectorIDs(ids...)
+	return muo
+}
+
+// AddVectors adds the "vectors" edges to the Vector entity.
+func (muo *MediaUpdateOne) AddVectors(v ...*Vector) *MediaUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return muo.AddVectorIDs(ids...)
+}
+
 // AddMediaDateIDs adds the "media_dates" edge to the MediaDate entity by IDs.
 func (muo *MediaUpdateOne) AddMediaDateIDs(ids ...int) *MediaUpdateOne {
 	muo.mutation.AddMediaDateIDs(ids...)
@@ -440,6 +619,21 @@ func (muo *MediaUpdateOne) AddMediaDates(m ...*MediaDate) *MediaUpdateOne {
 		ids[i] = m[i].ID
 	}
 	return muo.AddMediaDateIDs(ids...)
+}
+
+// AddMediaVectorIDs adds the "media_vectors" edge to the MediaVector entity by IDs.
+func (muo *MediaUpdateOne) AddMediaVectorIDs(ids ...int) *MediaUpdateOne {
+	muo.mutation.AddMediaVectorIDs(ids...)
+	return muo
+}
+
+// AddMediaVectors adds the "media_vectors" edges to the MediaVector entity.
+func (muo *MediaUpdateOne) AddMediaVectors(m ...*MediaVector) *MediaUpdateOne {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return muo.AddMediaVectorIDs(ids...)
 }
 
 // Mutation returns the MediaMutation object of the builder.
@@ -489,6 +683,27 @@ func (muo *MediaUpdateOne) RemoveDates(d ...*Date) *MediaUpdateOne {
 	return muo.RemoveDateIDs(ids...)
 }
 
+// ClearVectors clears all "vectors" edges to the Vector entity.
+func (muo *MediaUpdateOne) ClearVectors() *MediaUpdateOne {
+	muo.mutation.ClearVectors()
+	return muo
+}
+
+// RemoveVectorIDs removes the "vectors" edge to Vector entities by IDs.
+func (muo *MediaUpdateOne) RemoveVectorIDs(ids ...int) *MediaUpdateOne {
+	muo.mutation.RemoveVectorIDs(ids...)
+	return muo
+}
+
+// RemoveVectors removes "vectors" edges to Vector entities.
+func (muo *MediaUpdateOne) RemoveVectors(v ...*Vector) *MediaUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return muo.RemoveVectorIDs(ids...)
+}
+
 // ClearMediaDates clears all "media_dates" edges to the MediaDate entity.
 func (muo *MediaUpdateOne) ClearMediaDates() *MediaUpdateOne {
 	muo.mutation.ClearMediaDates()
@@ -508,6 +723,27 @@ func (muo *MediaUpdateOne) RemoveMediaDates(m ...*MediaDate) *MediaUpdateOne {
 		ids[i] = m[i].ID
 	}
 	return muo.RemoveMediaDateIDs(ids...)
+}
+
+// ClearMediaVectors clears all "media_vectors" edges to the MediaVector entity.
+func (muo *MediaUpdateOne) ClearMediaVectors() *MediaUpdateOne {
+	muo.mutation.ClearMediaVectors()
+	return muo
+}
+
+// RemoveMediaVectorIDs removes the "media_vectors" edge to MediaVector entities by IDs.
+func (muo *MediaUpdateOne) RemoveMediaVectorIDs(ids ...int) *MediaUpdateOne {
+	muo.mutation.RemoveMediaVectorIDs(ids...)
+	return muo
+}
+
+// RemoveMediaVectors removes "media_vectors" edges to MediaVector entities.
+func (muo *MediaUpdateOne) RemoveMediaVectors(m ...*MediaVector) *MediaUpdateOne {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return muo.RemoveMediaVectorIDs(ids...)
 }
 
 // Where appends a list predicates to the MediaUpdate builder.
@@ -675,6 +911,51 @@ func (muo *MediaUpdateOne) sqlSave(ctx context.Context) (_node *Media, err error
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if muo.mutation.VectorsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.VectorsTable,
+			Columns: media.VectorsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(vector.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := muo.mutation.RemovedVectorsIDs(); len(nodes) > 0 && !muo.mutation.VectorsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.VectorsTable,
+			Columns: media.VectorsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(vector.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := muo.mutation.VectorsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   media.VectorsTable,
+			Columns: media.VectorsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(vector.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if muo.mutation.MediaDatesCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -713,6 +994,51 @@ func (muo *MediaUpdateOne) sqlSave(ctx context.Context) (_node *Media, err error
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(mediadate.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if muo.mutation.MediaVectorsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaVectorsTable,
+			Columns: []string{media.MediaVectorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediavector.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := muo.mutation.RemovedMediaVectorsIDs(); len(nodes) > 0 && !muo.mutation.MediaVectorsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaVectorsTable,
+			Columns: []string{media.MediaVectorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediavector.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := muo.mutation.MediaVectorsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   media.MediaVectorsTable,
+			Columns: []string{media.MediaVectorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediavector.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

@@ -44,6 +44,18 @@ func (f MediaDateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, e
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MediaDateMutation", m)
 }
 
+// The MediaVectorFunc type is an adapter to allow the use of ordinary
+// function as MediaVector mutator.
+type MediaVectorFunc func(context.Context, *ent.MediaVectorMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MediaVectorFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MediaVectorMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MediaVectorMutation", m)
+}
+
 // The TagFunc type is an adapter to allow the use of ordinary
 // function as Tag mutator.
 type TagFunc func(context.Context, *ent.TagMutation) (ent.Value, error)
@@ -54,6 +66,18 @@ func (f TagFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) 
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TagMutation", m)
+}
+
+// The VectorFunc type is an adapter to allow the use of ordinary
+// function as Vector mutator.
+type VectorFunc func(context.Context, *ent.VectorMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VectorFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VectorMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VectorMutation", m)
 }
 
 // Condition is a hook condition function.

@@ -37,11 +37,15 @@ type MediaEdges struct {
 	Tags []*Tag `json:"tags,omitempty"`
 	// Date entries associated with the media item
 	Dates []*Date `json:"dates,omitempty"`
+	// Vector entries associated with the media item
+	Vectors []*Vector `json:"vectors,omitempty"`
 	// MediaDates holds the value of the media_dates edge.
 	MediaDates []*MediaDate `json:"media_dates,omitempty"`
+	// MediaVectors holds the value of the media_vectors edge.
+	MediaVectors []*MediaVector `json:"media_vectors,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [5]bool
 }
 
 // TagsOrErr returns the Tags value or an error if the edge
@@ -62,13 +66,31 @@ func (e MediaEdges) DatesOrErr() ([]*Date, error) {
 	return nil, &NotLoadedError{edge: "dates"}
 }
 
+// VectorsOrErr returns the Vectors value or an error if the edge
+// was not loaded in eager-loading.
+func (e MediaEdges) VectorsOrErr() ([]*Vector, error) {
+	if e.loadedTypes[2] {
+		return e.Vectors, nil
+	}
+	return nil, &NotLoadedError{edge: "vectors"}
+}
+
 // MediaDatesOrErr returns the MediaDates value or an error if the edge
 // was not loaded in eager-loading.
 func (e MediaEdges) MediaDatesOrErr() ([]*MediaDate, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[3] {
 		return e.MediaDates, nil
 	}
 	return nil, &NotLoadedError{edge: "media_dates"}
+}
+
+// MediaVectorsOrErr returns the MediaVectors value or an error if the edge
+// was not loaded in eager-loading.
+func (e MediaEdges) MediaVectorsOrErr() ([]*MediaVector, error) {
+	if e.loadedTypes[4] {
+		return e.MediaVectors, nil
+	}
+	return nil, &NotLoadedError{edge: "media_vectors"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -149,9 +171,19 @@ func (m *Media) QueryDates() *DateQuery {
 	return NewMediaClient(m.config).QueryDates(m)
 }
 
+// QueryVectors queries the "vectors" edge of the Media entity.
+func (m *Media) QueryVectors() *VectorQuery {
+	return NewMediaClient(m.config).QueryVectors(m)
+}
+
 // QueryMediaDates queries the "media_dates" edge of the Media entity.
 func (m *Media) QueryMediaDates() *MediaDateQuery {
 	return NewMediaClient(m.config).QueryMediaDates(m)
+}
+
+// QueryMediaVectors queries the "media_vectors" edge of the Media entity.
+func (m *Media) QueryMediaVectors() *MediaVectorQuery {
+	return NewMediaClient(m.config).QueryMediaVectors(m)
 }
 
 // Update returns a builder for updating this Media.

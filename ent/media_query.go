@@ -8,8 +8,10 @@ import (
 	"era/booru/ent/date"
 	"era/booru/ent/media"
 	"era/booru/ent/mediadate"
+	"era/booru/ent/mediavector"
 	"era/booru/ent/predicate"
 	"era/booru/ent/tag"
+	"era/booru/ent/vector"
 	"fmt"
 	"math"
 
@@ -22,13 +24,15 @@ import (
 // MediaQuery is the builder for querying Media entities.
 type MediaQuery struct {
 	config
-	ctx            *QueryContext
-	order          []media.OrderOption
-	inters         []Interceptor
-	predicates     []predicate.Media
-	withTags       *TagQuery
-	withDates      *DateQuery
-	withMediaDates *MediaDateQuery
+	ctx              *QueryContext
+	order            []media.OrderOption
+	inters           []Interceptor
+	predicates       []predicate.Media
+	withTags         *TagQuery
+	withDates        *DateQuery
+	withVectors      *VectorQuery
+	withMediaDates   *MediaDateQuery
+	withMediaVectors *MediaVectorQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -109,6 +113,28 @@ func (mq *MediaQuery) QueryDates() *DateQuery {
 	return query
 }
 
+// QueryVectors chains the current query on the "vectors" edge.
+func (mq *MediaQuery) QueryVectors() *VectorQuery {
+	query := (&VectorClient{config: mq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := mq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := mq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(media.Table, media.FieldID, selector),
+			sqlgraph.To(vector.Table, vector.FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, false, media.VectorsTable, media.VectorsPrimaryKey...),
+		)
+		fromU = sqlgraph.SetNeighbors(mq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
 // QueryMediaDates chains the current query on the "media_dates" edge.
 func (mq *MediaQuery) QueryMediaDates() *MediaDateQuery {
 	query := (&MediaDateClient{config: mq.config}).Query()
@@ -124,6 +150,28 @@ func (mq *MediaQuery) QueryMediaDates() *MediaDateQuery {
 			sqlgraph.From(media.Table, media.FieldID, selector),
 			sqlgraph.To(mediadate.Table, mediadate.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, true, media.MediaDatesTable, media.MediaDatesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(mq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryMediaVectors chains the current query on the "media_vectors" edge.
+func (mq *MediaQuery) QueryMediaVectors() *MediaVectorQuery {
+	query := (&MediaVectorClient{config: mq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := mq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := mq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(media.Table, media.FieldID, selector),
+			sqlgraph.To(mediavector.Table, mediavector.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, true, media.MediaVectorsTable, media.MediaVectorsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(mq.driver.Dialect(), step)
 		return fromU, nil
@@ -318,14 +366,16 @@ func (mq *MediaQuery) Clone() *MediaQuery {
 		return nil
 	}
 	return &MediaQuery{
-		config:         mq.config,
-		ctx:            mq.ctx.Clone(),
-		order:          append([]media.OrderOption{}, mq.order...),
-		inters:         append([]Interceptor{}, mq.inters...),
-		predicates:     append([]predicate.Media{}, mq.predicates...),
-		withTags:       mq.withTags.Clone(),
-		withDates:      mq.withDates.Clone(),
-		withMediaDates: mq.withMediaDates.Clone(),
+		config:           mq.config,
+		ctx:              mq.ctx.Clone(),
+		order:            append([]media.OrderOption{}, mq.order...),
+		inters:           append([]Interceptor{}, mq.inters...),
+		predicates:       append([]predicate.Media{}, mq.predicates...),
+		withTags:         mq.withTags.Clone(),
+		withDates:        mq.withDates.Clone(),
+		withVectors:      mq.withVectors.Clone(),
+		withMediaDates:   mq.withMediaDates.Clone(),
+		withMediaVectors: mq.withMediaVectors.Clone(),
 		// clone intermediate query.
 		sql:  mq.sql.Clone(),
 		path: mq.path,
@@ -354,6 +404,17 @@ func (mq *MediaQuery) WithDates(opts ...func(*DateQuery)) *MediaQuery {
 	return mq
 }
 
+// WithVectors tells the query-builder to eager-load the nodes that are connected to
+// the "vectors" edge. The optional arguments are used to configure the query builder of the edge.
+func (mq *MediaQuery) WithVectors(opts ...func(*VectorQuery)) *MediaQuery {
+	query := (&VectorClient{config: mq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	mq.withVectors = query
+	return mq
+}
+
 // WithMediaDates tells the query-builder to eager-load the nodes that are connected to
 // the "media_dates" edge. The optional arguments are used to configure the query builder of the edge.
 func (mq *MediaQuery) WithMediaDates(opts ...func(*MediaDateQuery)) *MediaQuery {
@@ -362,6 +423,17 @@ func (mq *MediaQuery) WithMediaDates(opts ...func(*MediaDateQuery)) *MediaQuery 
 		opt(query)
 	}
 	mq.withMediaDates = query
+	return mq
+}
+
+// WithMediaVectors tells the query-builder to eager-load the nodes that are connected to
+// the "media_vectors" edge. The optional arguments are used to configure the query builder of the edge.
+func (mq *MediaQuery) WithMediaVectors(opts ...func(*MediaVectorQuery)) *MediaQuery {
+	query := (&MediaVectorClient{config: mq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	mq.withMediaVectors = query
 	return mq
 }
 
@@ -443,10 +515,12 @@ func (mq *MediaQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Media,
 	var (
 		nodes       = []*Media{}
 		_spec       = mq.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [5]bool{
 			mq.withTags != nil,
 			mq.withDates != nil,
+			mq.withVectors != nil,
 			mq.withMediaDates != nil,
+			mq.withMediaVectors != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -481,10 +555,24 @@ func (mq *MediaQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Media,
 			return nil, err
 		}
 	}
+	if query := mq.withVectors; query != nil {
+		if err := mq.loadVectors(ctx, query, nodes,
+			func(n *Media) { n.Edges.Vectors = []*Vector{} },
+			func(n *Media, e *Vector) { n.Edges.Vectors = append(n.Edges.Vectors, e) }); err != nil {
+			return nil, err
+		}
+	}
 	if query := mq.withMediaDates; query != nil {
 		if err := mq.loadMediaDates(ctx, query, nodes,
 			func(n *Media) { n.Edges.MediaDates = []*MediaDate{} },
 			func(n *Media, e *MediaDate) { n.Edges.MediaDates = append(n.Edges.MediaDates, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := mq.withMediaVectors; query != nil {
+		if err := mq.loadMediaVectors(ctx, query, nodes,
+			func(n *Media) { n.Edges.MediaVectors = []*MediaVector{} },
+			func(n *Media, e *MediaVector) { n.Edges.MediaVectors = append(n.Edges.MediaVectors, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -613,6 +701,67 @@ func (mq *MediaQuery) loadDates(ctx context.Context, query *DateQuery, nodes []*
 	}
 	return nil
 }
+func (mq *MediaQuery) loadVectors(ctx context.Context, query *VectorQuery, nodes []*Media, init func(*Media), assign func(*Media, *Vector)) error {
+	edgeIDs := make([]driver.Value, len(nodes))
+	byID := make(map[string]*Media)
+	nids := make(map[int]map[*Media]struct{})
+	for i, node := range nodes {
+		edgeIDs[i] = node.ID
+		byID[node.ID] = node
+		if init != nil {
+			init(node)
+		}
+	}
+	query.Where(func(s *sql.Selector) {
+		joinT := sql.Table(media.VectorsTable)
+		s.Join(joinT).On(s.C(vector.FieldID), joinT.C(media.VectorsPrimaryKey[1]))
+		s.Where(sql.InValues(joinT.C(media.VectorsPrimaryKey[0]), edgeIDs...))
+		columns := s.SelectedColumns()
+		s.Select(joinT.C(media.VectorsPrimaryKey[0]))
+		s.AppendSelect(columns...)
+		s.SetDistinct(false)
+	})
+	if err := query.prepareQuery(ctx); err != nil {
+		return err
+	}
+	qr := QuerierFunc(func(ctx context.Context, q Query) (Value, error) {
+		return query.sqlAll(ctx, func(_ context.Context, spec *sqlgraph.QuerySpec) {
+			assign := spec.Assign
+			values := spec.ScanValues
+			spec.ScanValues = func(columns []string) ([]any, error) {
+				values, err := values(columns[1:])
+				if err != nil {
+					return nil, err
+				}
+				return append([]any{new(sql.NullString)}, values...), nil
+			}
+			spec.Assign = func(columns []string, values []any) error {
+				outValue := values[0].(*sql.NullString).String
+				inValue := int(values[1].(*sql.NullInt64).Int64)
+				if nids[inValue] == nil {
+					nids[inValue] = map[*Media]struct{}{byID[outValue]: {}}
+					return assign(columns[1:], values[1:])
+				}
+				nids[inValue][byID[outValue]] = struct{}{}
+				return nil
+			}
+		})
+	})
+	neighbors, err := withInterceptors[[]*Vector](ctx, query, qr, query.inters)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected "vectors" node returned %v`, n.ID)
+		}
+		for kn := range nodes {
+			assign(kn, n)
+		}
+	}
+	return nil
+}
 func (mq *MediaQuery) loadMediaDates(ctx context.Context, query *MediaDateQuery, nodes []*Media, init func(*Media), assign func(*Media, *MediaDate)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[string]*Media)
@@ -628,6 +777,36 @@ func (mq *MediaQuery) loadMediaDates(ctx context.Context, query *MediaDateQuery,
 	}
 	query.Where(predicate.MediaDate(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(media.MediaDatesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.MediaID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "media_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (mq *MediaQuery) loadMediaVectors(ctx context.Context, query *MediaVectorQuery, nodes []*Media, init func(*Media), assign func(*Media, *MediaVector)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[string]*Media)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(mediavector.FieldMediaID)
+	}
+	query.Where(predicate.MediaVector(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(media.MediaVectorsColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

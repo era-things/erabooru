@@ -55,7 +55,7 @@ prod-pull:
 # ──────────────────────────────────────────
 .PHONY: generate
 generate:
-	$(GO) generate ./ent
+	$(GO) run -mod=mod entgo.io/ent/cmd/ent generate ./ent/schema --feature sql/execquery
 
 .PHONY: vet test
 vet:

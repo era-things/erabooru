@@ -16,6 +16,8 @@ import (
 	"era/booru/internal/minio"
 	"era/booru/internal/search"
 
+	pgvector "github.com/pgvector/pgvector-go"
+
 	"github.com/gin-gonic/gin"
 	mc "github.com/minio/minio-go/v7"
 )
@@ -27,6 +29,7 @@ func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *co
 	r.POST("/api/media/upload-url", uploadURLHandler(m, cfg))
 	r.POST("/api/media/:id/tags", updateMediaTagsHandler(db))
 	r.POST("/api/media/:id/dates", updateMediaDatesHandler(db))
+	r.POST("/api/media/:id/vectors", updateMediaVectorsHandler(db))
 	r.DELETE("/api/media/:id", deleteMediaHandler(db, m))
 }
 
@@ -227,6 +230,38 @@ func updateMediaDatesHandler(dbClient *ent.Client) gin.HandlerFunc {
 
 		if err := db.SetMediaDates(c.Request.Context(), dbClient, id, vals); err != nil {
 			log.Printf("update media dates %s: %v", id, err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		c.Status(http.StatusOK)
+	}
+}
+
+func updateMediaVectorsHandler(dbClient *ent.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := idParam(c)
+		if !ok {
+			return
+		}
+
+		var body struct {
+			Vectors []struct {
+				Name  string    `json:"name"`
+				Value []float32 `json:"value"`
+			} `json:"vectors"`
+		}
+		if err := c.BindJSON(&body); err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		vals := make([]db.VectorValue, 0, len(body.Vectors))
+		for _, v := range body.Vectors {
+			vals = append(vals, db.VectorValue{Name: v.Name, Value: pgvector.NewVector(v.Value)})
+		}
+
+		if err := db.SetMediaVectors(c.Request.Context(), dbClient, id, vals); err != nil {
+			log.Printf("update media vectors %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}

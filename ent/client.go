@@ -14,12 +14,16 @@ import (
 	"era/booru/ent/date"
 	"era/booru/ent/media"
 	"era/booru/ent/mediadate"
+	"era/booru/ent/mediavector"
 	"era/booru/ent/tag"
+	"era/booru/ent/vector"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+
+	stdsql "database/sql"
 )
 
 // Client is the client that holds all ent builders.
@@ -33,8 +37,12 @@ type Client struct {
 	Media *MediaClient
 	// MediaDate is the client for interacting with the MediaDate builders.
 	MediaDate *MediaDateClient
+	// MediaVector is the client for interacting with the MediaVector builders.
+	MediaVector *MediaVectorClient
 	// Tag is the client for interacting with the Tag builders.
 	Tag *TagClient
+	// Vector is the client for interacting with the Vector builders.
+	Vector *VectorClient
 }
 
 // NewClient creates a new client configured with the given options.
@@ -49,7 +57,9 @@ func (c *Client) init() {
 	c.Date = NewDateClient(c.config)
 	c.Media = NewMediaClient(c.config)
 	c.MediaDate = NewMediaDateClient(c.config)
+	c.MediaVector = NewMediaVectorClient(c.config)
 	c.Tag = NewTagClient(c.config)
+	c.Vector = NewVectorClient(c.config)
 }
 
 type (
@@ -140,12 +150,14 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:       ctx,
-		config:    cfg,
-		Date:      NewDateClient(cfg),
-		Media:     NewMediaClient(cfg),
-		MediaDate: NewMediaDateClient(cfg),
-		Tag:       NewTagClient(cfg),
+		ctx:         ctx,
+		config:      cfg,
+		Date:        NewDateClient(cfg),
+		Media:       NewMediaClient(cfg),
+		MediaDate:   NewMediaDateClient(cfg),
+		MediaVector: NewMediaVectorClient(cfg),
+		Tag:         NewTagClient(cfg),
+		Vector:      NewVectorClient(cfg),
 	}, nil
 }
 
@@ -163,12 +175,14 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:       ctx,
-		config:    cfg,
-		Date:      NewDateClient(cfg),
-		Media:     NewMediaClient(cfg),
-		MediaDate: NewMediaDateClient(cfg),
-		Tag:       NewTagClient(cfg),
+		ctx:         ctx,
+		config:      cfg,
+		Date:        NewDateClient(cfg),
+		Media:       NewMediaClient(cfg),
+		MediaDate:   NewMediaDateClient(cfg),
+		MediaVector: NewMediaVectorClient(cfg),
+		Tag:         NewTagClient(cfg),
+		Vector:      NewVectorClient(cfg),
 	}, nil
 }
 
@@ -197,19 +211,21 @@ func (c *Client) Close() error {
 // Use adds the mutation hooks to all the entity clients.
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
-	c.Date.Use(hooks...)
-	c.Media.Use(hooks...)
-	c.MediaDate.Use(hooks...)
-	c.Tag.Use(hooks...)
+	for _, n := range []interface{ Use(...Hook) }{
+		c.Date, c.Media, c.MediaDate, c.MediaVector, c.Tag, c.Vector,
+	} {
+		n.Use(hooks...)
+	}
 }
 
 // Intercept adds the query interceptors to all the entity clients.
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
-	c.Date.Intercept(interceptors...)
-	c.Media.Intercept(interceptors...)
-	c.MediaDate.Intercept(interceptors...)
-	c.Tag.Intercept(interceptors...)
+	for _, n := range []interface{ Intercept(...Interceptor) }{
+		c.Date, c.Media, c.MediaDate, c.MediaVector, c.Tag, c.Vector,
+	} {
+		n.Intercept(interceptors...)
+	}
 }
 
 // Mutate implements the ent.Mutator interface.
@@ -221,8 +237,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Media.mutate(ctx, m)
 	case *MediaDateMutation:
 		return c.MediaDate.mutate(ctx, m)
+	case *MediaVectorMutation:
+		return c.MediaVector.mutate(ctx, m)
 	case *TagMutation:
 		return c.Tag.mutate(ctx, m)
+	case *VectorMutation:
+		return c.Vector.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
 	}
@@ -533,6 +553,22 @@ func (c *MediaClient) QueryDates(m *Media) *DateQuery {
 	return query
 }
 
+// QueryVectors queries the vectors edge of a Media.
+func (c *MediaClient) QueryVectors(m *Media) *VectorQuery {
+	query := (&VectorClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(media.Table, media.FieldID, id),
+			sqlgraph.To(vector.Table, vector.FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, false, media.VectorsTable, media.VectorsPrimaryKey...),
+		)
+		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryMediaDates queries the media_dates edge of a Media.
 func (c *MediaClient) QueryMediaDates(m *Media) *MediaDateQuery {
 	query := (&MediaDateClient{config: c.config}).Query()
@@ -542,6 +578,22 @@ func (c *MediaClient) QueryMediaDates(m *Media) *MediaDateQuery {
 			sqlgraph.From(media.Table, media.FieldID, id),
 			sqlgraph.To(mediadate.Table, mediadate.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, true, media.MediaDatesTable, media.MediaDatesColumn),
+		)
+		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMediaVectors queries the media_vectors edge of a Media.
+func (c *MediaClient) QueryMediaVectors(m *Media) *MediaVectorQuery {
+	query := (&MediaVectorClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(media.Table, media.FieldID, id),
+			sqlgraph.To(mediavector.Table, mediavector.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, true, media.MediaVectorsTable, media.MediaVectorsColumn),
 		)
 		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
 		return fromV, nil
@@ -739,6 +791,171 @@ func (c *MediaDateClient) mutate(ctx context.Context, m *MediaDateMutation) (Val
 	}
 }
 
+// MediaVectorClient is a client for the MediaVector schema.
+type MediaVectorClient struct {
+	config
+}
+
+// NewMediaVectorClient returns a client for the MediaVector from the given config.
+func NewMediaVectorClient(c config) *MediaVectorClient {
+	return &MediaVectorClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `mediavector.Hooks(f(g(h())))`.
+func (c *MediaVectorClient) Use(hooks ...Hook) {
+	c.hooks.MediaVector = append(c.hooks.MediaVector, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `mediavector.Intercept(f(g(h())))`.
+func (c *MediaVectorClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MediaVector = append(c.inters.MediaVector, interceptors...)
+}
+
+// Create returns a builder for creating a MediaVector entity.
+func (c *MediaVectorClient) Create() *MediaVectorCreate {
+	mutation := newMediaVectorMutation(c.config, OpCreate)
+	return &MediaVectorCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MediaVector entities.
+func (c *MediaVectorClient) CreateBulk(builders ...*MediaVectorCreate) *MediaVectorCreateBulk {
+	return &MediaVectorCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MediaVectorClient) MapCreateBulk(slice any, setFunc func(*MediaVectorCreate, int)) *MediaVectorCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MediaVectorCreateBulk{err: fmt.Errorf("calling to MediaVectorClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MediaVectorCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MediaVectorCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MediaVector.
+func (c *MediaVectorClient) Update() *MediaVectorUpdate {
+	mutation := newMediaVectorMutation(c.config, OpUpdate)
+	return &MediaVectorUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MediaVectorClient) UpdateOne(mv *MediaVector) *MediaVectorUpdateOne {
+	mutation := newMediaVectorMutation(c.config, OpUpdateOne, withMediaVector(mv))
+	return &MediaVectorUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MediaVectorClient) UpdateOneID(id int) *MediaVectorUpdateOne {
+	mutation := newMediaVectorMutation(c.config, OpUpdateOne, withMediaVectorID(id))
+	return &MediaVectorUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MediaVector.
+func (c *MediaVectorClient) Delete() *MediaVectorDelete {
+	mutation := newMediaVectorMutation(c.config, OpDelete)
+	return &MediaVectorDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MediaVectorClient) DeleteOne(mv *MediaVector) *MediaVectorDeleteOne {
+	return c.DeleteOneID(mv.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MediaVectorClient) DeleteOneID(id int) *MediaVectorDeleteOne {
+	builder := c.Delete().Where(mediavector.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MediaVectorDeleteOne{builder}
+}
+
+// Query returns a query builder for MediaVector.
+func (c *MediaVectorClient) Query() *MediaVectorQuery {
+	return &MediaVectorQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMediaVector},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MediaVector entity by its id.
+func (c *MediaVectorClient) Get(ctx context.Context, id int) (*MediaVector, error) {
+	return c.Query().Where(mediavector.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MediaVectorClient) GetX(ctx context.Context, id int) *MediaVector {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryMedia queries the media edge of a MediaVector.
+func (c *MediaVectorClient) QueryMedia(mv *MediaVector) *MediaQuery {
+	query := (&MediaClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := mv.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mediavector.Table, mediavector.FieldID, id),
+			sqlgraph.To(media.Table, media.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, mediavector.MediaTable, mediavector.MediaColumn),
+		)
+		fromV = sqlgraph.Neighbors(mv.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryVector queries the vector edge of a MediaVector.
+func (c *MediaVectorClient) QueryVector(mv *MediaVector) *VectorQuery {
+	query := (&VectorClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := mv.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mediavector.Table, mediavector.FieldID, id),
+			sqlgraph.To(vector.Table, vector.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, mediavector.VectorTable, mediavector.VectorColumn),
+		)
+		fromV = sqlgraph.Neighbors(mv.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MediaVectorClient) Hooks() []Hook {
+	return c.hooks.MediaVector
+}
+
+// Interceptors returns the client interceptors.
+func (c *MediaVectorClient) Interceptors() []Interceptor {
+	return c.inters.MediaVector
+}
+
+func (c *MediaVectorClient) mutate(ctx context.Context, m *MediaVectorMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MediaVectorCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MediaVectorUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MediaVectorUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MediaVectorDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MediaVector mutation op: %q", m.Op())
+	}
+}
+
 // TagClient is a client for the Tag schema.
 type TagClient struct {
 	config
@@ -888,12 +1105,201 @@ func (c *TagClient) mutate(ctx context.Context, m *TagMutation) (Value, error) {
 	}
 }
 
+// VectorClient is a client for the Vector schema.
+type VectorClient struct {
+	config
+}
+
+// NewVectorClient returns a client for the Vector from the given config.
+func NewVectorClient(c config) *VectorClient {
+	return &VectorClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `vector.Hooks(f(g(h())))`.
+func (c *VectorClient) Use(hooks ...Hook) {
+	c.hooks.Vector = append(c.hooks.Vector, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `vector.Intercept(f(g(h())))`.
+func (c *VectorClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Vector = append(c.inters.Vector, interceptors...)
+}
+
+// Create returns a builder for creating a Vector entity.
+func (c *VectorClient) Create() *VectorCreate {
+	mutation := newVectorMutation(c.config, OpCreate)
+	return &VectorCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Vector entities.
+func (c *VectorClient) CreateBulk(builders ...*VectorCreate) *VectorCreateBulk {
+	return &VectorCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *VectorClient) MapCreateBulk(slice any, setFunc func(*VectorCreate, int)) *VectorCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &VectorCreateBulk{err: fmt.Errorf("calling to VectorClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*VectorCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &VectorCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Vector.
+func (c *VectorClient) Update() *VectorUpdate {
+	mutation := newVectorMutation(c.config, OpUpdate)
+	return &VectorUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *VectorClient) UpdateOne(v *Vector) *VectorUpdateOne {
+	mutation := newVectorMutation(c.config, OpUpdateOne, withVector(v))
+	return &VectorUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *VectorClient) UpdateOneID(id int) *VectorUpdateOne {
+	mutation := newVectorMutation(c.config, OpUpdateOne, withVectorID(id))
+	return &VectorUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Vector.
+func (c *VectorClient) Delete() *VectorDelete {
+	mutation := newVectorMutation(c.config, OpDelete)
+	return &VectorDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *VectorClient) DeleteOne(v *Vector) *VectorDeleteOne {
+	return c.DeleteOneID(v.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *VectorClient) DeleteOneID(id int) *VectorDeleteOne {
+	builder := c.Delete().Where(vector.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &VectorDeleteOne{builder}
+}
+
+// Query returns a query builder for Vector.
+func (c *VectorClient) Query() *VectorQuery {
+	return &VectorQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeVector},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Vector entity by its id.
+func (c *VectorClient) Get(ctx context.Context, id int) (*Vector, error) {
+	return c.Query().Where(vector.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *VectorClient) GetX(ctx context.Context, id int) *Vector {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryMedia queries the media edge of a Vector.
+func (c *VectorClient) QueryMedia(v *Vector) *MediaQuery {
+	query := (&MediaClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := v.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(vector.Table, vector.FieldID, id),
+			sqlgraph.To(media.Table, media.FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, true, vector.MediaTable, vector.MediaPrimaryKey...),
+		)
+		fromV = sqlgraph.Neighbors(v.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMediaVectors queries the media_vectors edge of a Vector.
+func (c *VectorClient) QueryMediaVectors(v *Vector) *MediaVectorQuery {
+	query := (&MediaVectorClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := v.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(vector.Table, vector.FieldID, id),
+			sqlgraph.To(mediavector.Table, mediavector.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, true, vector.MediaVectorsTable, vector.MediaVectorsColumn),
+		)
+		fromV = sqlgraph.Neighbors(v.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *VectorClient) Hooks() []Hook {
+	return c.hooks.Vector
+}
+
+// Interceptors returns the client interceptors.
+func (c *VectorClient) Interceptors() []Interceptor {
+	return c.inters.Vector
+}
+
+func (c *VectorClient) mutate(ctx context.Context, m *VectorMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&VectorCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&VectorUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&VectorUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&VectorDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Vector mutation op: %q", m.Op())
+	}
+}
+
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Date, Media, MediaDate, Tag []ent.Hook
+		Date, Media, MediaDate, MediaVector, Tag, Vector []ent.Hook
 	}
 	inters struct {
-		Date, Media, MediaDate, Tag []ent.Interceptor
+		Date, Media, MediaDate, MediaVector, Tag, Vector []ent.Interceptor
 	}
 )
+
+// ExecContext allows calling the underlying ExecContext method of the driver if it is supported by it.
+// See, database/sql#DB.ExecContext for more information.
+func (c *config) ExecContext(ctx context.Context, query string, args ...any) (stdsql.Result, error) {
+	ex, ok := c.driver.(interface {
+		ExecContext(context.Context, string, ...any) (stdsql.Result, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("Driver.ExecContext is not supported")
+	}
+	return ex.ExecContext(ctx, query, args...)
+}
+
+// QueryContext allows calling the underlying QueryContext method of the driver if it is supported by it.
+// See, database/sql#DB.QueryContext for more information.
+func (c *config) QueryContext(ctx context.Context, query string, args ...any) (*stdsql.Rows, error) {
+	q, ok := c.driver.(interface {
+		QueryContext(context.Context, string, ...any) (*stdsql.Rows, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("Driver.QueryContext is not supported")
+	}
+	return q.QueryContext(ctx, query, args...)
+}
