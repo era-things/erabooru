@@ -25,6 +25,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/RoaringBitmap/roaring/v2 v2.4.5 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
+	github.com/apache/arrow/go/arrow v0.0.0-20201229220542-30ce2eb5d4dc // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/bits-and-blooms/bitset v1.22.0 // indirect
 	github.com/blevesearch/bleve_index_api v1.2.8 // indirect
@@ -48,11 +49,14 @@ require (
 	github.com/bytedance/sonic v1.13.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
+	github.com/chewxy/hm v1.0.0 // indirect
+	github.com/chewxy/math32 v1.0.8 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/disintegration/imaging v1.6.2 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/docker v28.0.1+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
@@ -74,10 +78,12 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
+	github.com/google/flatbuffers v1.12.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1 // indirect
 	github.com/hashicorp/hcl/v2 v2.23.0 // indirect
+	github.com/ivansuteja96/go-onnxruntime v1.2.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
@@ -124,6 +130,7 @@ require (
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.14 // indirect
+	github.com/xtgo/set v1.0.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zclconf/go-cty v1.16.2 // indirect
 	github.com/zclconf/go-cty-yaml v1.1.0 // indirect
@@ -135,15 +142,22 @@ require (
 	go.opentelemetry.io/otel/sdk v1.35.0 // indirect
 	go.opentelemetry.io/otel/trace v1.35.0 // indirect
 	go.uber.org/goleak v1.3.0 // indirect
+	go4.org/unsafe/assume-no-moving-gc v0.0.0-20220617031537-928513b29760 // indirect
 	golang.org/x/arch v0.17.0 // indirect
 	golang.org/x/crypto v0.38.0 // indirect
+	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
 	golang.org/x/mod v0.25.0 // indirect
 	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/sync v0.15.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.26.0 // indirect
 	golang.org/x/tools v0.33.0 // indirect
+	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
+	gonum.org/v1/gonum v0.8.2 // indirect
 	google.golang.org/grpc v1.73.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	gorgonia.org/tensor v0.9.24 // indirect
+	gorgonia.org/vecf32 v0.9.0 // indirect
+	gorgonia.org/vecf64 v0.9.0 // indirect
 )
