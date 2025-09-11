@@ -13,8 +13,9 @@ import (
 type ClientType string
 
 const (
-	ClientTypeServer      ClientType = "server"
-	ClientTypeMediaWorker ClientType = "worker"
+	ClientTypeServer         ClientType = "server"
+	ClientTypeMediaWorker    ClientType = "worker"
+	ClientTypeImageEmbWorker ClientType = "image_embed_worker"
 )
 
 // NewClient creates a River client using the provided database pool and workers.
@@ -52,6 +53,13 @@ func getConfigForClientType(clientType ClientType, workers *river.Workers) *rive
 			},
 			Workers: workers, // Add this line!
 		}).WithDefaults()
+	case ClientTypeImageEmbWorker:
+		return (&river.Config{
+			Queues: map[string]river.QueueConfig{
+				"embed": {MaxWorkers: 3},
+			},
+			Workers: workers,
+		}).WithDefaults()
 	default:
 		return &river.Config{
 			Workers: workers, // Add this line!
@@ -68,6 +76,8 @@ func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) e
 		queueName = "process" // Goes to media worker
 	case IndexArgs:
 		queueName = "index" // Goes to server
+	case EmbedArgs:
+		queueName = "embed" // Goes to image embed worker
 	default:
 		queueName = "" // Default queue
 	}
@@ -102,3 +112,10 @@ type IndexArgs struct {
 }
 
 func (IndexArgs) Kind() string { return "index_media" }
+
+type EmbedArgs struct {
+	Bucket string `json:"bucket"`
+	Key    string `json:"key"`
+}
+
+func (EmbedArgs) Kind() string { return "embed_media" }
