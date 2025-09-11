@@ -14,35 +14,35 @@ var (
 	dynSess *ort.DynamicAdvancedSession
 )
 
-// Load must be called exactly once (e.g. from main).
-// dir → absolute path that contains vision_model_int8.onnx
+// Load must be called once (e.g. from main). dir contains vision_model_int8.onnx
 func Load(dir string) error {
 	once.Do(func() {
-		/* ①  initialise the global ORT runtime if it isn’t already */
+		// init the global ORT environment once
 		if !ort.IsInitialized() {
 			if err := ort.InitializeEnvironment(); err != nil {
 				loadErr = err
 				return
 			}
+			// optional: lower ORT logging noise
+			_ = ort.SetEnvironmentLogLevel(ort.LoggingLevelError)
 		}
 
-		/* ②  read the model bytes */
+		// read model bytes
 		onx, err := os.ReadFile(filepath.Join(dir, "vision_model_int8.onnx"))
 		if err != nil {
 			loadErr = err
 			return
 		}
 
-		/* ③  build a DynamicAdvancedSession (no env argument) */
+		// create a dynamic session; change output name if your model differs
 		dynSess, loadErr = ort.NewDynamicAdvancedSessionWithONNXData(
 			onx,
-			[]string{"pixel_values"},      // inputs
-			[]string{"last_hidden_state"}, // outputs
+			[]string{"pixel_values"},      // input
+			[]string{"last_hidden_state"}, // output (sometimes "image_embeds")
 			nil,                           // default SessionOptions
 		)
 	})
 	return loadErr
 }
 
-// Session gives access to the singleton session after Load().
 func Session() *ort.DynamicAdvancedSession { return dynSess }
