@@ -66,6 +66,14 @@ func main() {
 		DB: database,
 	})
 
+	// Register the embed job kind so this worker can enqueue embed tasks
+	// without importing the full embed worker implementation (and its CGO
+	// dependencies). The media worker never handles these jobs directly; they
+	// are picked up by the dedicated embed worker process.
+	river.AddWorker(workers, river.WorkFunc(func(ctx context.Context, job *river.Job[queue.EmbedArgs]) error {
+		return nil
+	}))
+
 	// Start processing
 	if err := client.Start(ctx); err != nil {
 		log.Fatal(err)
