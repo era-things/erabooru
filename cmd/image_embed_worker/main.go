@@ -12,7 +12,7 @@ import (
 	embed "era/booru/internal/embeddings"
 	"era/booru/internal/minio"
 	"era/booru/internal/queue"
-	qworkers "era/booru/internal/queue/workers"
+	embedworker "era/booru/internal/workers/embedworker"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
@@ -57,7 +57,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	river.AddWorker(workers, &qworkers.ImageEmbedWorker{Minio: m, DB: database})
+	river.AddWorker(workers, &embedworker.ImageEmbedWorker{Minio: m, DB: database})
 
 	if err := client.Start(ctx); err != nil {
 		log.Fatal(err)
