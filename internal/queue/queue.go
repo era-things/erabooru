@@ -44,14 +44,14 @@ func getConfigForClientType(clientType ClientType, workers *river.Workers) *rive
 			Queues: map[string]river.QueueConfig{
 				"index": {MaxWorkers: 3},
 			},
-			Workers: workers, // Add this line!
+			Workers: workers,
 		}).WithDefaults()
 	case ClientTypeMediaWorker:
 		return (&river.Config{
 			Queues: map[string]river.QueueConfig{
 				"process": {MaxWorkers: 3},
 			},
-			Workers: workers, // Add this line!
+			Workers: workers,
 		}).WithDefaults()
 	case ClientTypeImageEmbWorker:
 		return (&river.Config{
@@ -62,7 +62,7 @@ func getConfigForClientType(clientType ClientType, workers *river.Workers) *rive
 		}).WithDefaults()
 	default:
 		return &river.Config{
-			Workers: workers, // Add this line!
+			Workers: workers,
 		}
 	}
 }
