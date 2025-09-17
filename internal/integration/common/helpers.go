@@ -18,7 +18,8 @@ import (
 	"era/booru/internal/db"
 	"era/booru/internal/minio"
 	"era/booru/internal/queue"
-	qworkers "era/booru/internal/queue/workers"
+	indexworker "era/booru/internal/workers/indexworker"
+	mediaworker "era/booru/internal/workers/mediaworker"
 )
 
 // ParseExport decompresses the provided gzip data and decodes the exported items.
@@ -89,12 +90,12 @@ func StartMediaWorker(t testing.TB, ctx context.Context, cfg *config.Config) *Me
 		t.Fatalf("minio: %v", err)
 	}
 
-	river.AddWorker(workers, &qworkers.ProcessWorker{
+	river.AddWorker(workers, &mediaworker.ProcessWorker{
 		Minio: m,
 		DB:    database,
 		Cfg:   cfg,
 	})
-	river.AddWorker(workers, &qworkers.IndexWorker{DB: database})
+	river.AddWorker(workers, &indexworker.IndexWorker{DB: database})
 
 	if err := client.Start(ctx); err != nil {
 		t.Fatalf("river start: %v", err)

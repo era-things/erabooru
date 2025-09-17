@@ -11,7 +11,8 @@ import (
 	"era/booru/internal/db"
 	"era/booru/internal/minio"
 	"era/booru/internal/queue"
-	qworkers "era/booru/internal/queue/workers"
+	indexworker "era/booru/internal/workers/indexworker"
+	mediaworker "era/booru/internal/workers/mediaworker"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
@@ -55,13 +56,13 @@ func main() {
 	}
 
 	// Register worker
-	river.AddWorker(workers, &qworkers.ProcessWorker{
+	river.AddWorker(workers, &mediaworker.ProcessWorker{
 		Minio: m,
 		DB:    database,
 		Cfg:   cfg,
 	})
 
-	river.AddWorker(workers, &qworkers.IndexWorker{
+	river.AddWorker(workers, &indexworker.IndexWorker{
 		DB: database,
 	})
 
