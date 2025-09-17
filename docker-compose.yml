@@ -114,3 +114,23 @@ services:
         condition: service_started
       app:
         condition: service_healthy
+
+  image-embed-worker:
+    image: booru:image-embed-worker
+    build:
+      context: .
+      dockerfile: cmd/image_embed_worker/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DSN=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+      - MODEL_DIR=/models
+    volumes:
+      - ./ml_models:/models:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      app:
+        condition: service_healthy
