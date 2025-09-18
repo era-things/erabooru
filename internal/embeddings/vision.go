@@ -1,3 +1,5 @@
+//go:build embeddings
+
 package embed
 
 import (

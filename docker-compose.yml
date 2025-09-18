@@ -124,7 +124,7 @@ services:
       - .env
     environment:
       - POSTGRES_DSN=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
-      - MODEL_DIR=/models
+      - MODEL_DIR=/models/Siglip2_INT8
     volumes:
       - ./ml_models:/models:ro
     depends_on:
