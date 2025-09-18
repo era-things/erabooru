@@ -16,7 +16,7 @@ var (
 	dynSess *ort.DynamicAdvancedSession
 )
 
-// Load must be called once (e.g. from main). dir contains vision_model_int8.onnx
+// Load must be called once (e.g. from main). dir contains vision_model_fp16.onnx
 func Load(dir string) error {
 	once.Do(func() {
 		// init the global ORT environment once
@@ -30,7 +30,7 @@ func Load(dir string) error {
 		}
 
 		// read model bytes
-		onx, err := os.ReadFile(filepath.Join(dir, "vision_model_int8.onnx"))
+		onx, err := os.ReadFile(filepath.Join(dir, "vision_model_fp16.onnx"))
 		if err != nil {
 			loadErr = err
 			return

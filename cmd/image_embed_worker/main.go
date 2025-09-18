@@ -26,7 +26,7 @@ func main() {
 
 	modelDir := os.Getenv("MODEL_DIR")
 	if modelDir == "" {
-		modelDir = "ml_models/Siglip2_INT8"
+		modelDir = "ml_models/Siglip2_FP16"
 	}
 	if err := embed.Load(modelDir); err != nil {
 		log.Fatal(err)

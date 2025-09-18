@@ -3,6 +3,7 @@
 package embed
 
 import (
+	"fmt"
 	"image"
 	"math"
 
@@ -28,30 +29,41 @@ func VisionEmbedding(img image.Image) ([]float32, error) {
 		}
 	}
 
-	// 3) build ORT tensors
+	// 3) build input tensor
 	in, err := ort.NewTensor[float32](ort.NewShape(1, 3, S, S), pix)
 	if err != nil {
 		return nil, err
 	}
 	defer in.Destroy()
 
+	// 4) create output tensor - try different shapes based on the error pattern
+	// The model outputs [batch_size, embedding_dim] = [1, 768]
 	out, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 768))
 	if err != nil {
 		return nil, err
 	}
 	defer out.Destroy()
 
-	// 4) run the model
+	// 5) run the model with inputs and outputs
 	if err := Session().Run(
 		[]ort.Value{in},  // inputs
 		[]ort.Value{out}, // outputs (filled in place)
 	); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to run ONNX model: %w", err)
 	}
 
-	// 5) copy, normalise, return
+	// 6) extract the output data
+	data := out.GetData()
+
+	// Validate the data length
+	if len(data) != 768 {
+		return nil, fmt.Errorf("unexpected embedding dimension: got %d, expected 768", len(data))
+	}
+
+	// Copy the data to our output vector
 	vec := make([]float32, 768)
-	copy(vec, out.GetData())
+	copy(vec, data)
+
 	l2(vec)
 	return vec, nil
 }
