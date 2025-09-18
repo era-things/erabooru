@@ -3,6 +3,7 @@
 package embed
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,9 +12,10 @@ import (
 )
 
 var (
-	once    sync.Once
-	loadErr error
-	dynSess *ort.DynamicAdvancedSession
+	once       sync.Once
+	loadErr    error
+	dynSess    *ort.DynamicAdvancedSession
+	outputName string
 )
 
 // Load must be called once (e.g. from main). dir contains vision_model_fp16.onnx
@@ -36,15 +38,31 @@ func Load(dir string) error {
 			return
 		}
 
-		// create a dynamic session; change output name if your model differs
-		dynSess, loadErr = ort.NewDynamicAdvancedSessionWithONNXData(
-			onx,
-			[]string{"pixel_values"},      // input
-			[]string{"last_hidden_state"}, // output (sometimes "image_embeds")
-			nil,                           // default SessionOptions
-		)
+		// create a dynamic session; attempt multiple output names because
+		// different SigLIP exports expose either "image_embeds" or
+		// "last_hidden_state".
+		for _, candidate := range []string{"image_embeds", "last_hidden_state"} {
+			var sessErr error
+			dynSess, sessErr = ort.NewDynamicAdvancedSessionWithONNXData(
+				onx,
+				[]string{"pixel_values"}, // input
+				[]string{candidate},      // output
+				nil,                      // default SessionOptions
+			)
+			if sessErr == nil {
+				outputName = candidate
+				return
+			}
+			loadErr = sessErr
+		}
+
+		if dynSess == nil && loadErr == nil {
+			loadErr = fmt.Errorf("failed to create ONNX session: no compatible output name found")
+		}
 	})
 	return loadErr
 }
 
 func Session() *ort.DynamicAdvancedSession { return dynSess }
+
+func OutputName() string { return outputName }

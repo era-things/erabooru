@@ -11,7 +11,7 @@ import (
 	ort "github.com/yalue/onnxruntime_go"
 )
 
-// VisionEmbedding converts an image to a 768-D L2-normalised vector.
+// VisionEmbedding converts an image to an L2-normalised embedding vector.
 func VisionEmbedding(img image.Image) ([]float32, error) {
 	const S = 384 // SigLIP-2 Base resolution
 	// 1) centre-crop & resize
@@ -36,33 +36,59 @@ func VisionEmbedding(img image.Image) ([]float32, error) {
 	}
 	defer in.Destroy()
 
-	// 4) create output tensor - try different shapes based on the error pattern
-	// The model outputs [batch_size, embedding_dim] = [1, 768]
-	out, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 768))
-	if err != nil {
-		return nil, err
-	}
-	defer out.Destroy()
-
-	// 5) run the model with inputs and outputs
+	// 4) run the model and let ORT allocate the output so we can support both
+	// pooled embeddings (image_embeds) and full token grids (last_hidden_state).
+	outputs := []ort.Value{nil}
 	if err := Session().Run(
-		[]ort.Value{in},  // inputs
-		[]ort.Value{out}, // outputs (filled in place)
+		[]ort.Value{in}, // inputs
+		outputs,         // outputs (allocated by ORT)
 	); err != nil {
 		return nil, fmt.Errorf("failed to run ONNX model: %w", err)
 	}
 
-	// 6) extract the output data
-	data := out.GetData()
+	out, ok := outputs[0].(*ort.Tensor[float32])
+	if !ok {
+		return nil, fmt.Errorf("unexpected output tensor type %T", outputs[0])
+	}
+	defer out.Destroy()
 
-	// Validate the data length
-	if len(data) != 768 {
-		return nil, fmt.Errorf("unexpected embedding dimension: got %d, expected 768", len(data))
+	data := out.GetData()
+	shape := out.GetShape()
+
+	if len(shape) < 2 {
+		return nil, fmt.Errorf("unexpected embedding rank %d", len(shape))
+	}
+	if shape[0] != 1 {
+		return nil, fmt.Errorf("unexpected batch dimension %d", shape[0])
 	}
 
-	// Copy the data to our output vector
-	vec := make([]float32, 768)
-	copy(vec, data)
+	var vec []float32
+	switch len(shape) {
+	case 2:
+		// [batch, dim]
+		dim := int(shape[1])
+		if len(data) != dim {
+			return nil, fmt.Errorf("embedding data length mismatch: got %d, expected %d", len(data), dim)
+		}
+		vec = make([]float32, dim)
+		copy(vec, data)
+	case 3:
+		// [batch, tokens, dim]; take the first token which corresponds to the
+		// pooled representation for SigLIP vision towers.
+		tokens := int(shape[1])
+		dim := int(shape[2])
+		expected := tokens * dim
+		if len(data) != expected {
+			return nil, fmt.Errorf("embedding data length mismatch: got %d, expected %d", len(data), expected)
+		}
+		if tokens == 0 {
+			return nil, fmt.Errorf("embedding has zero tokens")
+		}
+		vec = make([]float32, dim)
+		copy(vec, data[:dim])
+	default:
+		return nil, fmt.Errorf("unsupported embedding rank %d", len(shape))
+	}
 
 	l2(vec)
 	return vec, nil
