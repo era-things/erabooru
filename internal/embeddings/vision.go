@@ -13,7 +13,10 @@ import (
 
 // VisionEmbedding converts an image to an L2-normalised embedding vector.
 func VisionEmbedding(img image.Image) ([]float32, error) {
-	const S = 384 // SigLIP-2 Base resolution
+	S := InputSpatialSize()
+	if S <= 0 {
+		return nil, fmt.Errorf("invalid vision input size %d", S)
+	}
 	// 1) centre-crop & resize
 	img = imaging.Fill(img, S, S, imaging.Center, imaging.Lanczos)
 
@@ -30,7 +33,7 @@ func VisionEmbedding(img image.Image) ([]float32, error) {
 	}
 
 	// 3) build input tensor
-	in, err := ort.NewTensor[float32](ort.NewShape(1, 3, S, S), pix)
+	in, err := ort.NewTensor[float32](ort.NewShape(1, 3, int64(S), int64(S)), pix)
 	if err != nil {
 		return nil, err
 	}

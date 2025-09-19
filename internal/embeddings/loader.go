@@ -13,10 +13,11 @@ import (
 )
 
 var (
-	once       sync.Once
-	loadErr    error
-	dynSess    *ort.DynamicAdvancedSession
-	outputName string
+	once             sync.Once
+	loadErr          error
+	dynSess          *ort.DynamicAdvancedSession
+	outputName       string
+	inputSpatialSize = 384
 )
 
 // Load must be called once (e.g. from main). dir contains vision_model_fp16.onnx
@@ -39,7 +40,7 @@ func Load(dir string) error {
 			return
 		}
 
-		_, outputs, err := ort.GetInputOutputInfoWithONNXData(onx)
+		inputs, outputs, err := ort.GetInputOutputInfoWithONNXData(onx)
 		if err != nil {
 			loadErr = fmt.Errorf("failed to inspect ONNX model outputs: %w", err)
 			return
@@ -47,6 +48,10 @@ func Load(dir string) error {
 		if len(outputs) == 0 {
 			loadErr = fmt.Errorf("vision model exposes no outputs")
 			return
+		}
+
+		if size := resolveSpatialSize(inputs); size > 0 {
+			inputSpatialSize = size
 		}
 
 		availableNames := make([]string, 0, len(outputs))
@@ -98,3 +103,40 @@ func Load(dir string) error {
 func Session() *ort.DynamicAdvancedSession { return dynSess }
 
 func OutputName() string { return outputName }
+
+func InputSpatialSize() int { return inputSpatialSize }
+
+func resolveSpatialSize(inputs []ort.InputOutputInfo) int {
+	var fallback int
+	for _, in := range inputs {
+		size := spatialSize(in)
+		if size == 0 {
+			continue
+		}
+		if in.Name == "pixel_values" {
+			return size
+		}
+		if fallback == 0 {
+			fallback = size
+		}
+	}
+	return fallback
+}
+
+func spatialSize(in ort.InputOutputInfo) int {
+	if in.OrtValueType != ort.ONNXTypeTensor {
+		return 0
+	}
+	if in.DataType != ort.TensorElementDataTypeFloat {
+		return 0
+	}
+	if len(in.Dimensions) < 4 {
+		return 0
+	}
+	h := in.Dimensions[len(in.Dimensions)-2]
+	w := in.Dimensions[len(in.Dimensions)-1]
+	if h <= 0 || w <= 0 || h != w {
+		return 0
+	}
+	return int(h)
+}
