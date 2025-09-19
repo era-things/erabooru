@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"image"
 	"math"
+	"strconv"
+	"strings"
 
 	"github.com/disintegration/imaging"
 	ort "github.com/yalue/onnxruntime_go"
@@ -13,14 +15,49 @@ import (
 
 // VisionEmbedding converts an image to an L2-normalised embedding vector.
 func VisionEmbedding(img image.Image) ([]float32, error) {
-	S := InputSpatialSize()
+	const maxAttempts = 3
+
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		S := InputSpatialSize()
+		vec, err := visionEmbeddingWithSize(img, S)
+		if err == nil {
+			return vec, nil
+		}
+		lastErr = err
+
+		if newSize, ok := retargetVisionInputSize(err, S); ok {
+			setInputSpatialSize(newSize)
+			continue
+		}
+
+		return nil, err
+	}
+
+	return nil, lastErr
+}
+
+func l2(v []float32) {
+	var sum float64
+	for _, x := range v {
+		sum += float64(x) * float64(x)
+	}
+	if sum == 0 {
+		return
+	}
+	scale := float32(1.0 / math.Sqrt(sum))
+	for i := range v {
+		v[i] *= scale
+	}
+}
+
+func visionEmbeddingWithSize(src image.Image, S int) ([]float32, error) {
 	if S <= 0 {
 		return nil, fmt.Errorf("invalid vision input size %d", S)
 	}
-	// 1) centre-crop & resize
-	img = imaging.Fill(img, S, S, imaging.Center, imaging.Lanczos)
 
-	// 2) HWC uint8 → NCHW float32 in [-1, 1]
+	img := imaging.Fill(src, S, S, imaging.Center, imaging.Lanczos)
+
 	pix := make([]float32, 3*S*S)
 	for y := 0; y < S; y++ {
 		for x := 0; x < S; x++ {
@@ -32,19 +69,16 @@ func VisionEmbedding(img image.Image) ([]float32, error) {
 		}
 	}
 
-	// 3) build input tensor
 	in, err := ort.NewTensor[float32](ort.NewShape(1, 3, int64(S), int64(S)), pix)
 	if err != nil {
 		return nil, err
 	}
 	defer in.Destroy()
 
-	// 4) run the model and let ORT allocate the output so we can support both
-	// pooled embeddings (image_embeds) and full token grids (last_hidden_state).
 	outputs := []ort.Value{nil}
 	if err := Session().Run(
-		[]ort.Value{in}, // inputs
-		outputs,         // outputs (allocated by ORT)
+		[]ort.Value{in},
+		outputs,
 	); err != nil {
 		return nil, fmt.Errorf("failed to run ONNX model: %w", err)
 	}
@@ -68,7 +102,6 @@ func VisionEmbedding(img image.Image) ([]float32, error) {
 	var vec []float32
 	switch len(shape) {
 	case 2:
-		// [batch, dim]
 		dim := int(shape[1])
 		if len(data) != dim {
 			return nil, fmt.Errorf("embedding data length mismatch: got %d, expected %d", len(data), dim)
@@ -76,8 +109,6 @@ func VisionEmbedding(img image.Image) ([]float32, error) {
 		vec = make([]float32, dim)
 		copy(vec, data)
 	case 3:
-		// [batch, tokens, dim]; take the first token which corresponds to the
-		// pooled representation for SigLIP vision towers.
 		tokens := int(shape[1])
 		dim := int(shape[2])
 		expected := tokens * dim
@@ -97,16 +128,76 @@ func VisionEmbedding(img image.Image) ([]float32, error) {
 	return vec, nil
 }
 
-func l2(v []float32) {
-	var sum float64
-	for _, x := range v {
-		sum += float64(x) * float64(x)
+func retargetVisionInputSize(err error, current int) (int, bool) {
+	msg := err.Error()
+	inputDims, ok := parseShapeFromError(msg, "Input shape:{")
+	if !ok {
+		return 0, false
 	}
-	if sum == 0 {
-		return
+	requestedDims, ok := parseShapeFromError(msg, "requested shape:{")
+	if !ok {
+		return 0, false
 	}
-	scale := float32(1.0 / math.Sqrt(sum))
-	for i := range v {
-		v[i] *= scale
+
+	if len(inputDims) < 3 {
+		return 0, false
 	}
+	spatial := inputDims[len(inputDims)-1]
+	if spatial <= 0 {
+		return 0, false
+	}
+	if current <= 0 || current%spatial != 0 {
+		return 0, false
+	}
+
+	expectedTokens := requestedDims[len(requestedDims)-1]
+	if expectedTokens <= 0 {
+		return 0, false
+	}
+	expectedPerDim := int(math.Round(math.Sqrt(float64(expectedTokens))))
+	if expectedPerDim*expectedPerDim != expectedTokens {
+		return 0, false
+	}
+
+	patchSize := current / spatial
+	if patchSize <= 0 {
+		return 0, false
+	}
+
+	newSize := patchSize * expectedPerDim
+	if newSize <= 0 || newSize == current {
+		return 0, false
+	}
+
+	return newSize, true
+}
+
+func parseShapeFromError(msg, prefix string) ([]int, bool) {
+	start := strings.Index(msg, prefix)
+	if start == -1 {
+		return nil, false
+	}
+	start += len(prefix)
+	end := strings.Index(msg[start:], "}")
+	if end == -1 {
+		return nil, false
+	}
+	segment := msg[start : start+end]
+	parts := strings.Split(segment, ",")
+	dims := make([]int, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		v, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, false
+		}
+		dims = append(dims, v)
+	}
+	if len(dims) == 0 {
+		return nil, false
+	}
+	return dims, true
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	ort "github.com/yalue/onnxruntime_go"
 )
@@ -17,8 +18,12 @@ var (
 	loadErr          error
 	dynSess          *ort.DynamicAdvancedSession
 	outputName       string
-	inputSpatialSize = 384
+	inputSpatialSize atomic.Int64
 )
+
+func init() {
+	inputSpatialSize.Store(384)
+}
 
 // Load must be called once (e.g. from main). dir contains vision_model_fp16.onnx
 func Load(dir string) error {
@@ -51,7 +56,7 @@ func Load(dir string) error {
 		}
 
 		if size := resolveSpatialSize(inputs); size > 0 {
-			inputSpatialSize = size
+			setInputSpatialSize(size)
 		}
 
 		availableNames := make([]string, 0, len(outputs))
@@ -104,7 +109,13 @@ func Session() *ort.DynamicAdvancedSession { return dynSess }
 
 func OutputName() string { return outputName }
 
-func InputSpatialSize() int { return inputSpatialSize }
+func InputSpatialSize() int { return int(inputSpatialSize.Load()) }
+
+func setInputSpatialSize(size int) {
+	if size > 0 {
+		inputSpatialSize.Store(int64(size))
+	}
+}
 
 func resolveSpatialSize(inputs []ort.InputOutputInfo) int {
 	var fallback int
