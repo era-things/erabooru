@@ -3,18 +3,33 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import TabNav from '$lib/components/TabNav.svelte';
-	import { fetchMediaDetail, deleteMedia, updateMediaTags } from '$lib/api';
-	import type { MediaDetail } from '$lib/types/media';
+	import { fetchMediaDetail, deleteMedia, updateMediaTags, fetchSimilarMedia } from '$lib/api';
+	import type { MediaDetail, MediaItem } from '$lib/types/media';
 
 	let media: MediaDetail | null = null;
 	let tagsInput = '';
 	let edit = false;
+	let similar: MediaItem[] = [];
+	let similarLoading = false;
 
 	onMount(async () => {
 		const id = page.params.id;
 		try {
 			media = await fetchMediaDetail(id);
 			tagsInput = media?.tags.map((t) => t.name.replace(/ /g, '_')).join(' ') ?? '';
+			const vector =
+				media?.vectors?.find((entry) => entry.name === 'vision') ?? media?.vectors?.[0];
+			if (media && vector && vector.value.length) {
+				similarLoading = true;
+				try {
+					const results = await fetchSimilarMedia(vector.value, 5, media.id, vector.name);
+					similar = results.filter((item) => item.id !== media.id);
+				} catch (err) {
+					console.error('failed to load similar media', err);
+				} finally {
+					similarLoading = false;
+				}
+			}
 		} catch (err) {
 			console.error('failed to load media', err);
 		}
@@ -104,6 +119,31 @@
 			{:else}
 				<!-- svelte-ignore a11y_missing_attribute -->
 				<img src={media.url} class="object-contain" style="max-width:75vw; max-height:75vh" />
+			{/if}
+		</div>
+
+		<div class="flex w-52 flex-col gap-3">
+			<h2 class="text-base font-semibold">Similar media</h2>
+			{#if similarLoading}
+				<p class="text-sm text-gray-500">Loading…</p>
+			{:else if !similar.length}
+				<p class="text-sm text-gray-500">No similar media yet.</p>
+			{:else}
+				<div class="flex flex-col gap-3">
+					{#each similar as item (item.id)}
+						<a href={`/media/${item.id}`} class="block">
+							<div
+								class="aspect-square w-full overflow-hidden rounded border border-gray-200 bg-gray-100"
+							>
+								<img
+									src={item.url}
+									alt={`Similar media ${item.id}`}
+									class="h-full w-full object-cover"
+								/>
+							</div>
+						</a>
+					{/each}
+				</div>
 			{/if}
 		</div>
 	</div>
