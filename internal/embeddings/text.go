@@ -131,8 +131,13 @@ func TextEmbedding(text string) ([]float32, error) {
 		if tokens == 0 {
 			return nil, fmt.Errorf("text embedding returned zero tokens")
 		}
+		start := (tokens - 1) * dim
+		end := start + dim
+		if start < 0 || end > len(data) {
+			return nil, fmt.Errorf("text embedding token slice out of range: %d-%d (len=%d)", start, end, len(data))
+		}
 		vec = make([]float32, dim)
-		copy(vec, data[:dim])
+		copy(vec, data[start:end])
 	default:
 		return nil, fmt.Errorf("unsupported text embedding rank %d", len(shape))
 	}
