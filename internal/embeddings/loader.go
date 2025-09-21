@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/sugarme/tokenizer"
+	"github.com/sugarme/tokenizer/pretrained"
 	ort "github.com/yalue/onnxruntime_go"
 )
 
@@ -19,6 +21,11 @@ var (
 	dynSess          *ort.DynamicAdvancedSession
 	outputName       string
 	inputSpatialSize atomic.Int64
+
+	textSess       *ort.DynamicAdvancedSession
+	textOutputName string
+	textInputs     []ort.InputOutputInfo
+	textTokenizer  *tokenizer.Tokenizer
 )
 
 func init() {
@@ -101,11 +108,57 @@ func Load(dir string) error {
 			[]string{outputName},     // output
 			nil,                      // default SessionOptions
 		)
+		if loadErr != nil {
+			return
+		}
+
+		// Load text tokenizer and model for text embeddings
+		textTokenizer, loadErr = pretrained.FromFile(filepath.Join(dir, "tokenizer.json"))
+		if loadErr != nil {
+			return
+		}
+
+		textOnx, err := os.ReadFile(filepath.Join(dir, "text_model_fp16.onnx"))
+		if err != nil {
+			loadErr = err
+			return
+		}
+
+		textInputs, outputs, err = ort.GetInputOutputInfoWithONNXData(textOnx)
+		if err != nil {
+			loadErr = fmt.Errorf("failed to inspect text model outputs: %w", err)
+			return
+		}
+		if len(outputs) == 0 {
+			loadErr = fmt.Errorf("text model exposes no outputs")
+			return
+		}
+
+		textOutputName = outputs[0].Name
+		inputNames := make([]string, len(textInputs))
+		for i, in := range textInputs {
+			inputNames[i] = in.Name
+		}
+
+		textSess, loadErr = ort.NewDynamicAdvancedSessionWithONNXData(
+			textOnx,
+			inputNames,
+			[]string{textOutputName},
+			nil,
+		)
 	})
 	return loadErr
 }
 
 func Session() *ort.DynamicAdvancedSession { return dynSess }
+
+func textSession() *ort.DynamicAdvancedSession { return textSess }
+
+func textModelInputs() []ort.InputOutputInfo { return textInputs }
+
+func textModelOutputName() string { return textOutputName }
+
+func tokenizerInstance() *tokenizer.Tokenizer { return textTokenizer }
 
 func OutputName() string { return outputName }
 

@@ -4,20 +4,57 @@
 	 */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
 	import { PAGE_SIZE } from '$lib/constants';
 
-	let q: string = $state('');
+	let tagQuery: string = $state('');
+	let textQuery: string = $state('');
 	let active: 'media' | 'upload' | 'tags' | 'settings' = $props();
 
 	onMount(() => {
-		q = get(page).url.searchParams.get('q') ?? '';
+		const unsubscribe = page.subscribe(($page) => {
+			const params = $page.url.searchParams;
+			const query = params.get('q') ?? '';
+			const vector = params.get('vector') === '1';
+			if (vector) {
+				if (textQuery !== query) {
+					textQuery = query;
+				}
+				if (tagQuery !== '') {
+					tagQuery = '';
+				}
+			} else {
+				if (tagQuery !== query) {
+					tagQuery = query;
+				}
+				if (textQuery !== '') {
+					textQuery = '';
+				}
+			}
+		});
+		return unsubscribe;
 	});
 
-	function search(event: Event) {
+	function searchTags(event: Event) {
 		event.preventDefault();
-		goto(`/?q=${encodeURIComponent(q)}&page=1&page_size=${PAGE_SIZE}`);
+		const params = new URLSearchParams({ page: '1', page_size: PAGE_SIZE.toString() });
+		const trimmed = tagQuery.trim();
+		if (trimmed) {
+			params.set('q', trimmed);
+		}
+		goto(`/?${params.toString()}`);
+	}
+
+	function searchText(event: Event) {
+		event.preventDefault();
+		const params = new URLSearchParams({ page: '1', page_size: PAGE_SIZE.toString(), vector: '1' });
+		const trimmed = textQuery.trim();
+		if (trimmed) {
+			params.set('q', trimmed);
+		} else {
+			params.delete('q');
+		}
+		goto(`/?${params.toString()}`);
 	}
 </script>
 
@@ -63,14 +100,25 @@
 		>
 			Settings
 		</a>
-		<form onsubmit={search} class="mx-auto">
-			<input
-				type="text"
-				name="search"
-				placeholder="Search"
-				bind:value={q}
-				class="rounded border px-2 py-1"
-			/>
-		</form>
+		<div class="ml-auto flex items-center gap-2">
+			<form onsubmit={searchTags}>
+				<input
+					type="text"
+					name="tag-search"
+					placeholder="Search tags"
+					bind:value={tagQuery}
+					class="rounded border px-2 py-1"
+				/>
+			</form>
+			<form onsubmit={searchText}>
+				<input
+					type="text"
+					name="vector-search"
+					placeholder="Search by text"
+					bind:value={textQuery}
+					class="rounded border px-2 py-1"
+				/>
+			</form>
+		</div>
 	</nav>
 </div>

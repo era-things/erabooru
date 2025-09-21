@@ -5,9 +5,16 @@
 	import { PAGE_SIZE } from '$lib/constants';
 	import { fetchMediaPreviews } from '$lib/api';
 
-	let { query = '', page = 1, pageSize = Number(PAGE_SIZE), total = $bindable(1) } = $props();
+	let {
+		query = '',
+		vector = false,
+		page = 1,
+		pageSize = Number(PAGE_SIZE),
+		total = $bindable(1)
+	} = $props();
 	let lastQuery: string = $state('');
 	let lastPage: number = $state(1);
+	let lastVector: boolean = $state(false);
 
 	let media: MediaPreviewItem[] = $state([]);
 	let innerWidth = $state(0);
@@ -18,16 +25,17 @@
 	let columnWidths = $derived(Array(columnCount).fill('1fr'));
 
 	$effect(() => {
-		if (mounted && (query !== lastQuery || page !== lastPage)) {
+		if (mounted && (query !== lastQuery || page !== lastPage || vector !== lastVector)) {
 			lastQuery = query;
 			lastPage = page;
+			lastVector = vector;
 			load();
 		}
 	});
 
 	async function load() {
 		try {
-			const data = await fetchMediaPreviews(query, page, pageSize);
+			const data = await fetchMediaPreviews(query, page, pageSize, vector);
 			const items = data.media as MediaItem[];
 			media = items.map((it) => {
 				const displayHeight = Math.min(it.height, it.width * 3);
@@ -39,7 +47,7 @@
 					cropped: displayHeight < it.height
 				} satisfies MediaPreviewItem;
 			});
-			total = data.total ?? (1 as number);
+			total = data.total ?? 0;
 		} catch (err) {
 			console.error('media fetch error', err);
 		}
@@ -49,6 +57,7 @@
 		mounted = true;
 		lastQuery = query;
 		lastPage = page;
+		lastVector = vector;
 		await load();
 	});
 </script>

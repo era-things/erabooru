@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -20,12 +21,14 @@ import (
 	pgvector "github.com/pgvector/pgvector-go"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	mc "github.com/minio/minio-go/v7"
+	"github.com/riverqueue/river"
 )
 
-func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config) {
-	r.GET("/api/media", listMediaHandler(cfg))
-	r.GET("/api/media/previews", listPreviewsHandler(cfg))
+func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx]) {
+	r.GET("/api/media", listMediaHandler(db, cfg, riverClient))
+	r.GET("/api/media/previews", listPreviewsHandler(db, cfg, riverClient))
 	r.GET("/api/media/:id", getMediaHandler(db, m, cfg))
 	r.POST("/api/media/similar", similarMediaHandler(db, cfg))
 	r.POST("/api/media/upload-url", uploadURLHandler(m, cfg))
@@ -44,18 +47,19 @@ func bucketForFormat(format, videoBucket, pictureBucket string) string {
 	}
 }
 
-func listMediaHandler(cfg *config.Config) gin.HandlerFunc {
-	return listCommon(cfg.MinioPublicPrefix, cfg.MinioBucket, cfg.MinioBucket)
+func listMediaHandler(db *ent.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx]) gin.HandlerFunc {
+	return listCommon(db, riverClient, cfg.MinioPublicPrefix, cfg.MinioBucket, cfg.MinioBucket)
 }
 
-func listPreviewsHandler(cfg *config.Config) gin.HandlerFunc {
+func listPreviewsHandler(db *ent.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	//for now, image previews are just original full-size images
-	return listCommon(cfg.MinioPublicPrefix, cfg.PreviewBucket, cfg.MinioBucket)
+	return listCommon(db, riverClient, cfg.MinioPublicPrefix, cfg.PreviewBucket, cfg.MinioBucket)
 }
 
-func listCommon(minioPrefix string, videoBucket string, pictureBucket string) gin.HandlerFunc {
+func listCommon(db *ent.Client, riverClient *river.Client[pgx.Tx], minioPrefix string, videoBucket string, pictureBucket string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		q := c.Query("q")
+		useVector := c.Query("vector") == "1"
 		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 		if err != nil || page < 1 {
 			page = 1
@@ -68,12 +72,71 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string) gi
 			pageSize = 60
 		}
 		offset := (page - 1) * pageSize
-		items, total, err := search.SearchMedia(q, pageSize, offset)
-		if err != nil {
-			log.Printf("search media: %v", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
+		var (
+			items []*ent.Media
+			total int
+		)
+
+		if useVector {
+			if q == "" {
+				items = []*ent.Media{}
+				total = 0
+			} else if riverClient == nil {
+				log.Printf("vector search requested but no embedding client configured")
+				c.AbortWithStatus(http.StatusServiceUnavailable)
+				return
+			} else {
+				ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+				defer cancel()
+
+				vec, vecName, err := requestTextEmbedding(ctx, riverClient, q)
+				if err != nil {
+					log.Printf("text embedding failed: %v", err)
+					c.AbortWithStatus(http.StatusInternalServerError)
+					return
+				}
+				if len(vec) == 0 {
+					items = []*ent.Media{}
+					total = 0
+				} else {
+					if vecName == "" {
+						vecName = "vision"
+					}
+					limit := offset + pageSize
+					if limit <= 0 {
+						limit = pageSize
+					}
+					if limit > 1000 {
+						limit = 1000
+					}
+					results, err := search.SimilarMediaByVector(ctx, db, vecName, vec, limit, "")
+					if err != nil {
+						log.Printf("vector media search: %v", err)
+						c.AbortWithStatus(http.StatusInternalServerError)
+						return
+					}
+					total = len(results)
+					if offset >= total {
+						items = []*ent.Media{}
+					} else {
+						end := offset + pageSize
+						if end > total {
+							end = total
+						}
+						items = results[offset:end]
+					}
+				}
+			}
+		} else {
+			var err error
+			items, total, err = search.SearchMedia(q, pageSize, offset)
+			if err != nil {
+				log.Printf("search media: %v", err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
 		}
+
 		out := make([]gin.H, len(items))
 
 		for i, mitem := range items {

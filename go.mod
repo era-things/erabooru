@@ -12,10 +12,18 @@ require (
 	github.com/minio/minio-go/v7 v7.0.94
 	github.com/pgvector/pgvector-go v0.3.0
 	github.com/riverqueue/river v0.23.1
-	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.23.1
-	github.com/testcontainers/testcontainers-go v0.37.0
-	github.com/testcontainers/testcontainers-go/modules/minio v0.37.0
-	github.com/zeebo/xxh3 v1.0.2
+        github.com/riverqueue/river/riverdriver/riverpgxv5 v0.23.1
+        github.com/sugarme/tokenizer v0.3.0
+        github.com/testcontainers/testcontainers-go v0.37.0
+        github.com/testcontainers/testcontainers-go/modules/minio v0.37.0
+        github.com/zeebo/xxh3 v1.0.2
+)
+
+require (
+        github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
+        github.com/rivo/uniseg v0.4.7 // indirect
+        github.com/schollz/progressbar/v2 v2.15.0 // indirect
+        github.com/sugarme/regexpset v0.0.0-20200920021344-4d4ec8eaf93c // indirect
 )
 
 require (

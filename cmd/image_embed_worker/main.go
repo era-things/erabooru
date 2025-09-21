@@ -63,6 +63,7 @@ func main() {
 	}
 
 	river.AddWorker(workers, &embedworker.ImageEmbedWorker{Minio: m, DB: database})
+	river.AddWorker(workers, &embedworker.TextEmbedWorker{})
 
 	if err := client.Start(ctx); err != nil {
 		log.Fatal(err)

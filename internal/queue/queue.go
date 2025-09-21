@@ -8,6 +8,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
+	"github.com/riverqueue/river/rivertype"
 )
 
 type ClientType string
@@ -69,26 +70,42 @@ func getConfigForClientType(clientType ClientType, workers *river.Workers) *rive
 
 // Enqueue inserts a job into the default queue.
 func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) error {
-	var queueName string
-
-	switch args.(type) {
-	case ProcessArgs:
-		queueName = "process" // Goes to media worker
-	case IndexArgs:
-		queueName = "index" // Goes to server
-	case EmbedArgs:
-		queueName = "embed" // Goes to image embed worker
-	default:
-		queueName = "" // Default queue
-	}
-
 	opts := &river.InsertOpts{}
-	if queueName != "" {
+	if queueName := queueNameForArgs(args); queueName != "" {
 		opts.Queue = queueName
 	}
 
 	_, err := c.Insert(ctx, args, opts)
 	return err
+}
+
+// Insert inserts a job and returns the River result while ensuring it is routed
+// to the appropriate queue based on the job arguments.
+func Insert(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs, opts *river.InsertOpts) (*rivertype.JobInsertResult, error) {
+	insertOpts := opts
+	if insertOpts == nil {
+		insertOpts = &river.InsertOpts{}
+	}
+	if insertOpts.Queue == "" {
+		if queueName := queueNameForArgs(args); queueName != "" {
+			insertOpts.Queue = queueName
+		}
+	}
+
+	return c.Insert(ctx, args, insertOpts)
+}
+
+func queueNameForArgs(args river.JobArgs) string {
+	switch args.(type) {
+	case ProcessArgs:
+		return "process"
+	case IndexArgs:
+		return "index"
+	case EmbedArgs, EmbedTextArgs:
+		return "embed"
+	default:
+		return ""
+	}
 }
 
 func WorkerEnqueue(ctx context.Context, args river.JobArgs) error {
@@ -119,3 +136,10 @@ type EmbedArgs struct {
 }
 
 func (EmbedArgs) Kind() string { return "embed_media" }
+
+type EmbedTextArgs struct {
+	Text string `json:"text"`
+	Name string `json:"name,omitempty"`
+}
+
+func (EmbedTextArgs) Kind() string { return "embed_text" }
