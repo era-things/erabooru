@@ -23,7 +23,7 @@
 				similarLoading = true;
 				try {
 					const results = await fetchSimilarMedia(vector.value, 5, media.id, vector.name);
-					similar = results.filter((item) => item.id !== media.id);
+					similar = results.filter((item) => item.id !== media!.id);
 				} catch (err) {
 					console.error('failed to load similar media', err);
 				} finally {
@@ -105,7 +105,7 @@
 			<button class="rounded bg-red-500 px-4 py-2 text-white" on:click={remove}>Delete</button>
 		</div>
 
-		<div class="flex flex-1 items-center justify-center">
+		<div class="flex flex-1 flex-col">
 			{#if ['mp4', 'webm', 'avi', 'mkv'].includes(media.format)}
 				<!-- svelte-ignore a11y_media_has_caption -->
 				<video
@@ -119,6 +119,22 @@
 			{:else}
 				<!-- svelte-ignore a11y_missing_attribute -->
 				<img src={media.url} class="object-contain" style="max-width:75vw; max-height:75vh" />
+			{/if}
+			<div class="mt-4 flex justify-center">
+				<button class="rounded bg-blue-500 px-4 py-2 text-white" on:click={() => (edit = !edit)}
+					>Edit</button
+				>
+			</div>
+			{#if edit}
+				<div class="mt-4 flex flex-col items-center gap-2">
+					<div class="w-1/2 rounded px-2 py-1 flex flex-col">
+						<label for="tags-input" class="ml-4 self-start font-semibold">Tags</label>
+						<input id="tags-input" bind:value={tagsInput} />
+					</div>
+					<button class="rounded bg-green-500 px-4 py-2 text-white" on:click={saveTags}
+						>Save changes</button
+					>
+				</div>
 			{/if}
 		</div>
 
@@ -147,18 +163,4 @@
 			{/if}
 		</div>
 	</div>
-	<div class="mt-4 flex justify-center">
-		<button class="rounded bg-blue-500 px-4 py-2 text-white" on:click={() => (edit = !edit)}
-			>Edit</button
-		>
-	</div>
-	{#if edit}
-		<div class="mt-4 flex flex-col items-center gap-2">
-			<label class="ml-4 self-start font-semibold">Tags</label>
-			<input class="w-1/2 rounded border px-2 py-1" bind:value={tagsInput} />
-			<button class="rounded bg-green-500 px-4 py-2 text-white" on:click={saveTags}
-				>Save changes</button
-			>
-		</div>
-	{/if}
 {/if}
