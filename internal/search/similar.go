@@ -35,7 +35,7 @@ func SimilarMediaByVector(ctx context.Context, db *ent.Client, vectorName string
 			b.WriteString(mediavector.Table)
 			b.WriteByte('.')
 			b.WriteString(mediavector.FieldValue)
-			b.WriteString(" <#> ?")
+			b.WriteString(" <#> ")
 			b.Arg(vec)
 		}))
 	}).Limit(limit)
