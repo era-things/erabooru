@@ -43,7 +43,7 @@ func main() {
 	defer pool.Close()
 
 	workers := river.NewWorkers()
-	river.AddWorker(workers, river.WorkFunc(queue.IndexArgs{}, func(ctx context.Context, job *river.Job[queue.IndexArgs]) error {
+	river.AddWorker(workers, river.WorkFunc(func(ctx context.Context, job *river.Job[queue.IndexArgs]) error {
 		return fmt.Errorf("index job should not run in image embed worker: %s", job.Args.ID)
 	}))
 
