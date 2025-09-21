@@ -11,7 +11,8 @@ import (
 	"era/booru/internal/db"
 	"era/booru/internal/minio"
 	"era/booru/internal/queue"
-	qworkers "era/booru/internal/queue/workers"
+	indexworker "era/booru/internal/workers/indexworker"
+	mediaworker "era/booru/internal/workers/mediaworker"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
@@ -55,15 +56,23 @@ func main() {
 	}
 
 	// Register worker
-	river.AddWorker(workers, &qworkers.ProcessWorker{
+	river.AddWorker(workers, &mediaworker.ProcessWorker{
 		Minio: m,
 		DB:    database,
 		Cfg:   cfg,
 	})
 
-	river.AddWorker(workers, &qworkers.IndexWorker{
+	river.AddWorker(workers, &indexworker.IndexWorker{
 		DB: database,
 	})
+
+	// Register the embed job kind so this worker can enqueue embed tasks
+	// without importing the full embed worker implementation (and its CGO
+	// dependencies). The media worker never handles these jobs directly; they
+	// are picked up by the dedicated embed worker process.
+	river.AddWorker(workers, river.WorkFunc(func(ctx context.Context, job *river.Job[queue.EmbedArgs]) error {
+		return nil
+	}))
 
 	// Start processing
 	if err := client.Start(ctx); err != nil {

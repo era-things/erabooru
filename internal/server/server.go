@@ -15,8 +15,9 @@ import (
 	"era/booru/internal/db"
 	"era/booru/internal/minio"
 	"era/booru/internal/queue"
-	qworkers "era/booru/internal/queue/workers"
 	"era/booru/internal/search"
+	indexworker "era/booru/internal/workers/indexworker"
+	mediaworker "era/booru/internal/workers/mediaworker"
 
 	"github.com/riverqueue/river"
 )
@@ -63,11 +64,11 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
-	river.AddWorker(workers, &qworkers.IndexWorker{DB: database})
+	river.AddWorker(workers, &indexworker.IndexWorker{DB: database})
 	if err := riverClient.Start(ctx); err != nil {
 		return nil, err
 	}
-	river.AddWorker(workers, &qworkers.ProcessWorker{
+	river.AddWorker(workers, &mediaworker.ProcessWorker{
 		Minio: m,
 		DB:    database,
 		Cfg:   cfg,

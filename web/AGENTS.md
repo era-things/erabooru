@@ -1,13 +1,16 @@
 # AGENTS Instructions for `web`
 
 ## Scope
+
 These instructions apply to all files in the `web/` directory.
 
 ## Svelte Runes
-- This project uses **Svelte 5** with the *runes* syntax. Always write components using runes like `$state`, `$derived`, `$effect`, etc.
+
+- This project uses **Svelte 5** with the _runes_ syntax. Always write components using runes like `$state`, `$derived`, `$effect`, etc.
 - Do **not** use the old reactive `$:` syntax or `$store` auto-subscriptions.
 
 ### Runes cheatsheet
+
 - `$state(initial)` – declare reactive state.
   ```svelte
   let count = $state(0);
@@ -26,11 +29,11 @@ These instructions apply to all files in the `web/` directory.
   ```
 - `$props()` – access component props.
   ```svelte
-  let { foo } = $props();
+  let {foo} = $props();
   ```
 - `$bindable()` – mark a prop as bindable for two‑way binding.
   ```svelte
-  let { value = $bindable() } = $props();
+  let {(value = $bindable())} = $props();
   ```
 - `$inspect(...vals)` – log values reactively during development.
   ```svelte
@@ -42,8 +45,11 @@ These instructions apply to all files in the `web/` directory.
   ```
 
 ## `Runed` library
+
 This project have Runed installed. Runed is handy library with rune-based helper functions. Here is names of those function, whole descriptions can be found [here](https://runed.dev/docs)
+
 #### ELEMENTS
+
 - `activeElement`
 - `ElementRect`
 - `ElementSize`
@@ -56,26 +62,32 @@ This project have Runed installed. Runed is handy library with rune-based helper
 - `useResizeObserver`
 
 #### BROWSER
+
 - `useEventListener`
 
 #### SENSORS
+
 - `IsIdle`
 - `onClickOutside`
 - `PressedKeys`
 - `useGeolocation`
 
 #### ANIMATION
+
 - `AnimationFrames`
 
 #### UTILITIES
+
 - `useDebounce`
 
 #### REACTIVITY
+
 - `extract`
 - `resource`
 - `watch`
 
 #### STATE
+
 - `Context`
 - `Debounced`
 - `FiniteStateMachine`
@@ -84,7 +96,9 @@ This project have Runed installed. Runed is handy library with rune-based helper
 - `StateHistory`
 
 #### COMPONENT
+
 - `IsMounted`
 
 ## Formatting
+
 Run `npm run lint` inside this folder before committing frontend changes to ensure Prettier and ESLint pass.

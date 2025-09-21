@@ -1,0 +1,9 @@
+syntax = "proto3";
+package embed;
+service Embedder {
+  rpc Text   (TextRequest)   returns (Vector) {}
+  rpc Image  (ImageRequest)  returns (Vector) {} // future-proof
+}
+message TextRequest  { string text = 1; }
+message ImageRequest { bytes  jpeg = 1; }         // optional
+message Vector       { repeated float values = 1; }

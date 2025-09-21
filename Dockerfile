@@ -9,7 +9,7 @@ COPY web .
 RUN npm run build
 
 # ----- build Go server with embedded assets -----
-FROM golang:1.24-bookworm AS server-build
+FROM golang:1.25-bookworm AS server-build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -23,7 +23,7 @@ RUN CGO_ENABLED=0 go build -o /healthcheck ./cmd/healthcheck
 RUN mkdir -p /tmp/data/bleve && chown -R 65532:65532 /tmp/data
 
 # ----- dev stage with Vite HMR -----
-FROM golang:1.24-bookworm AS dev
+FROM golang:1.25-bookworm AS dev
 RUN apt-get update && apt-get install -y curl && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* && \

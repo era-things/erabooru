@@ -6,7 +6,7 @@ Erabooru is a web application composed of a Go backend and a SvelteKit frontend.
 From a user perspective, Erabooru works like a personal "booru" site. You upload images or videos and the system processes them in the background, generates previews, and indexes them for fast search. The web UI then lets you browse, tag and search your collection.
 
 ### Backend stack
-- **Go 1.24**
+- **Go 1.25**
 - **Gin** HTTP framework
 - **Ent** ORM
 - **PGX** PostgreSQL driver

@@ -128,6 +128,7 @@ func OpenOrCreate(path string) error {
 	// Check if path exists and is a valid Bleve index
 	if _, err = os.Stat(path); os.IsNotExist(err) {
 		mapping := bleve.NewIndexMapping()
+		configureVectorMapping(mapping)
 		IDX, err = bleve.New(path, mapping)
 		return err
 	}
@@ -135,6 +136,7 @@ func OpenOrCreate(path string) error {
 	IDX, err = bleve.Open(path)
 	if err != nil && strings.Contains(err.Error(), "metadata missing") {
 		mapping := bleve.NewIndexMapping()
+		configureVectorMapping(mapping)
 		IDX, err = bleve.New(path, mapping)
 	}
 	return err
@@ -148,8 +150,9 @@ func IndexMedia(m *ent.Media) error {
 	log.Printf("indexing media %s", m.ID)
 	doc := struct {
 		ent.Media
-		Tags  []string          `json:"tags"`
-		Dates map[string]string `json:"dates"`
+		Tags    []string             `json:"tags"`
+		Dates   map[string]string    `json:"dates"`
+		Vectors map[string][]float32 `json:"vectors,omitempty"`
 	}{Media: *m}
 	if m.Edges.Tags != nil {
 		doc.Tags = make([]string, len(m.Edges.Tags))
@@ -165,6 +168,9 @@ func IndexMedia(m *ent.Media) error {
 				doc.Dates[d.Name] = v
 			}
 		}
+	}
+	if vecs := extractVectors(m); len(vecs) > 0 {
+		doc.Vectors = vecs
 	}
 	return IDX.Index(string(m.ID), doc)
 }
@@ -192,6 +198,7 @@ func IndexAllMedia(ctx context.Context, db *ent.Client) error {
 	items, err := db.Media.Query().
 		WithTags().
 		WithDates(func(q *ent.DateQuery) { q.WithMediaDates() }).
+		WithVectors(func(q *ent.VectorQuery) { q.WithMediaVectors() }).
 		All(ctx)
 	if err != nil {
 		return err
@@ -296,4 +303,33 @@ func clearAllDocuments() error {
 	}
 
 	return nil
+}
+
+func extractVectors(m *ent.Media) map[string][]float32 {
+	if m.Edges.Vectors == nil {
+		return nil
+	}
+	out := make(map[string][]float32)
+	for _, vec := range m.Edges.Vectors {
+		if vec == nil || vec.Edges.MediaVectors == nil {
+			continue
+		}
+		for _, mv := range vec.Edges.MediaVectors {
+			if mv == nil || mv.MediaID != m.ID {
+				continue
+			}
+			data := mv.Value.Slice()
+			if len(data) == 0 {
+				continue
+			}
+			copyVec := make([]float32, len(data))
+			copy(copyVec, data)
+			out[vec.Name] = copyVec
+			break
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
