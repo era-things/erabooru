@@ -46,6 +46,10 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 	workers := river.NewWorkers()
+	river.AddWorker(workers, river.WorkFunc(func(ctx context.Context, job *river.Job[queue.EmbedTextArgs]) error {
+		log.Printf("embed text job should not run on server: %q", job.Args.Text)
+		return nil
+	}))
 	pool, err := pgxpool.New(ctx, cfg.PostgresDSN)
 	if err != nil {
 		search.Close()
