@@ -134,7 +134,47 @@ func Load(dir string) error {
 			return
 		}
 
-		textOutputName = outputs[0].Name
+		textAvailable := make([]string, 0, len(outputs))
+		for _, out := range outputs {
+			textAvailable = append(textAvailable, out.Name)
+		}
+
+		chooseTextOutput := func(names ...string) string {
+			for _, preferred := range names {
+				if preferred == "" {
+					continue
+				}
+				want := strings.ToLower(preferred)
+				for _, out := range outputs {
+					if strings.ToLower(out.Name) != want {
+						continue
+					}
+					if out.OrtValueType != ort.ONNXTypeTensor {
+						continue
+					}
+					if out.DataType != ort.TensorElementDataTypeFloat {
+						continue
+					}
+					return out.Name
+				}
+			}
+			return ""
+		}
+
+		textOutputName = chooseTextOutput(
+			"text_embeds",
+			"pooled_output",
+			"sentence_embedding",
+			"last_hidden_state",
+		)
+		if textOutputName == "" {
+			textOutputName = chooseTextOutput(textAvailable...)
+		}
+		if textOutputName == "" {
+			loadErr = fmt.Errorf("text model exposes no float tensor outputs (available: %s)", strings.Join(textAvailable, ", "))
+			return
+		}
+
 		inputNames := make([]string, len(textInputs))
 		for i, in := range textInputs {
 			inputNames[i] = in.Name
