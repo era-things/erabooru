@@ -58,6 +58,10 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 		return err
 	}
 
+	if err := queue.WorkerEnqueue(ctx, queue.IndexArgs{ID: job.Args.Key}); err != nil {
+		log.Printf("Failed to enqueue reindex for %s: %v", job.Args.Key, err)
+	}
+
 	log.Printf("Successfully generated and saved embedding for key %s", job.Args.Key)
 	return nil
 }

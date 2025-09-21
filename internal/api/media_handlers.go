@@ -10,6 +10,7 @@ import (
 	"era/booru/ent"
 	"era/booru/ent/media"
 	"era/booru/ent/mediadate"
+	"era/booru/ent/mediavector"
 	"era/booru/ent/tag"
 	"era/booru/internal/config"
 	"era/booru/internal/db"
@@ -26,11 +27,21 @@ func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *co
 	r.GET("/api/media", listMediaHandler(cfg))
 	r.GET("/api/media/previews", listPreviewsHandler(cfg))
 	r.GET("/api/media/:id", getMediaHandler(db, m, cfg))
+	r.POST("/api/media/similar", similarMediaHandler(db, cfg))
 	r.POST("/api/media/upload-url", uploadURLHandler(m, cfg))
 	r.POST("/api/media/:id/tags", updateMediaTagsHandler(db))
 	r.POST("/api/media/:id/dates", updateMediaDatesHandler(db))
 	r.POST("/api/media/:id/vectors", updateMediaVectorsHandler(db))
 	r.DELETE("/api/media/:id", deleteMediaHandler(db, m))
+}
+
+func bucketForFormat(format, videoBucket, pictureBucket string) string {
+	switch format {
+	case "mp4", "webm", "avi", "mkv":
+		return videoBucket
+	default:
+		return pictureBucket
+	}
 }
 
 func listMediaHandler(cfg *config.Config) gin.HandlerFunc {
@@ -68,13 +79,7 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string) gi
 		for i, mitem := range items {
 			format := mitem.Format
 			key := mitem.ID
-			var bucket string
-			switch format {
-			case "mp4", "webm", "avi", "mkv":
-				bucket = videoBucket
-			default:
-				bucket = pictureBucket
-			}
+			bucket := bucketForFormat(format, videoBucket, pictureBucket)
 
 			url := fmt.Sprintf("%s/%s/%s", minioPrefix, bucket, key)
 
@@ -103,6 +108,11 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 			WithDates(func(q *ent.DateQuery) {
 				q.WithMediaDates(func(mdq *ent.MediaDateQuery) {
 					mdq.Where(mediadate.MediaIDEQ(id))
+				})
+			}).
+			WithVectors(func(q *ent.VectorQuery) {
+				q.WithMediaVectors(func(mvq *ent.MediaVectorQuery) {
+					mvq.Where(mediavector.MediaIDEQ(id))
 				})
 			}).
 			Only(c.Request.Context())
@@ -138,6 +148,31 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 				})
 			}
 		}
+		vectors := make([]gin.H, 0)
+		if item.Edges.Vectors != nil {
+			for _, vec := range item.Edges.Vectors {
+				if vec == nil || vec.Edges.MediaVectors == nil {
+					continue
+				}
+				for _, mv := range vec.Edges.MediaVectors {
+					if mv == nil || mv.MediaID != item.ID {
+						continue
+					}
+					data := mv.Value.Slice()
+					if len(data) == 0 {
+						continue
+					}
+					copyVec := make([]float32, len(data))
+					copy(copyVec, data)
+					vectors = append(vectors, gin.H{
+						"name":  vec.Name,
+						"value": copyVec,
+					})
+					break
+				}
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"id":       item.ID,
 			"url":      url,
@@ -148,7 +183,59 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 			"size":     stat.Size,
 			"tags":     tags,
 			"dates":    dates,
+			"vectors":  vectors,
 		})
+	}
+}
+
+func similarMediaHandler(db *ent.Client, cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var body struct {
+			Vector  []float32 `json:"vector"`
+			Limit   int       `json:"limit"`
+			Name    string    `json:"name"`
+			Exclude string    `json:"exclude"`
+		}
+		if err := c.BindJSON(&body); err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+		if len(body.Vector) == 0 {
+			c.JSON(http.StatusOK, gin.H{"media": []gin.H{}})
+			return
+		}
+
+		if body.Name == "" {
+			body.Name = "vision"
+		}
+		if body.Limit <= 0 {
+			body.Limit = 5
+		}
+		if body.Limit > 50 {
+			body.Limit = 50
+		}
+
+		results, err := search.SimilarMediaByVector(c.Request.Context(), db, body.Name, body.Vector, body.Limit, body.Exclude)
+		if err != nil {
+			log.Printf("similar media search: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		out := make([]gin.H, 0, len(results))
+		for _, item := range results {
+			bucket := bucketForFormat(item.Format, cfg.MinioBucket, cfg.MinioBucket)
+			url := fmt.Sprintf("%s/%s/%s", cfg.MinioPublicPrefix, bucket, item.ID)
+			out = append(out, gin.H{
+				"id":     item.ID,
+				"url":    url,
+				"width":  item.Width,
+				"height": item.Height,
+				"format": item.Format,
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{"media": out})
 	}
 }
 

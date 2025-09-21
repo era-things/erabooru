@@ -15,6 +15,12 @@ export interface MediaDetail extends MediaItem {
 	size: number;
 	tags: TagCount[];
 	dates: MediaDate[];
+	vectors?: MediaVector[];
+}
+
+export interface MediaVector {
+	name: string;
+	value: number[];
 }
 
 export interface TagCount {

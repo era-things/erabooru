@@ -9,9 +9,9 @@
 		columnWidths = ['1fr', '1fr'],
 		scrollPosition = 0
 	}: {
-		items: MediaPreviewItem[],
-		columnWidths: string[], 
-		scrollPosition: number
+		items: MediaPreviewItem[];
+		columnWidths: string[];
+		scrollPosition: number;
 	} = $props();
 
 	let columns = $derived(

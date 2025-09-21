@@ -92,3 +92,18 @@ export async function fetchTags(): Promise<TagCount[]> {
 	const data = await handleJson<{ tags: TagCount[] }>(res);
 	return data.tags;
 }
+
+export async function fetchSimilarMedia(
+	vector: number[],
+	limit: number,
+	exclude?: string,
+	name = 'vision'
+): Promise<MediaItem[]> {
+	const res = await fetch(`${apiBase}/media/similar`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ vector, limit, exclude, name })
+	});
+	const data = await handleJson<{ media: MediaItem[] }>(res);
+	return data.media;
+}

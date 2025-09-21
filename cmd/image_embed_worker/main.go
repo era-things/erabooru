@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -42,6 +43,10 @@ func main() {
 	defer pool.Close()
 
 	workers := river.NewWorkers()
+	river.AddWorker(workers, river.WorkFunc(func(ctx context.Context, job *river.Job[queue.IndexArgs]) error {
+		return fmt.Errorf("index job should not run in image embed worker: %s", job.Args.ID)
+	}))
+
 	client, err := queue.NewClient(ctx, pool, workers, queue.ClientTypeImageEmbWorker)
 	if err != nil {
 		log.Fatal(err)
