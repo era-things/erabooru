@@ -131,7 +131,16 @@ func TextEmbedding(text string) ([]float32, error) {
 		if tokens == 0 {
 			return nil, fmt.Errorf("text embedding returned zero tokens")
 		}
-		start := (tokens - 1) * dim
+
+		tokenIndex := tokens - 1
+		if strings.EqualFold(textModelOutputName(), "last_hidden_state") {
+			tokenIndex = 0
+		}
+		if tokenIndex < 0 || tokenIndex >= tokens {
+			return nil, fmt.Errorf("selected token %d out of range (tokens=%d)", tokenIndex, tokens)
+		}
+
+		start := tokenIndex * dim
 		end := start + dim
 		if start < 0 || end > len(data) {
 			return nil, fmt.Errorf("text embedding token slice out of range: %d-%d (len=%d)", start, end, len(data))
