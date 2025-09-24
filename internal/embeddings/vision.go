@@ -13,6 +13,13 @@ import (
 	ort "github.com/yalue/onnxruntime_go"
 )
 
+const (
+	resizeShortEdgeBase = 256
+	cropSizeBase        = 224
+	meanValue           = 0.5
+	stdValue            = 0.5
+)
+
 // VisionEmbedding converts an image to an L2-normalised embedding vector.
 func VisionEmbedding(img image.Image) ([]float32, error) {
 	const maxAttempts = 3
@@ -51,21 +58,78 @@ func l2(v []float32) {
 	}
 }
 
+func preprocessImage(src image.Image, crop int) (*image.NRGBA, error) {
+	if crop <= 0 {
+		return nil, fmt.Errorf("invalid crop size %d", crop)
+	}
+
+	bounds := src.Bounds()
+	w := bounds.Dx()
+	h := bounds.Dy()
+	if w <= 0 || h <= 0 {
+		return nil, fmt.Errorf("invalid image dimensions %dx%d", w, h)
+	}
+
+	shortEdge := w
+	if h < shortEdge {
+		shortEdge = h
+	}
+	if shortEdge == 0 {
+		return nil, fmt.Errorf("image has zero short edge")
+	}
+
+	resizeShort := int(math.Round(float64(crop) * float64(resizeShortEdgeBase) / float64(cropSizeBase)))
+	if resizeShort < crop {
+		resizeShort = crop
+	}
+
+	scale := float64(resizeShort) / float64(shortEdge)
+	newW := int(math.Round(float64(w) * scale))
+	newH := int(math.Round(float64(h) * scale))
+	if newW < crop {
+		newW = crop
+	}
+	if newH < crop {
+		newH = crop
+	}
+
+	resized := imaging.Resize(src, newW, newH, imaging.CatmullRom)
+
+	left := (resized.Bounds().Dx() - crop) / 2
+	top := (resized.Bounds().Dy() - crop) / 2
+	if left < 0 {
+		left = 0
+	}
+	if top < 0 {
+		top = 0
+	}
+
+	rect := image.Rect(left, top, left+crop, top+crop)
+	cropped := imaging.Crop(resized, rect)
+	return cropped, nil
+}
+
 func visionEmbeddingWithSize(src image.Image, S int) ([]float32, error) {
 	if S <= 0 {
 		return nil, fmt.Errorf("invalid vision input size %d", S)
 	}
 
-	img := imaging.Fill(src, S, S, imaging.Center, imaging.Lanczos)
+	cropped, err := preprocessImage(src, S)
+	if err != nil {
+		return nil, err
+	}
 
 	pix := make([]float32, 3*S*S)
 	for y := 0; y < S; y++ {
 		for x := 0; x < S; x++ {
-			r, g, b, _ := img.At(x, y).RGBA()
+			r, g, b, _ := cropped.At(x, y).RGBA()
 			i := y*S + x
-			pix[i] = (float32(r>>8)/255 - .5) / .5
-			pix[S*S+i] = (float32(g>>8)/255 - .5) / .5
-			pix[2*S*S+i] = (float32(b>>8)/255 - .5) / .5
+			rf := (float32(r>>8)/255.0 - meanValue) / stdValue
+			gf := (float32(g>>8)/255.0 - meanValue) / stdValue
+			bf := (float32(b>>8)/255.0 - meanValue) / stdValue
+			pix[i] = rf
+			pix[S*S+i] = gf
+			pix[2*S*S+i] = bf
 		}
 	}
 
