@@ -164,11 +164,7 @@ func Load(dir string) error {
 		}
 
 		textOutputName = chooseOutput(
-			"text_embeds",
-			"text_features",
-			"projected_text_embeddings",
-			"projected_embeds",
-			"embeddings",
+			"text_embeds", "text_features", "txt_embeds", "embeddings", "pooler_output",
 		)
 		if textOutputName == "" {
 			textOutputName = chooseOutput(availableTextOutputs...)
