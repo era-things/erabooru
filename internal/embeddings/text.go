@@ -14,6 +14,13 @@ import (
 // loaded text model. The resulting vector is L2-normalised to match the vision
 // embeddings stored in the database so that cosine similarity can be used
 // directly.
+const (
+	// siglip2 text encoder expects fixed-length sequences padded to 64 tokens.
+	textMaxTokens = 64
+	padTokenID    = 0
+	eosTokenID    = 1
+)
+
 func TextEmbedding(text string) ([]float32, error) {
 	if textSession() == nil || tokenizerInstance() == nil {
 		return nil, fmt.Errorf("text embedding model not initialised")
@@ -35,7 +42,34 @@ func TextEmbedding(text string) ([]float32, error) {
 		return nil, fmt.Errorf("attention mask length mismatch: %d vs %d", len(enc.AttentionMask), len(enc.Ids))
 	}
 
-	seqLen := len(enc.Ids)
+	ids := make([]int, textMaxTokens)
+	for i := range ids {
+		ids[i] = padTokenID
+	}
+	attention := make([]int, textMaxTokens)
+	typeIDs := make([]int, textMaxTokens)
+	positions := make([]int, textMaxTokens)
+
+	copyCount := len(enc.Ids)
+	if copyCount > textMaxTokens {
+		copyCount = textMaxTokens
+	}
+
+	for i := 0; i < copyCount; i++ {
+		ids[i] = enc.Ids[i]
+		attention[i] = 1
+	}
+
+	if len(enc.Ids) > textMaxTokens {
+		ids[textMaxTokens-1] = eosTokenID
+		attention[textMaxTokens-1] = 1
+	}
+
+	for i := range positions {
+		positions[i] = i
+	}
+
+	seqLen := textMaxTokens
 	inputsInfo := textModelInputs()
 	if len(inputsInfo) == 0 {
 		return nil, fmt.Errorf("text model exposes no inputs")
@@ -55,37 +89,25 @@ func TextEmbedding(text string) ([]float32, error) {
 		shape := ort.NewShape(1, int64(seqLen))
 		switch {
 		case strings.Contains(name, "input") && strings.Contains(name, "id"):
-			data := make([]int64, seqLen)
-			for idx, id := range enc.Ids {
-				data[idx] = int64(id)
-			}
-			tensor, err := ort.NewTensor[int64](shape, data)
+			tensor, err := newIntTensor(shape, info.DataType, ids)
 			if err != nil {
 				return nil, fmt.Errorf("create input_ids tensor: %w", err)
 			}
 			inputs[i] = tensor
 		case strings.Contains(name, "attention"):
-			data := make([]int64, seqLen)
-			for idx, v := range enc.AttentionMask {
-				data[idx] = int64(v)
-			}
-			tensor, err := ort.NewTensor[int64](shape, data)
+			tensor, err := newIntTensor(shape, info.DataType, attention)
 			if err != nil {
 				return nil, fmt.Errorf("create attention_mask tensor: %w", err)
 			}
 			inputs[i] = tensor
 		case strings.Contains(name, "position"):
-			data := make([]int64, seqLen)
-			for idx := range data {
-				data[idx] = int64(idx)
-			}
-			tensor, err := ort.NewTensor[int64](shape, data)
+			tensor, err := newIntTensor(shape, info.DataType, positions)
 			if err != nil {
 				return nil, fmt.Errorf("create position_ids tensor: %w", err)
 			}
 			inputs[i] = tensor
 		case strings.Contains(name, "token_type"):
-			tensor, err := ort.NewTensor[int64](shape, make([]int64, seqLen))
+			tensor, err := newIntTensor(shape, info.DataType, typeIDs)
 			if err != nil {
 				return nil, fmt.Errorf("create token_type_ids tensor: %w", err)
 			}
@@ -153,4 +175,23 @@ func TextEmbedding(text string) ([]float32, error) {
 
 	l2(vec)
 	return vec, nil
+}
+
+func newIntTensor(shape ort.Shape, dtype ort.TensorElementDataType, data []int) (ort.Value, error) {
+	switch dtype {
+	case ort.TensorElementDataTypeInt64:
+		buf := make([]int64, len(data))
+		for i, v := range data {
+			buf[i] = int64(v)
+		}
+		return ort.NewTensor[int64](shape, buf)
+	case ort.TensorElementDataTypeInt32:
+		buf := make([]int32, len(data))
+		for i, v := range data {
+			buf[i] = int32(v)
+		}
+		return ort.NewTensor[int32](shape, buf)
+	default:
+		return nil, fmt.Errorf("unsupported text input type %v", dtype)
+	}
 }
