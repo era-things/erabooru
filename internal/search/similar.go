@@ -17,18 +17,28 @@ import (
 // vector. When Bleve vector search is available the build can provide a
 // specialised implementation via build tags. The default implementation uses
 // pgvector for similarity calculation.
-func SimilarMediaByVector(ctx context.Context, db *ent.Client, vectorName string, query []float32, limit int, excludeID string) ([]*ent.Media, error) {
+func SimilarMediaByVector(ctx context.Context, db *ent.Client, vectorName string, query []float32, limit, offset int, excludeID string) ([]*ent.Media, int, error) {
 	if limit <= 0 || len(query) == 0 {
-		return []*ent.Media{}, nil
+		return []*ent.Media{}, 0, nil
 	}
 
 	vec := pgvector.NewVector(query)
-	mvQuery := db.MediaVector.Query().
+	baseQuery := db.MediaVector.Query().
 		Where(mediavector.HasVectorWith(vector.NameEQ(vectorName)))
 
 	if excludeID != "" {
-		mvQuery = mvQuery.Where(mediavector.MediaIDNEQ(excludeID))
+		baseQuery = baseQuery.Where(mediavector.MediaIDNEQ(excludeID))
 	}
+
+	total, err := baseQuery.Clone().Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return []*ent.Media{}, 0, nil
+	}
+
+	mvQuery := baseQuery.Clone()
 
 	mvQuery = mvQuery.Order(func(s *sql.Selector) {
 		s.OrderExpr(sql.ExprFunc(func(b *sql.Builder) {
@@ -40,23 +50,27 @@ func SimilarMediaByVector(ctx context.Context, db *ent.Client, vectorName string
 		}))
 	}).Limit(limit)
 
+	if offset > 0 {
+		mvQuery = mvQuery.Offset(offset)
+	}
+
 	ids, err := mvQuery.Select(mediavector.FieldMediaID).Strings(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if len(ids) == 0 {
-		return []*ent.Media{}, nil
+		return []*ent.Media{}, total, nil
 	}
 
 	medias, err := db.Media.Query().
 		Where(media.IDIn(ids...)).
 		All(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	if len(medias) <= 1 {
-		return medias, nil
+		return medias, total, nil
 	}
 
 	order := make(map[string]int, len(ids))
@@ -68,5 +82,5 @@ func SimilarMediaByVector(ctx context.Context, db *ent.Client, vectorName string
 		return order[medias[i].ID] < order[medias[j].ID]
 	})
 
-	return medias, nil
+	return medias, total, nil
 }

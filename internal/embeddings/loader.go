@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	tokenizer "github.com/sugarme/tokenizer"
+	pretrained "github.com/sugarme/tokenizer/pretrained"
 	ort "github.com/yalue/onnxruntime_go"
 )
 
@@ -19,6 +21,12 @@ var (
 	dynSess          *ort.DynamicAdvancedSession
 	outputName       string
 	inputSpatialSize atomic.Int64
+
+	textSess           *ort.DynamicAdvancedSession
+	textOutputName     string
+	textInputNames     []string
+	textSequenceLength int
+	textTokenizer      *tokenizer.Tokenizer
 )
 
 func init() {
@@ -106,6 +114,75 @@ func Load(dir string) error {
 			[]string{"pixel_values"}, // input
 			[]string{outputName},     // output
 			nil,                      // default SessionOptions
+		)
+
+		if loadErr != nil {
+			return
+		}
+
+		tk, err := pretrained.FromFile(filepath.Join(dir, "tokenizer.json"))
+		if err != nil {
+			loadErr = err
+			return
+		}
+		textTokenizer = tk
+
+		textModel, err := os.ReadFile(filepath.Join(dir, "text_model_fp16.onnx"))
+		if err != nil {
+			loadErr = err
+			return
+		}
+
+		textInputs, textOutputs, err := ort.GetInputOutputInfoWithONNXData(textModel)
+		if err != nil {
+			loadErr = fmt.Errorf("failed to inspect text model outputs: %w", err)
+			return
+		}
+		if len(textOutputs) == 0 {
+			loadErr = fmt.Errorf("text model exposes no outputs")
+			return
+		}
+
+		textInputNames = make([]string, len(textInputs))
+		seqLen := 0
+		for i, in := range textInputs {
+			textInputNames[i] = in.Name
+			if len(in.Dimensions) > 1 {
+				if v := int(in.Dimensions[len(in.Dimensions)-1]); v > seqLen {
+					seqLen = v
+				}
+			}
+		}
+		if seqLen <= 0 {
+			seqLen = 64
+		}
+		textSequenceLength = seqLen
+
+		availableTextOutputs := make([]string, 0, len(textOutputs))
+		for _, out := range textOutputs {
+			availableTextOutputs = append(availableTextOutputs, out.Name)
+		}
+
+		textOutputName = chooseOutput(
+			"text_embeds",
+			"text_features",
+			"projected_text_embeddings",
+			"projected_embeds",
+			"embeddings",
+		)
+		if textOutputName == "" {
+			textOutputName = chooseOutput(availableTextOutputs...)
+		}
+		if textOutputName == "" {
+			loadErr = fmt.Errorf("text model exposes no float tensor outputs (available: %s)", strings.Join(availableTextOutputs, ", "))
+			return
+		}
+
+		textSess, loadErr = ort.NewDynamicAdvancedSessionWithONNXData(
+			textModel,
+			textInputNames,
+			[]string{textOutputName},
+			nil,
 		)
 	})
 	return loadErr

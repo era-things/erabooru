@@ -78,6 +78,8 @@ func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) e
 		queueName = "index" // Goes to server
 	case EmbedArgs:
 		queueName = "embed" // Goes to image embed worker
+	case EmbedTextArgs:
+		queueName = "embed"
 	default:
 		queueName = "" // Default queue
 	}
@@ -119,3 +121,9 @@ type EmbedArgs struct {
 }
 
 func (EmbedArgs) Kind() string { return "embed_media" }
+
+type EmbedTextArgs struct {
+	Text string `json:"text"`
+}
+
+func (EmbedTextArgs) Kind() string { return "embed_text" }

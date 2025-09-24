@@ -1,10 +1,13 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"era/booru/ent"
@@ -15,17 +18,20 @@ import (
 	"era/booru/internal/config"
 	"era/booru/internal/db"
 	"era/booru/internal/minio"
+	"era/booru/internal/queue"
 	"era/booru/internal/search"
 
 	pgvector "github.com/pgvector/pgvector-go"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	mc "github.com/minio/minio-go/v7"
+	"github.com/riverqueue/river"
 )
 
-func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config) {
-	r.GET("/api/media", listMediaHandler(cfg))
-	r.GET("/api/media/previews", listPreviewsHandler(cfg))
+func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config, queueClient *river.Client[pgx.Tx]) {
+	r.GET("/api/media", listMediaHandler(cfg, db, queueClient))
+	r.GET("/api/media/previews", listPreviewsHandler(cfg, db, queueClient))
 	r.GET("/api/media/:id", getMediaHandler(db, m, cfg))
 	r.POST("/api/media/similar", similarMediaHandler(db, cfg))
 	r.POST("/api/media/upload-url", uploadURLHandler(m, cfg))
@@ -44,18 +50,19 @@ func bucketForFormat(format, videoBucket, pictureBucket string) string {
 	}
 }
 
-func listMediaHandler(cfg *config.Config) gin.HandlerFunc {
-	return listCommon(cfg.MinioPublicPrefix, cfg.MinioBucket, cfg.MinioBucket)
+func listMediaHandler(cfg *config.Config, db *ent.Client, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
+	return listCommon(cfg.MinioPublicPrefix, cfg.MinioBucket, cfg.MinioBucket, db, queueClient)
 }
 
-func listPreviewsHandler(cfg *config.Config) gin.HandlerFunc {
+func listPreviewsHandler(cfg *config.Config, db *ent.Client, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	//for now, image previews are just original full-size images
-	return listCommon(cfg.MinioPublicPrefix, cfg.PreviewBucket, cfg.MinioBucket)
+	return listCommon(cfg.MinioPublicPrefix, cfg.PreviewBucket, cfg.MinioBucket, db, queueClient)
 }
 
-func listCommon(minioPrefix string, videoBucket string, pictureBucket string) gin.HandlerFunc {
+func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db *ent.Client, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		q := c.Query("q")
+		vectorSearch := c.Query("vector") == "1"
 		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 		if err != nil || page < 1 {
 			page = 1
@@ -68,11 +75,53 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string) gi
 			pageSize = 60
 		}
 		offset := (page - 1) * pageSize
-		items, total, err := search.SearchMedia(q, pageSize, offset)
-		if err != nil {
-			log.Printf("search media: %v", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
+
+		var (
+			items []*ent.Media
+			total int
+		)
+
+		if vectorSearch {
+			trimmed := strings.TrimSpace(q)
+			if trimmed == "" {
+				items = []*ent.Media{}
+				total = 0
+			} else if queueClient == nil {
+				c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "text embedding unavailable"})
+				return
+			} else {
+				ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+				defer cancel()
+
+				vec, err := queue.RequestTextEmbedding(ctx, queueClient, trimmed)
+				if err != nil {
+					log.Printf("text embedding %q failed: %v", trimmed, err)
+					status := http.StatusServiceUnavailable
+					if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+						status = http.StatusGatewayTimeout
+					}
+					c.AbortWithStatusJSON(status, gin.H{"error": err.Error()})
+					return
+				}
+				if len(vec) == 0 {
+					items = []*ent.Media{}
+					total = 0
+				} else {
+					items, total, err = search.SimilarMediaByVector(ctx, db, "vision", vec, pageSize, offset, "")
+					if err != nil {
+						log.Printf("vector media search: %v", err)
+						c.AbortWithStatus(http.StatusInternalServerError)
+						return
+					}
+				}
+			}
+		} else {
+			items, total, err = search.SearchMedia(q, pageSize, offset)
+			if err != nil {
+				log.Printf("search media: %v", err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
 		}
 		out := make([]gin.H, len(items))
 
@@ -215,7 +264,7 @@ func similarMediaHandler(db *ent.Client, cfg *config.Config) gin.HandlerFunc {
 			body.Limit = 50
 		}
 
-		results, err := search.SimilarMediaByVector(c.Request.Context(), db, body.Name, body.Vector, body.Limit, body.Exclude)
+		results, _, err := search.SimilarMediaByVector(c.Request.Context(), db, body.Name, body.Vector, body.Limit, 0, body.Exclude)
 		if err != nil {
 			log.Printf("similar media search: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)

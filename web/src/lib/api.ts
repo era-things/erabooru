@@ -15,12 +15,20 @@ async function handleJson<T>(res: Response): Promise<T> {
 export async function fetchMediaPreviews(
 	query: string,
 	page: number,
-	pageSize: number
+	pageSize: number,
+	vector = false
 ): Promise<MediaPreviewsResponse> {
-	const url = query
-		? `${apiBase}/media/previews?q=${encodeURIComponent(query)}&page=${page}&page_size=${pageSize}`
-		: `${apiBase}/media/previews?page=${page}&page_size=${pageSize}`;
-	const res = await fetch(url);
+	const params = new URLSearchParams({
+		page: page.toString(),
+		page_size: pageSize.toString()
+	});
+	if (query) {
+		params.set('q', query);
+	}
+	if (vector) {
+		params.set('vector', '1');
+	}
+	const res = await fetch(`${apiBase}/media/previews?${params.toString()}`);
 	return handleJson(res);
 }
 
