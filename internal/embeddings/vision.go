@@ -108,18 +108,6 @@ func visionEmbeddingWithSize(src image.Image, S int) ([]float32, error) {
 		}
 		vec = make([]float32, dim)
 		copy(vec, data)
-	case 3:
-		tokens := int(shape[1])
-		dim := int(shape[2])
-		expected := tokens * dim
-		if len(data) != expected {
-			return nil, fmt.Errorf("embedding data length mismatch: got %d, expected %d", len(data), expected)
-		}
-		if tokens == 0 {
-			return nil, fmt.Errorf("embedding has zero tokens")
-		}
-		vec = make([]float32, dim)
-		copy(vec, data[:dim])
 	default:
 		return nil, fmt.Errorf("unsupported embedding rank %d", len(shape))
 	}
