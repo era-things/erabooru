@@ -82,7 +82,13 @@ func Load(dir string) error {
 			return ""
 		}
 
-		outputName = chooseOutput("image_embeds", "last_hidden_state")
+		outputName = chooseOutput(
+			"pooler_output",
+			"image_embeds",
+			"image_features",
+			"img_embeds",
+			"embeddings",
+		)
 		if outputName == "" {
 			// Fall back to the first float tensor output if the preferred
 			// names are absent so we can support future exports without
