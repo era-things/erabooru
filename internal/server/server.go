@@ -65,6 +65,14 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 	}
 
 	river.AddWorker(workers, &indexworker.IndexWorker{DB: database})
+
+	// Register the embed_text job kind so the server can enqueue requests for
+	// the dedicated embedding worker without pulling in its runtime
+	// dependencies here. The actual processing happens in the image embed
+	// worker binary.
+	river.AddWorker(workers, river.WorkFunc(func(ctx context.Context, job *river.Job[queue.EmbedTextArgs]) error {
+		return nil
+	}))
 	if err := riverClient.Start(ctx); err != nil {
 		return nil, err
 	}
@@ -87,7 +95,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 	r := gin.New()
 	r.Use(api.GinLogger(), gin.Recovery(), api.CORSMiddleware())
 	r.GET("/health", func(c *gin.Context) { c.Status(http.StatusNoContent) })
-	api.RegisterMediaRoutes(r, database, m, cfg)
+	api.RegisterMediaRoutes(r, database, m, cfg, riverClient)
 	api.RegisterTagRoutes(r, database)
 	api.RegisterAdminRoutes(r, database, m, cfg, riverClient)
 	api.RegisterStaticRoutes(r)
