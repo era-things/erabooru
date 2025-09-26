@@ -114,11 +114,16 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 	defer cleanup()
 
 	vectors := make([][]float32, 0, samples)
+	errors := 0
 	for i := 0; i < samples; i++ {
 		ts := sampleTimestamp(duration, samples, i)
 		img, err := extractFrame(ctx, src, ts)
 		if err != nil {
-			return nil, fmt.Errorf("failed to extract frame %d: %w", i, err)
+			errors++
+			if errors > 2 { // tolerate errors in a case of encoding quirks
+				return nil, fmt.Errorf("too many errors extracting frames from video %s: last error: %w", key, err)
+			}
+			continue
 		}
 
 		vec, err := embed.VisionEmbedding(img)
@@ -255,12 +260,10 @@ func sampleTimestamp(durationSeconds int, sampleCount, index int) float64 {
 
 func videoSampleCount(durationSeconds int) int {
 	switch {
-	case durationSeconds <= 0:
-		return 5
 	case durationSeconds < 5:
 		return 5
 	case durationSeconds < 60:
-		return durationSeconds
+		return durationSeconds - 1
 	default:
 		return 60
 	}
