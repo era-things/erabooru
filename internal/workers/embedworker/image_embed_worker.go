@@ -8,8 +8,10 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"log"
 	"math"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -105,12 +107,11 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 		return nil, fmt.Errorf("invalid sample count computed for video %s", key)
 	}
 
-	scheme := "http://"
-	if w.Cfg.MinioSSL {
-		scheme = "https://"
+	src, cleanup, err := w.cachedVideoPath(ctx, bucket, key)
+	if err != nil {
+		return nil, err
 	}
-
-	src := fmt.Sprintf("%s%s/%s/%s", scheme, w.Cfg.MinioInternalEndpoint, strings.TrimPrefix(bucket, "/"), strings.TrimPrefix(key, "/"))
+	defer cleanup()
 
 	vectors := make([][]float32, 0, samples)
 	for i := 0; i < samples; i++ {
@@ -150,11 +151,66 @@ func extractFrame(ctx context.Context, src string, timestamp float64) (image.Ima
 		return nil, fmt.Errorf("ffmpeg error: %w", err)
 	}
 
+	if stdout.Len() == 0 {
+		if stderr.Len() > 0 {
+			return nil, fmt.Errorf("ffmpeg produced no data: %s", strings.TrimSpace(stderr.String()))
+		}
+		return nil, fmt.Errorf("ffmpeg produced no data for timestamp %s", ts)
+	}
+
 	img, _, err := image.Decode(&stdout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode frame image: %w", err)
 	}
 	return img, nil
+}
+
+func (w *ImageEmbedWorker) cachedVideoPath(ctx context.Context, bucket, key string) (string, func(), error) {
+	obj, err := w.Minio.GetObject(ctx, bucket, key, mc.GetObjectOptions{})
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to fetch video object: %w", err)
+	}
+	defer func() {
+		if obj != nil {
+			obj.Close()
+		}
+	}()
+
+	tmp, err := os.CreateTemp("", "video-embed-*.bin")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	name := tmp.Name()
+
+	if _, err := io.Copy(tmp, obj); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return "", nil, fmt.Errorf("failed to cache video locally: %w", err)
+	}
+
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return "", nil, fmt.Errorf("failed to flush video cache: %w", err)
+	}
+
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return "", nil, fmt.Errorf("failed to close cached video: %w", err)
+	}
+
+	if err := obj.Close(); err != nil {
+		os.Remove(name)
+		return "", nil, fmt.Errorf("failed to close video object: %w", err)
+	}
+	obj = nil
+
+	cleanup := func() {
+		os.Remove(name)
+	}
+
+	return name, cleanup, nil
 }
 
 func formatTimestamp(seconds float64) string {
