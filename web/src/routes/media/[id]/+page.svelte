@@ -4,6 +4,7 @@
 	import TabNav from '$lib/components/TabNav.svelte';
 	import { fetchMediaDetail, deleteMedia, updateMediaTags, fetchSimilarMedia } from '$lib/api';
 	import type { MediaDetail, MediaItem } from '$lib/types/media';
+	import { isFormatVideo } from '$lib/utils/media_utils';
 
 	let media = $state<MediaDetail | null>(null);
 	let tagsInput = $state('');
@@ -77,6 +78,12 @@
 			month: 'short',
 			year: 'numeric'
 		});
+	}
+
+	function similarBorderClass(format: string): string {
+		return isFormatVideo(format)
+			? 'border-2 border-dashed border-neutral-900'
+			: 'border border-gray-200';
 	}
 </script>
 
@@ -159,7 +166,7 @@
 					{#each similar as item (item.id)}
 						<a href={`/media/${item.id}`} class="block">
 							<div
-								class="aspect-square w-full overflow-hidden rounded border border-gray-200 bg-gray-100"
+								class={`aspect-square w-full overflow-hidden rounded bg-gray-100 ${similarBorderClass(item.format)}`}
 							>
 								<img
 									src={item.url}

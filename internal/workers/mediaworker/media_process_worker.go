@@ -227,5 +227,11 @@ func (w *ProcessWorker) processVideo(ctx context.Context, bucket, key string) (s
 		return "", err
 	}
 
+	if err := queue.WorkerEnqueue(ctx, queue.EmbedArgs{Bucket: bucket, Key: key}); err != nil {
+		log.Printf("Failed to enqueue embed job for %s: %v", key, err)
+		return "", err
+	}
+	log.Printf("Successfully enqueued embed job for %s", key)
+
 	return key, nil
 }

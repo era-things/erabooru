@@ -33,6 +33,7 @@ FROM debian:bookworm-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    ffmpeg \
     libc6 \
     libgcc-s1 \
     libstdc++6 \

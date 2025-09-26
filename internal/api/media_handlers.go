@@ -273,7 +273,7 @@ func similarMediaHandler(db *ent.Client, cfg *config.Config) gin.HandlerFunc {
 
 		out := make([]gin.H, 0, len(results))
 		for _, item := range results {
-			bucket := bucketForFormat(item.Format, cfg.MinioBucket, cfg.MinioBucket)
+			bucket := bucketForFormat(item.Format, cfg.PreviewBucket, cfg.MinioBucket)
 			url := fmt.Sprintf("%s/%s/%s", cfg.MinioPublicPrefix, bucket, item.ID)
 			out = append(out, gin.H{
 				"id":     item.ID,

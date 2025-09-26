@@ -16,7 +16,6 @@
 
 	let columns = $derived(distributeRoundRobin(items, columnWidths.length));
 
-
 	let el = $state<HTMLElement>();
 	const rect = new ElementRect(() => el);
 
