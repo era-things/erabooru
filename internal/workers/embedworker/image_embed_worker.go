@@ -217,7 +217,10 @@ func formatTimestamp(seconds float64) string {
 	if seconds < 0 {
 		seconds = 0
 	}
-	totalMillis := math.Round(seconds * 1000)
+	totalMillis := math.Floor(seconds * 1000)
+	if totalMillis < 0 {
+		totalMillis = 0
+	}
 	totalSeconds := int(totalMillis) / 1000
 	ms := int(totalMillis) % 1000
 	h := totalSeconds / 3600
@@ -230,12 +233,17 @@ func sampleTimestamp(durationSeconds int, sampleCount, index int) float64 {
 	if durationSeconds <= 0 {
 		return 0
 	}
-	if sampleCount <= 1 {
-		return float64(durationSeconds) / 2
+	if sampleCount <= 0 {
+		return 0
 	}
+
 	span := float64(durationSeconds)
-	fraction := float64(index) / float64(sampleCount-1)
-	ts := fraction * span
+	if sampleCount == 1 {
+		return span / 2
+	}
+
+	step := span / float64(sampleCount)
+	ts := (float64(index) + 0.5) * step
 	if ts >= span {
 		ts = math.Nextafter(span, 0)
 	}
