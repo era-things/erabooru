@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"era/booru/internal/config"
 	"era/booru/internal/db"
@@ -27,7 +28,14 @@ func main() {
 
 	modelDir := os.Getenv("MODEL_DIR")
 	if modelDir == "" {
-		modelDir = "ml_models/Siglip2_FP16"
+		dlCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		opts := embed.DefaultModelOptionsFromEnv()
+		var err error
+		modelDir, err = embed.EnsureModel(dlCtx, opts)
+		cancel()
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	if err := embed.Load(modelDir); err != nil {
 		log.Fatal(err)

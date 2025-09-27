@@ -7,6 +7,8 @@ volumes:
     driver: local
   postgres-data:
     driver: local
+  model-cache:
+    driver: local
 
 services:
   caddy:
@@ -124,9 +126,9 @@ services:
       - .env
     environment:
       - POSTGRES_DSN=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
-      - MODEL_DIR=/models/Siglip2_FP16
+      - MODEL_CACHE_DIR=/cache/models
     volumes:
-      - ./ml_models:/models:ro
+      - model-cache:/cache
     depends_on:
       db:
         condition: service_healthy
