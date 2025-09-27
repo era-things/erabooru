@@ -43,12 +43,12 @@ var defaultModelFiles = []ModelFile{
 	{
 		LocalPath:  "vision_model_fp16.onnx",
 		RemotePath: "onnx/vision_model_fp16.onnx",
-		SHA256:     "7596d306407eca5d4d3c45125919f7af534aa6118535422f5dbd1174c4fab55b",
+		SHA256:     "a1959f7bd3993a607e48839f6d01e25b876fe76afda301b028b78eef68aabd95",
 	},
 	{
 		LocalPath:  "text_model_fp16.onnx",
 		RemotePath: "onnx/text_model_fp16.onnx",
-		SHA256:     "cb227819fd0ae9e3fdd34c9961dfc5a059449b291483da0e8a387ef2d4b51f1d",
+		SHA256:     "711da56ada0a4aa11c7dd3320df741081a3cae4f0ae1b5e5c6d5b294738d0eb0",
 	},
 	{
 		LocalPath:  "tokenizer.json",
@@ -143,6 +143,7 @@ func ensureFile(ctx context.Context, opts ModelOptions, base string, file ModelF
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download %s: unexpected status %s", req.URL, resp.Status)
 	}
+	fmt.Printf("embeddings: downloading %s to %s\n", req.URL, localPath)
 
 	hasher := sha256.New()
 	writer := io.MultiWriter(tmp, hasher)
@@ -156,6 +157,8 @@ func ensureFile(ctx context.Context, opts ModelOptions, base string, file ModelF
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp file: %w", err)
 	}
+
+	fmt.Printf("embeddings: download of %s complete\n", localPath)
 
 	if file.SHA256 != "" {
 		sum := hex.EncodeToString(hasher.Sum(nil))
