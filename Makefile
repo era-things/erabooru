@@ -41,7 +41,7 @@ dev: setup-env
 
 .PHONY: prod
 prod:
-	docker-compose build app media-worker
+	docker-compose build app media-worker image-embed-worker
 	docker-compose up
 	@echo "🟢  Production services up  |  Access → http://localhost"
 
