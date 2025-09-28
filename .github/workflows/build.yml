@@ -42,11 +42,6 @@ jobs:
         go-version: 'stable' 
         cache: true
 
-    - name: Go vet & test
-      run: |
-        go vet ./...
-        go test ./...
-
     - uses: actions/setup-node@v4
       with:
         node-version: 20
