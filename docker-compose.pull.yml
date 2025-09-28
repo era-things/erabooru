@@ -2,10 +2,14 @@
 services:
   app:
     image: ghcr.io/era-things/erabooru-api:latest
-    build: null       
+    build: null
     volumes:
       - bleve-index:/data/bleve
 
   media-worker:
     image: ghcr.io/era-things/erabooru-media-worker:latest
+    build: null
+
+  image-embed-worker:
+    image: ghcr.io/era-things/erabooru-embed-worker:latest
     build: null
