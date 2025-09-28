@@ -33,7 +33,7 @@
 		const trimmed = tagQuery.trim();
 		const params = new URLSearchParams({
 			page: '1',
-			page_size: PAGE_SIZE
+			page_size: String(PAGE_SIZE)
 		});
 		if (trimmed) {
 			params.set('q', trimmed);
@@ -46,7 +46,7 @@
 		const trimmed = textQuery.trim();
 		const params = new URLSearchParams({
 			page: '1',
-			page_size: PAGE_SIZE,
+			page_size: String(PAGE_SIZE),
 			vector: '1'
 		});
 		if (trimmed) {
