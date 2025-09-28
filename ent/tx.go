@@ -4,6 +4,8 @@ package ent
 
 import (
 	"context"
+	stdsql "database/sql"
+	"fmt"
 	"sync"
 
 	"entgo.io/ent/dialect"
@@ -18,8 +20,12 @@ type Tx struct {
 	Media *MediaClient
 	// MediaDate is the client for interacting with the MediaDate builders.
 	MediaDate *MediaDateClient
+	// MediaVector is the client for interacting with the MediaVector builders.
+	MediaVector *MediaVectorClient
 	// Tag is the client for interacting with the Tag builders.
 	Tag *TagClient
+	// Vector is the client for interacting with the Vector builders.
+	Vector *VectorClient
 
 	// lazily loaded.
 	client     *Client
@@ -154,7 +160,9 @@ func (tx *Tx) init() {
 	tx.Date = NewDateClient(tx.config)
 	tx.Media = NewMediaClient(tx.config)
 	tx.MediaDate = NewMediaDateClient(tx.config)
+	tx.MediaVector = NewMediaVectorClient(tx.config)
 	tx.Tag = NewTagClient(tx.config)
+	tx.Vector = NewVectorClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.
@@ -217,3 +225,27 @@ func (tx *txDriver) Query(ctx context.Context, query string, args, v any) error 
 }
 
 var _ dialect.Driver = (*txDriver)(nil)
+
+// ExecContext allows calling the underlying ExecContext method of the transaction if it is supported by it.
+// See, database/sql#Tx.ExecContext for more information.
+func (tx *txDriver) ExecContext(ctx context.Context, query string, args ...any) (stdsql.Result, error) {
+	ex, ok := tx.tx.(interface {
+		ExecContext(context.Context, string, ...any) (stdsql.Result, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("Tx.ExecContext is not supported")
+	}
+	return ex.ExecContext(ctx, query, args...)
+}
+
+// QueryContext allows calling the underlying QueryContext method of the transaction if it is supported by it.
+// See, database/sql#Tx.QueryContext for more information.
+func (tx *txDriver) QueryContext(ctx context.Context, query string, args ...any) (*stdsql.Rows, error) {
+	q, ok := tx.tx.(interface {
+		QueryContext(context.Context, string, ...any) (*stdsql.Rows, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("Tx.QueryContext is not supported")
+	}
+	return q.QueryContext(ctx, query, args...)
+}

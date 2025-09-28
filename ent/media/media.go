@@ -24,8 +24,12 @@ const (
 	EdgeTags = "tags"
 	// EdgeDates holds the string denoting the dates edge name in mutations.
 	EdgeDates = "dates"
+	// EdgeVectors holds the string denoting the vectors edge name in mutations.
+	EdgeVectors = "vectors"
 	// EdgeMediaDates holds the string denoting the media_dates edge name in mutations.
 	EdgeMediaDates = "media_dates"
+	// EdgeMediaVectors holds the string denoting the media_vectors edge name in mutations.
+	EdgeMediaVectors = "media_vectors"
 	// Table holds the table name of the media in the database.
 	Table = "media"
 	// TagsTable is the table that holds the tags relation/edge. The primary key declared below.
@@ -38,6 +42,11 @@ const (
 	// DatesInverseTable is the table name for the Date entity.
 	// It exists in this package in order to avoid circular dependency with the "date" package.
 	DatesInverseTable = "dates"
+	// VectorsTable is the table that holds the vectors relation/edge. The primary key declared below.
+	VectorsTable = "media_vectors"
+	// VectorsInverseTable is the table name for the Vector entity.
+	// It exists in this package in order to avoid circular dependency with the "vector" package.
+	VectorsInverseTable = "vectors"
 	// MediaDatesTable is the table that holds the media_dates relation/edge.
 	MediaDatesTable = "media_dates"
 	// MediaDatesInverseTable is the table name for the MediaDate entity.
@@ -45,6 +54,13 @@ const (
 	MediaDatesInverseTable = "media_dates"
 	// MediaDatesColumn is the table column denoting the media_dates relation/edge.
 	MediaDatesColumn = "media_id"
+	// MediaVectorsTable is the table that holds the media_vectors relation/edge.
+	MediaVectorsTable = "media_vectors"
+	// MediaVectorsInverseTable is the table name for the MediaVector entity.
+	// It exists in this package in order to avoid circular dependency with the "mediavector" package.
+	MediaVectorsInverseTable = "media_vectors"
+	// MediaVectorsColumn is the table column denoting the media_vectors relation/edge.
+	MediaVectorsColumn = "media_id"
 )
 
 // Columns holds all SQL columns for media fields.
@@ -63,6 +79,9 @@ var (
 	// DatesPrimaryKey and DatesColumn2 are the table columns denoting the
 	// primary key for the dates relation (M2M).
 	DatesPrimaryKey = []string{"media_id", "date_id"}
+	// VectorsPrimaryKey and VectorsColumn2 are the table columns denoting the
+	// primary key for the vectors relation (M2M).
+	VectorsPrimaryKey = []string{"media_id", "vector_id"}
 )
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -136,6 +155,20 @@ func ByDates(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByVectorsCount orders the results by vectors count.
+func ByVectorsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newVectorsStep(), opts...)
+	}
+}
+
+// ByVectors orders the results by vectors terms.
+func ByVectors(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newVectorsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByMediaDatesCount orders the results by media_dates count.
 func ByMediaDatesCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -147,6 +180,20 @@ func ByMediaDatesCount(opts ...sql.OrderTermOption) OrderOption {
 func ByMediaDates(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
 		sqlgraph.OrderByNeighborTerms(s, newMediaDatesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByMediaVectorsCount orders the results by media_vectors count.
+func ByMediaVectorsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newMediaVectorsStep(), opts...)
+	}
+}
+
+// ByMediaVectors orders the results by media_vectors terms.
+func ByMediaVectors(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newMediaVectorsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
 func newTagsStep() *sqlgraph.Step {
@@ -163,10 +210,24 @@ func newDatesStep() *sqlgraph.Step {
 		sqlgraph.Edge(sqlgraph.M2M, false, DatesTable, DatesPrimaryKey...),
 	)
 }
+func newVectorsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(VectorsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2M, false, VectorsTable, VectorsPrimaryKey...),
+	)
+}
 func newMediaDatesStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(MediaDatesInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, true, MediaDatesTable, MediaDatesColumn),
+	)
+}
+func newMediaVectorsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(MediaVectorsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, true, MediaVectorsTable, MediaVectorsColumn),
 	)
 }

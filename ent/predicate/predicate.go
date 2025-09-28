@@ -15,5 +15,11 @@ type Media func(*sql.Selector)
 // MediaDate is the predicate function for mediadate builders.
 type MediaDate func(*sql.Selector)
 
+// MediaVector is the predicate function for mediavector builders.
+type MediaVector func(*sql.Selector)
+
 // Tag is the predicate function for tag builders.
 type Tag func(*sql.Selector)
+
+// Vector is the predicate function for vector builders.
+type Vector func(*sql.Selector)

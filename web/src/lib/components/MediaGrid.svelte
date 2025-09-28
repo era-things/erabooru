@@ -1,15 +1,22 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Masonry from './media_grid/Masonry.svelte'; // Masonry component
-	import type { MediaItem } from '$lib/types/media';
+	import type { MediaPreviewItem, MediaItem } from '$lib/types/media';
 	import { PAGE_SIZE } from '$lib/constants';
 	import { fetchMediaPreviews } from '$lib/api';
 
-	let { query = '', page = 1, pageSize = Number(PAGE_SIZE), total = $bindable(1) } = $props();
+	let {
+		query = '',
+		page = 1,
+		pageSize = Number(PAGE_SIZE),
+		vector = false,
+		total = $bindable(1)
+	} = $props();
 	let lastQuery: string = $state('');
 	let lastPage: number = $state(1);
+	let lastVector: boolean = $state(false);
 
-	let media: MediaItem[] = $state([]);
+	let media: MediaPreviewItem[] = $state([]);
 	let innerWidth = $state(0);
 	let mounted = $state(false);
 	let scrollY = $state(0);
@@ -18,17 +25,28 @@
 	let columnWidths = $derived(Array(columnCount).fill('1fr'));
 
 	$effect(() => {
-		if (mounted && (query !== lastQuery || page !== lastPage)) {
+		if (mounted && (query !== lastQuery || page !== lastPage || vector !== lastVector)) {
 			lastQuery = query;
 			lastPage = page;
+			lastVector = vector;
 			load();
 		}
 	});
 
 	async function load() {
 		try {
-			const data = await fetchMediaPreviews(query, page, pageSize);
-			media = data.media as MediaItem[];
+			const data = await fetchMediaPreviews(query, page, pageSize, vector);
+			const items = data.media as MediaItem[];
+			media = items.map((it) => {
+				const displayHeight = Math.min(it.height, it.width * 3);
+				return {
+					...it,
+					height: displayHeight,
+					displayHeight,
+					originalHeight: it.height,
+					cropped: displayHeight < it.height
+				} satisfies MediaPreviewItem;
+			});
 			total = data.total ?? (1 as number);
 		} catch (err) {
 			console.error('media fetch error', err);
@@ -39,6 +57,7 @@
 		mounted = true;
 		lastQuery = query;
 		lastPage = page;
+		lastVector = vector;
 		await load();
 	});
 </script>

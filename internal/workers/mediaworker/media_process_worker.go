@@ -1,4 +1,4 @@
-package workers
+package mediaworker
 
 import (
 	"context"
@@ -125,8 +125,16 @@ func (w *ProcessWorker) processImage(ctx context.Context, bucket, key string) (s
 
 	// Use common database save function
 	if err := w.saveMediaToDB(ctx, key, meta.Format, meta.Width, meta.Height, 0); err != nil {
+		log.Printf("Failed to save media to database: %v", err)
 		return "", err
 	}
+	log.Printf("Saved media %s to database with format %s, width %d, height %d", key, meta.Format, meta.Width, meta.Height)
+
+	if err := queue.WorkerEnqueue(ctx, queue.EmbedArgs{Bucket: bucket, Key: key}); err != nil {
+		log.Printf("Failed to enqueue embed job for %s: %v", key, err)
+		return "", err
+	}
+	log.Printf("Successfully enqueued embed job for %s", key)
 
 	return key, nil
 }
@@ -218,6 +226,12 @@ func (w *ProcessWorker) processVideo(ctx context.Context, bucket, key string) (s
 	if err := w.saveMediaToDB(ctx, key, format, width, height, duration); err != nil {
 		return "", err
 	}
+
+	if err := queue.WorkerEnqueue(ctx, queue.EmbedArgs{Bucket: bucket, Key: key}); err != nil {
+		log.Printf("Failed to enqueue embed job for %s: %v", key, err)
+		return "", err
+	}
+	log.Printf("Successfully enqueued embed job for %s", key)
 
 	return key, nil
 }

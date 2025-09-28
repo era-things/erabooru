@@ -67,6 +67,40 @@ var (
 			},
 		},
 	}
+	// MediaVectorsColumns holds the columns for the "media_vectors" table.
+	MediaVectorsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "value", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "vector"}},
+		{Name: "media_id", Type: field.TypeString},
+		{Name: "vector_id", Type: field.TypeInt},
+	}
+	// MediaVectorsTable holds the schema information for the "media_vectors" table.
+	MediaVectorsTable = &schema.Table{
+		Name:       "media_vectors",
+		Columns:    MediaVectorsColumns,
+		PrimaryKey: []*schema.Column{MediaVectorsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "media_vectors_media_media",
+				Columns:    []*schema.Column{MediaVectorsColumns[2]},
+				RefColumns: []*schema.Column{MediaColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "media_vectors_vectors_vector",
+				Columns:    []*schema.Column{MediaVectorsColumns[3]},
+				RefColumns: []*schema.Column{VectorsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "mediavector_media_id_vector_id",
+				Unique:  true,
+				Columns: []*schema.Column{MediaVectorsColumns[2], MediaVectorsColumns[3]},
+			},
+		},
+	}
 	// TagsColumns holds the columns for the "tags" table.
 	TagsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -78,6 +112,17 @@ var (
 		Name:       "tags",
 		Columns:    TagsColumns,
 		PrimaryKey: []*schema.Column{TagsColumns[0]},
+	}
+	// VectorsColumns holds the columns for the "vectors" table.
+	VectorsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "name", Type: field.TypeString, Unique: true},
+	}
+	// VectorsTable holds the schema information for the "vectors" table.
+	VectorsTable = &schema.Table{
+		Name:       "vectors",
+		Columns:    VectorsColumns,
+		PrimaryKey: []*schema.Column{VectorsColumns[0]},
 	}
 	// MediaTagsColumns holds the columns for the "media_tags" table.
 	MediaTagsColumns = []*schema.Column{
@@ -109,7 +154,9 @@ var (
 		DatesTable,
 		MediaTable,
 		MediaDatesTable,
+		MediaVectorsTable,
 		TagsTable,
+		VectorsTable,
 		MediaTagsTable,
 	}
 )
@@ -117,6 +164,8 @@ var (
 func init() {
 	MediaDatesTable.ForeignKeys[0].RefTable = MediaTable
 	MediaDatesTable.ForeignKeys[1].RefTable = DatesTable
+	MediaVectorsTable.ForeignKeys[0].RefTable = MediaTable
+	MediaVectorsTable.ForeignKeys[1].RefTable = VectorsTable
 	MediaTagsTable.ForeignKeys[0].RefTable = MediaTable
 	MediaTagsTable.ForeignKeys[1].RefTable = TagsTable
 }

@@ -5,19 +5,54 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { get } from 'svelte/store';
-	import { onMount } from 'svelte';
 	import { PAGE_SIZE } from '$lib/constants';
 
-	let q: string = $state('');
-	let active: 'media' | 'upload' | 'settings' = $props();
+	let tagQuery: string = $state('');
+	let textQuery: string = $state('');
+	let vectorMode: boolean = $state(false);
+	const tagActive = $derived(!vectorMode && tagQuery.trim().length > 0);
+	const textActive = $derived(vectorMode && textQuery.trim().length > 0);
+	let active: 'media' | 'upload' | 'tags' | 'settings' = $props();
 
-	onMount(() => {
-		q = get(page).url.searchParams.get('q') ?? '';
+	$effect(() => {
+		const params = get(page).url.searchParams;
+		const current = params.get('q') ?? '';
+		const isVector = params.get('vector') === '1';
+		vectorMode = isVector;
+		if (isVector) {
+			textQuery = current;
+			tagQuery = '';
+		} else {
+			tagQuery = current;
+			textQuery = '';
+		}
 	});
 
-	function search(event: Event) {
+	function searchTags(event: Event) {
 		event.preventDefault();
-		goto(`/?q=${encodeURIComponent(q)}&page=1&page_size=${PAGE_SIZE}`);
+		const trimmed = tagQuery.trim();
+		const params = new URLSearchParams({
+			page: '1',
+			page_size: PAGE_SIZE
+		});
+		if (trimmed) {
+			params.set('q', trimmed);
+		}
+		goto(`/?${params.toString()}`);
+	}
+
+	function searchText(event: Event) {
+		event.preventDefault();
+		const trimmed = textQuery.trim();
+		const params = new URLSearchParams({
+			page: '1',
+			page_size: PAGE_SIZE,
+			vector: '1'
+		});
+		if (trimmed) {
+			params.set('q', trimmed);
+		}
+		goto(`/?${params.toString()}`);
 	}
 </script>
 
@@ -44,6 +79,16 @@
 			Upload
 		</a>
 		<a
+			href="/tags"
+			class="-mb-px border-b-2 px-3 py-2"
+			class:!border-blue-500={active === 'tags'}
+			class:!text-blue-500={active === 'tags'}
+			class:border-transparent={active !== 'tags'}
+			class:text-gray-500={active !== 'tags'}
+		>
+			Tags
+		</a>
+		<a
 			href="/settings"
 			class="-mb-px border-b-2 px-3 py-2"
 			class:!border-blue-500={active === 'settings'}
@@ -53,14 +98,27 @@
 		>
 			Settings
 		</a>
-		<form onsubmit={search} class="mx-auto">
-			<input
-				type="text"
-				name="search"
-				placeholder="Search"
-				bind:value={q}
-				class="rounded border px-2 py-1"
-			/>
-		</form>
+		<div class="ml-auto flex items-center gap-2">
+			<form onsubmit={searchTags}>
+				<input
+					type="text"
+					name="tag-search"
+					placeholder="Tag search"
+					bind:value={tagQuery}
+					class="rounded border px-2 py-1"
+					class:border-blue-500={tagActive}
+				/>
+			</form>
+			<form onsubmit={searchText}>
+				<input
+					type="text"
+					name="text-search"
+					placeholder="Text search"
+					bind:value={textQuery}
+					class="rounded border px-2 py-1"
+					class:border-blue-500={textActive}
+				/>
+			</form>
+		</div>
 	</nav>
 </div>

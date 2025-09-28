@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"log"
 
 	"era/booru/ent"
 	"era/booru/ent/hook"
@@ -24,6 +25,14 @@ func New(cfg *config.Config, q *river.Client[pgx.Tx], useHookSync bool) (*ent.Cl
 		return nil, err
 	}
 
+	ctx := context.Background()
+
+	// Create vector extension before running migrations
+	if _, err := client.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector"); err != nil {
+		log.Printf("Warning: Could not create vector extension: %v", err)
+		// Continue anyway - the extension might already exist or be created elsewhere
+	}
+
 	// Auto migrate (Later: make it work like that only in devmode)
 	opts := []schema.MigrateOption{}
 	opts = append(opts,
@@ -31,9 +40,10 @@ func New(cfg *config.Config, q *river.Client[pgx.Tx], useHookSync bool) (*ent.Cl
 		migrate.WithDropIndex(true),
 	)
 
-	if err := client.Schema.Create(context.Background(), opts...); err != nil {
+	if err := client.Schema.Create(ctx, opts...); err != nil {
 		return nil, err
 	}
+
 	if useHookSync {
 		client.Media.Use(hook.SyncBleve(q))
 	}

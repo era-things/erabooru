@@ -7,8 +7,10 @@ import (
 	"era/booru/ent/date"
 	"era/booru/ent/media"
 	"era/booru/ent/mediadate"
+	"era/booru/ent/mediavector"
 	"era/booru/ent/predicate"
 	"era/booru/ent/tag"
+	"era/booru/ent/vector"
 	"errors"
 	"fmt"
 	"sync"
@@ -16,6 +18,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	pgvector "github.com/pgvector/pgvector-go"
 )
 
 const (
@@ -27,10 +30,12 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeDate      = "Date"
-	TypeMedia     = "Media"
-	TypeMediaDate = "MediaDate"
-	TypeTag       = "Tag"
+	TypeDate        = "Date"
+	TypeMedia       = "Media"
+	TypeMediaDate   = "MediaDate"
+	TypeMediaVector = "MediaVector"
+	TypeTag         = "Tag"
+	TypeVector      = "Vector"
 )
 
 // DateMutation represents an operation that mutates the Date nodes in the graph.
@@ -544,29 +549,35 @@ func (m *DateMutation) ResetEdge(name string) error {
 // MediaMutation represents an operation that mutates the Media nodes in the graph.
 type MediaMutation struct {
 	config
-	op                 Op
-	typ                string
-	id                 *string
-	format             *string
-	width              *int16
-	addwidth           *int16
-	height             *int16
-	addheight          *int16
-	duration           *int16
-	addduration        *int16
-	clearedFields      map[string]struct{}
-	tags               map[int]struct{}
-	removedtags        map[int]struct{}
-	clearedtags        bool
-	dates              map[int]struct{}
-	removeddates       map[int]struct{}
-	cleareddates       bool
-	media_dates        map[int]struct{}
-	removedmedia_dates map[int]struct{}
-	clearedmedia_dates bool
-	done               bool
-	oldValue           func(context.Context) (*Media, error)
-	predicates         []predicate.Media
+	op                   Op
+	typ                  string
+	id                   *string
+	format               *string
+	width                *int16
+	addwidth             *int16
+	height               *int16
+	addheight            *int16
+	duration             *int16
+	addduration          *int16
+	clearedFields        map[string]struct{}
+	tags                 map[int]struct{}
+	removedtags          map[int]struct{}
+	clearedtags          bool
+	dates                map[int]struct{}
+	removeddates         map[int]struct{}
+	cleareddates         bool
+	vectors              map[int]struct{}
+	removedvectors       map[int]struct{}
+	clearedvectors       bool
+	media_dates          map[int]struct{}
+	removedmedia_dates   map[int]struct{}
+	clearedmedia_dates   bool
+	media_vectors        map[int]struct{}
+	removedmedia_vectors map[int]struct{}
+	clearedmedia_vectors bool
+	done                 bool
+	oldValue             func(context.Context) (*Media, error)
+	predicates           []predicate.Media
 }
 
 var _ ent.Mutation = (*MediaMutation)(nil)
@@ -999,6 +1010,60 @@ func (m *MediaMutation) ResetDates() {
 	m.removeddates = nil
 }
 
+// AddVectorIDs adds the "vectors" edge to the Vector entity by ids.
+func (m *MediaMutation) AddVectorIDs(ids ...int) {
+	if m.vectors == nil {
+		m.vectors = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.vectors[ids[i]] = struct{}{}
+	}
+}
+
+// ClearVectors clears the "vectors" edge to the Vector entity.
+func (m *MediaMutation) ClearVectors() {
+	m.clearedvectors = true
+}
+
+// VectorsCleared reports if the "vectors" edge to the Vector entity was cleared.
+func (m *MediaMutation) VectorsCleared() bool {
+	return m.clearedvectors
+}
+
+// RemoveVectorIDs removes the "vectors" edge to the Vector entity by IDs.
+func (m *MediaMutation) RemoveVectorIDs(ids ...int) {
+	if m.removedvectors == nil {
+		m.removedvectors = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.vectors, ids[i])
+		m.removedvectors[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedVectors returns the removed IDs of the "vectors" edge to the Vector entity.
+func (m *MediaMutation) RemovedVectorsIDs() (ids []int) {
+	for id := range m.removedvectors {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// VectorsIDs returns the "vectors" edge IDs in the mutation.
+func (m *MediaMutation) VectorsIDs() (ids []int) {
+	for id := range m.vectors {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetVectors resets all changes to the "vectors" edge.
+func (m *MediaMutation) ResetVectors() {
+	m.vectors = nil
+	m.clearedvectors = false
+	m.removedvectors = nil
+}
+
 // AddMediaDateIDs adds the "media_dates" edge to the MediaDate entity by ids.
 func (m *MediaMutation) AddMediaDateIDs(ids ...int) {
 	if m.media_dates == nil {
@@ -1051,6 +1116,60 @@ func (m *MediaMutation) ResetMediaDates() {
 	m.media_dates = nil
 	m.clearedmedia_dates = false
 	m.removedmedia_dates = nil
+}
+
+// AddMediaVectorIDs adds the "media_vectors" edge to the MediaVector entity by ids.
+func (m *MediaMutation) AddMediaVectorIDs(ids ...int) {
+	if m.media_vectors == nil {
+		m.media_vectors = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.media_vectors[ids[i]] = struct{}{}
+	}
+}
+
+// ClearMediaVectors clears the "media_vectors" edge to the MediaVector entity.
+func (m *MediaMutation) ClearMediaVectors() {
+	m.clearedmedia_vectors = true
+}
+
+// MediaVectorsCleared reports if the "media_vectors" edge to the MediaVector entity was cleared.
+func (m *MediaMutation) MediaVectorsCleared() bool {
+	return m.clearedmedia_vectors
+}
+
+// RemoveMediaVectorIDs removes the "media_vectors" edge to the MediaVector entity by IDs.
+func (m *MediaMutation) RemoveMediaVectorIDs(ids ...int) {
+	if m.removedmedia_vectors == nil {
+		m.removedmedia_vectors = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.media_vectors, ids[i])
+		m.removedmedia_vectors[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedMediaVectors returns the removed IDs of the "media_vectors" edge to the MediaVector entity.
+func (m *MediaMutation) RemovedMediaVectorsIDs() (ids []int) {
+	for id := range m.removedmedia_vectors {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// MediaVectorsIDs returns the "media_vectors" edge IDs in the mutation.
+func (m *MediaMutation) MediaVectorsIDs() (ids []int) {
+	for id := range m.media_vectors {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetMediaVectors resets all changes to the "media_vectors" edge.
+func (m *MediaMutation) ResetMediaVectors() {
+	m.media_vectors = nil
+	m.clearedmedia_vectors = false
+	m.removedmedia_vectors = nil
 }
 
 // Where appends a list predicates to the MediaMutation builder.
@@ -1285,15 +1404,21 @@ func (m *MediaMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *MediaMutation) AddedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 5)
 	if m.tags != nil {
 		edges = append(edges, media.EdgeTags)
 	}
 	if m.dates != nil {
 		edges = append(edges, media.EdgeDates)
 	}
+	if m.vectors != nil {
+		edges = append(edges, media.EdgeVectors)
+	}
 	if m.media_dates != nil {
 		edges = append(edges, media.EdgeMediaDates)
+	}
+	if m.media_vectors != nil {
+		edges = append(edges, media.EdgeMediaVectors)
 	}
 	return edges
 }
@@ -1314,9 +1439,21 @@ func (m *MediaMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case media.EdgeVectors:
+		ids := make([]ent.Value, 0, len(m.vectors))
+		for id := range m.vectors {
+			ids = append(ids, id)
+		}
+		return ids
 	case media.EdgeMediaDates:
 		ids := make([]ent.Value, 0, len(m.media_dates))
 		for id := range m.media_dates {
+			ids = append(ids, id)
+		}
+		return ids
+	case media.EdgeMediaVectors:
+		ids := make([]ent.Value, 0, len(m.media_vectors))
+		for id := range m.media_vectors {
 			ids = append(ids, id)
 		}
 		return ids
@@ -1326,15 +1463,21 @@ func (m *MediaMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *MediaMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 5)
 	if m.removedtags != nil {
 		edges = append(edges, media.EdgeTags)
 	}
 	if m.removeddates != nil {
 		edges = append(edges, media.EdgeDates)
 	}
+	if m.removedvectors != nil {
+		edges = append(edges, media.EdgeVectors)
+	}
 	if m.removedmedia_dates != nil {
 		edges = append(edges, media.EdgeMediaDates)
+	}
+	if m.removedmedia_vectors != nil {
+		edges = append(edges, media.EdgeMediaVectors)
 	}
 	return edges
 }
@@ -1355,9 +1498,21 @@ func (m *MediaMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case media.EdgeVectors:
+		ids := make([]ent.Value, 0, len(m.removedvectors))
+		for id := range m.removedvectors {
+			ids = append(ids, id)
+		}
+		return ids
 	case media.EdgeMediaDates:
 		ids := make([]ent.Value, 0, len(m.removedmedia_dates))
 		for id := range m.removedmedia_dates {
+			ids = append(ids, id)
+		}
+		return ids
+	case media.EdgeMediaVectors:
+		ids := make([]ent.Value, 0, len(m.removedmedia_vectors))
+		for id := range m.removedmedia_vectors {
 			ids = append(ids, id)
 		}
 		return ids
@@ -1367,15 +1522,21 @@ func (m *MediaMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *MediaMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 5)
 	if m.clearedtags {
 		edges = append(edges, media.EdgeTags)
 	}
 	if m.cleareddates {
 		edges = append(edges, media.EdgeDates)
 	}
+	if m.clearedvectors {
+		edges = append(edges, media.EdgeVectors)
+	}
 	if m.clearedmedia_dates {
 		edges = append(edges, media.EdgeMediaDates)
+	}
+	if m.clearedmedia_vectors {
+		edges = append(edges, media.EdgeMediaVectors)
 	}
 	return edges
 }
@@ -1388,8 +1549,12 @@ func (m *MediaMutation) EdgeCleared(name string) bool {
 		return m.clearedtags
 	case media.EdgeDates:
 		return m.cleareddates
+	case media.EdgeVectors:
+		return m.clearedvectors
 	case media.EdgeMediaDates:
 		return m.clearedmedia_dates
+	case media.EdgeMediaVectors:
+		return m.clearedmedia_vectors
 	}
 	return false
 }
@@ -1412,8 +1577,14 @@ func (m *MediaMutation) ResetEdge(name string) error {
 	case media.EdgeDates:
 		m.ResetDates()
 		return nil
+	case media.EdgeVectors:
+		m.ResetVectors()
+		return nil
 	case media.EdgeMediaDates:
 		m.ResetMediaDates()
+		return nil
+	case media.EdgeMediaVectors:
+		m.ResetMediaVectors()
 		return nil
 	}
 	return fmt.Errorf("unknown Media edge %s", name)
@@ -1956,6 +2127,543 @@ func (m *MediaDateMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown MediaDate edge %s", name)
 }
 
+// MediaVectorMutation represents an operation that mutates the MediaVector nodes in the graph.
+type MediaVectorMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int
+	value         *pgvector.Vector
+	clearedFields map[string]struct{}
+	media         *string
+	clearedmedia  bool
+	vector        *int
+	clearedvector bool
+	done          bool
+	oldValue      func(context.Context) (*MediaVector, error)
+	predicates    []predicate.MediaVector
+}
+
+var _ ent.Mutation = (*MediaVectorMutation)(nil)
+
+// mediavectorOption allows management of the mutation configuration using functional options.
+type mediavectorOption func(*MediaVectorMutation)
+
+// newMediaVectorMutation creates new mutation for the MediaVector entity.
+func newMediaVectorMutation(c config, op Op, opts ...mediavectorOption) *MediaVectorMutation {
+	m := &MediaVectorMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeMediaVector,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withMediaVectorID sets the ID field of the mutation.
+func withMediaVectorID(id int) mediavectorOption {
+	return func(m *MediaVectorMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *MediaVector
+		)
+		m.oldValue = func(ctx context.Context) (*MediaVector, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().MediaVector.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withMediaVector sets the old MediaVector of the mutation.
+func withMediaVector(node *MediaVector) mediavectorOption {
+	return func(m *MediaVectorMutation) {
+		m.oldValue = func(context.Context) (*MediaVector, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m MediaVectorMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m MediaVectorMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *MediaVectorMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *MediaVectorMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().MediaVector.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetMediaID sets the "media_id" field.
+func (m *MediaVectorMutation) SetMediaID(s string) {
+	m.media = &s
+}
+
+// MediaID returns the value of the "media_id" field in the mutation.
+func (m *MediaVectorMutation) MediaID() (r string, exists bool) {
+	v := m.media
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMediaID returns the old "media_id" field's value of the MediaVector entity.
+// If the MediaVector object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MediaVectorMutation) OldMediaID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMediaID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMediaID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMediaID: %w", err)
+	}
+	return oldValue.MediaID, nil
+}
+
+// ResetMediaID resets all changes to the "media_id" field.
+func (m *MediaVectorMutation) ResetMediaID() {
+	m.media = nil
+}
+
+// SetVectorID sets the "vector_id" field.
+func (m *MediaVectorMutation) SetVectorID(i int) {
+	m.vector = &i
+}
+
+// VectorID returns the value of the "vector_id" field in the mutation.
+func (m *MediaVectorMutation) VectorID() (r int, exists bool) {
+	v := m.vector
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVectorID returns the old "vector_id" field's value of the MediaVector entity.
+// If the MediaVector object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MediaVectorMutation) OldVectorID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVectorID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVectorID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVectorID: %w", err)
+	}
+	return oldValue.VectorID, nil
+}
+
+// ResetVectorID resets all changes to the "vector_id" field.
+func (m *MediaVectorMutation) ResetVectorID() {
+	m.vector = nil
+}
+
+// SetValue sets the "value" field.
+func (m *MediaVectorMutation) SetValue(pg pgvector.Vector) {
+	m.value = &pg
+}
+
+// Value returns the value of the "value" field in the mutation.
+func (m *MediaVectorMutation) Value() (r pgvector.Vector, exists bool) {
+	v := m.value
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldValue returns the old "value" field's value of the MediaVector entity.
+// If the MediaVector object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MediaVectorMutation) OldValue(ctx context.Context) (v pgvector.Vector, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldValue is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldValue requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldValue: %w", err)
+	}
+	return oldValue.Value, nil
+}
+
+// ResetValue resets all changes to the "value" field.
+func (m *MediaVectorMutation) ResetValue() {
+	m.value = nil
+}
+
+// ClearMedia clears the "media" edge to the Media entity.
+func (m *MediaVectorMutation) ClearMedia() {
+	m.clearedmedia = true
+	m.clearedFields[mediavector.FieldMediaID] = struct{}{}
+}
+
+// MediaCleared reports if the "media" edge to the Media entity was cleared.
+func (m *MediaVectorMutation) MediaCleared() bool {
+	return m.clearedmedia
+}
+
+// MediaIDs returns the "media" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// MediaID instead. It exists only for internal usage by the builders.
+func (m *MediaVectorMutation) MediaIDs() (ids []string) {
+	if id := m.media; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetMedia resets all changes to the "media" edge.
+func (m *MediaVectorMutation) ResetMedia() {
+	m.media = nil
+	m.clearedmedia = false
+}
+
+// ClearVector clears the "vector" edge to the Vector entity.
+func (m *MediaVectorMutation) ClearVector() {
+	m.clearedvector = true
+	m.clearedFields[mediavector.FieldVectorID] = struct{}{}
+}
+
+// VectorCleared reports if the "vector" edge to the Vector entity was cleared.
+func (m *MediaVectorMutation) VectorCleared() bool {
+	return m.clearedvector
+}
+
+// VectorIDs returns the "vector" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// VectorID instead. It exists only for internal usage by the builders.
+func (m *MediaVectorMutation) VectorIDs() (ids []int) {
+	if id := m.vector; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetVector resets all changes to the "vector" edge.
+func (m *MediaVectorMutation) ResetVector() {
+	m.vector = nil
+	m.clearedvector = false
+}
+
+// Where appends a list predicates to the MediaVectorMutation builder.
+func (m *MediaVectorMutation) Where(ps ...predicate.MediaVector) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the MediaVectorMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *MediaVectorMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.MediaVector, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *MediaVectorMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *MediaVectorMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (MediaVector).
+func (m *MediaVectorMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *MediaVectorMutation) Fields() []string {
+	fields := make([]string, 0, 3)
+	if m.media != nil {
+		fields = append(fields, mediavector.FieldMediaID)
+	}
+	if m.vector != nil {
+		fields = append(fields, mediavector.FieldVectorID)
+	}
+	if m.value != nil {
+		fields = append(fields, mediavector.FieldValue)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *MediaVectorMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case mediavector.FieldMediaID:
+		return m.MediaID()
+	case mediavector.FieldVectorID:
+		return m.VectorID()
+	case mediavector.FieldValue:
+		return m.Value()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *MediaVectorMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case mediavector.FieldMediaID:
+		return m.OldMediaID(ctx)
+	case mediavector.FieldVectorID:
+		return m.OldVectorID(ctx)
+	case mediavector.FieldValue:
+		return m.OldValue(ctx)
+	}
+	return nil, fmt.Errorf("unknown MediaVector field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MediaVectorMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case mediavector.FieldMediaID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMediaID(v)
+		return nil
+	case mediavector.FieldVectorID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVectorID(v)
+		return nil
+	case mediavector.FieldValue:
+		v, ok := value.(pgvector.Vector)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetValue(v)
+		return nil
+	}
+	return fmt.Errorf("unknown MediaVector field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *MediaVectorMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *MediaVectorMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MediaVectorMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown MediaVector numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *MediaVectorMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *MediaVectorMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *MediaVectorMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown MediaVector nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *MediaVectorMutation) ResetField(name string) error {
+	switch name {
+	case mediavector.FieldMediaID:
+		m.ResetMediaID()
+		return nil
+	case mediavector.FieldVectorID:
+		m.ResetVectorID()
+		return nil
+	case mediavector.FieldValue:
+		m.ResetValue()
+		return nil
+	}
+	return fmt.Errorf("unknown MediaVector field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *MediaVectorMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.media != nil {
+		edges = append(edges, mediavector.EdgeMedia)
+	}
+	if m.vector != nil {
+		edges = append(edges, mediavector.EdgeVector)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *MediaVectorMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case mediavector.EdgeMedia:
+		if id := m.media; id != nil {
+			return []ent.Value{*id}
+		}
+	case mediavector.EdgeVector:
+		if id := m.vector; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *MediaVectorMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *MediaVectorMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *MediaVectorMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedmedia {
+		edges = append(edges, mediavector.EdgeMedia)
+	}
+	if m.clearedvector {
+		edges = append(edges, mediavector.EdgeVector)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *MediaVectorMutation) EdgeCleared(name string) bool {
+	switch name {
+	case mediavector.EdgeMedia:
+		return m.clearedmedia
+	case mediavector.EdgeVector:
+		return m.clearedvector
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *MediaVectorMutation) ClearEdge(name string) error {
+	switch name {
+	case mediavector.EdgeMedia:
+		m.ClearMedia()
+		return nil
+	case mediavector.EdgeVector:
+		m.ClearVector()
+		return nil
+	}
+	return fmt.Errorf("unknown MediaVector unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *MediaVectorMutation) ResetEdge(name string) error {
+	switch name {
+	case mediavector.EdgeMedia:
+		m.ResetMedia()
+		return nil
+	case mediavector.EdgeVector:
+		m.ResetVector()
+		return nil
+	}
+	return fmt.Errorf("unknown MediaVector edge %s", name)
+}
+
 // TagMutation represents an operation that mutates the Tag nodes in the graph.
 type TagMutation struct {
 	config
@@ -2433,4 +3141,512 @@ func (m *TagMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown Tag edge %s", name)
+}
+
+// VectorMutation represents an operation that mutates the Vector nodes in the graph.
+type VectorMutation struct {
+	config
+	op                   Op
+	typ                  string
+	id                   *int
+	name                 *string
+	clearedFields        map[string]struct{}
+	media                map[string]struct{}
+	removedmedia         map[string]struct{}
+	clearedmedia         bool
+	media_vectors        map[int]struct{}
+	removedmedia_vectors map[int]struct{}
+	clearedmedia_vectors bool
+	done                 bool
+	oldValue             func(context.Context) (*Vector, error)
+	predicates           []predicate.Vector
+}
+
+var _ ent.Mutation = (*VectorMutation)(nil)
+
+// vectorOption allows management of the mutation configuration using functional options.
+type vectorOption func(*VectorMutation)
+
+// newVectorMutation creates new mutation for the Vector entity.
+func newVectorMutation(c config, op Op, opts ...vectorOption) *VectorMutation {
+	m := &VectorMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeVector,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withVectorID sets the ID field of the mutation.
+func withVectorID(id int) vectorOption {
+	return func(m *VectorMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *Vector
+		)
+		m.oldValue = func(ctx context.Context) (*Vector, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().Vector.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withVector sets the old Vector of the mutation.
+func withVector(node *Vector) vectorOption {
+	return func(m *VectorMutation) {
+		m.oldValue = func(context.Context) (*Vector, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m VectorMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m VectorMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of Vector entities.
+func (m *VectorMutation) SetID(id int) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *VectorMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *VectorMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().Vector.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetName sets the "name" field.
+func (m *VectorMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *VectorMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the Vector entity.
+// If the Vector object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VectorMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *VectorMutation) ResetName() {
+	m.name = nil
+}
+
+// AddMediumIDs adds the "media" edge to the Media entity by ids.
+func (m *VectorMutation) AddMediumIDs(ids ...string) {
+	if m.media == nil {
+		m.media = make(map[string]struct{})
+	}
+	for i := range ids {
+		m.media[ids[i]] = struct{}{}
+	}
+}
+
+// ClearMedia clears the "media" edge to the Media entity.
+func (m *VectorMutation) ClearMedia() {
+	m.clearedmedia = true
+}
+
+// MediaCleared reports if the "media" edge to the Media entity was cleared.
+func (m *VectorMutation) MediaCleared() bool {
+	return m.clearedmedia
+}
+
+// RemoveMediumIDs removes the "media" edge to the Media entity by IDs.
+func (m *VectorMutation) RemoveMediumIDs(ids ...string) {
+	if m.removedmedia == nil {
+		m.removedmedia = make(map[string]struct{})
+	}
+	for i := range ids {
+		delete(m.media, ids[i])
+		m.removedmedia[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedMedia returns the removed IDs of the "media" edge to the Media entity.
+func (m *VectorMutation) RemovedMediaIDs() (ids []string) {
+	for id := range m.removedmedia {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// MediaIDs returns the "media" edge IDs in the mutation.
+func (m *VectorMutation) MediaIDs() (ids []string) {
+	for id := range m.media {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetMedia resets all changes to the "media" edge.
+func (m *VectorMutation) ResetMedia() {
+	m.media = nil
+	m.clearedmedia = false
+	m.removedmedia = nil
+}
+
+// AddMediaVectorIDs adds the "media_vectors" edge to the MediaVector entity by ids.
+func (m *VectorMutation) AddMediaVectorIDs(ids ...int) {
+	if m.media_vectors == nil {
+		m.media_vectors = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.media_vectors[ids[i]] = struct{}{}
+	}
+}
+
+// ClearMediaVectors clears the "media_vectors" edge to the MediaVector entity.
+func (m *VectorMutation) ClearMediaVectors() {
+	m.clearedmedia_vectors = true
+}
+
+// MediaVectorsCleared reports if the "media_vectors" edge to the MediaVector entity was cleared.
+func (m *VectorMutation) MediaVectorsCleared() bool {
+	return m.clearedmedia_vectors
+}
+
+// RemoveMediaVectorIDs removes the "media_vectors" edge to the MediaVector entity by IDs.
+func (m *VectorMutation) RemoveMediaVectorIDs(ids ...int) {
+	if m.removedmedia_vectors == nil {
+		m.removedmedia_vectors = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.media_vectors, ids[i])
+		m.removedmedia_vectors[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedMediaVectors returns the removed IDs of the "media_vectors" edge to the MediaVector entity.
+func (m *VectorMutation) RemovedMediaVectorsIDs() (ids []int) {
+	for id := range m.removedmedia_vectors {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// MediaVectorsIDs returns the "media_vectors" edge IDs in the mutation.
+func (m *VectorMutation) MediaVectorsIDs() (ids []int) {
+	for id := range m.media_vectors {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetMediaVectors resets all changes to the "media_vectors" edge.
+func (m *VectorMutation) ResetMediaVectors() {
+	m.media_vectors = nil
+	m.clearedmedia_vectors = false
+	m.removedmedia_vectors = nil
+}
+
+// Where appends a list predicates to the VectorMutation builder.
+func (m *VectorMutation) Where(ps ...predicate.Vector) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the VectorMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *VectorMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.Vector, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *VectorMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *VectorMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (Vector).
+func (m *VectorMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *VectorMutation) Fields() []string {
+	fields := make([]string, 0, 1)
+	if m.name != nil {
+		fields = append(fields, vector.FieldName)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *VectorMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case vector.FieldName:
+		return m.Name()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *VectorMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case vector.FieldName:
+		return m.OldName(ctx)
+	}
+	return nil, fmt.Errorf("unknown Vector field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *VectorMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case vector.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	}
+	return fmt.Errorf("unknown Vector field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *VectorMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *VectorMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *VectorMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown Vector numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *VectorMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *VectorMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *VectorMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown Vector nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *VectorMutation) ResetField(name string) error {
+	switch name {
+	case vector.FieldName:
+		m.ResetName()
+		return nil
+	}
+	return fmt.Errorf("unknown Vector field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *VectorMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.media != nil {
+		edges = append(edges, vector.EdgeMedia)
+	}
+	if m.media_vectors != nil {
+		edges = append(edges, vector.EdgeMediaVectors)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *VectorMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case vector.EdgeMedia:
+		ids := make([]ent.Value, 0, len(m.media))
+		for id := range m.media {
+			ids = append(ids, id)
+		}
+		return ids
+	case vector.EdgeMediaVectors:
+		ids := make([]ent.Value, 0, len(m.media_vectors))
+		for id := range m.media_vectors {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *VectorMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.removedmedia != nil {
+		edges = append(edges, vector.EdgeMedia)
+	}
+	if m.removedmedia_vectors != nil {
+		edges = append(edges, vector.EdgeMediaVectors)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *VectorMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case vector.EdgeMedia:
+		ids := make([]ent.Value, 0, len(m.removedmedia))
+		for id := range m.removedmedia {
+			ids = append(ids, id)
+		}
+		return ids
+	case vector.EdgeMediaVectors:
+		ids := make([]ent.Value, 0, len(m.removedmedia_vectors))
+		for id := range m.removedmedia_vectors {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *VectorMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedmedia {
+		edges = append(edges, vector.EdgeMedia)
+	}
+	if m.clearedmedia_vectors {
+		edges = append(edges, vector.EdgeMediaVectors)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *VectorMutation) EdgeCleared(name string) bool {
+	switch name {
+	case vector.EdgeMedia:
+		return m.clearedmedia
+	case vector.EdgeMediaVectors:
+		return m.clearedmedia_vectors
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *VectorMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown Vector unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *VectorMutation) ResetEdge(name string) error {
+	switch name {
+	case vector.EdgeMedia:
+		m.ResetMedia()
+		return nil
+	case vector.EdgeMediaVectors:
+		m.ResetMediaVectors()
+		return nil
+	}
+	return fmt.Errorf("unknown Vector edge %s", name)
 }

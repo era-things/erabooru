@@ -30,3 +30,18 @@ Run `make prod`
 * It will create .env file out of .env.example if there is none, you can redact it if needed
 * It will build everything and launch in a way it supposed to be used
 
+## Embedding models
+Erabooru no longer ships ONNX model binaries in the repository. The image embed worker
+downloads the required weights on startup using the settings below:
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `MODEL_CACHE_DIR` | Directory for cached models (mount this as a persistent volume in Docker) | `/cache/models` |
+| `MODEL_NAME` | Sub-directory inside the cache | `Siglip2_FP16` |
+| `MODEL_REPOSITORY` | Hugging Face repository or a full base URL | `onnx-community/siglip2-base-patch16-224-ONNX` |
+| `MODEL_REVISION` | Hugging Face revision/branch to resolve | `main` |
+| `MODEL_FILES` | Optional override for the files to download (`local|remote|sha`, comma separated) | *(built-in defaults)* |
+
+If you set `MODEL_DIR` the embed worker skips downloading and loads models directly from the
+provided path (useful for local development with pre-downloaded weights).
+

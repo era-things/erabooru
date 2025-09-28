@@ -1,4 +1,4 @@
-import type { MediaItem, MediaDetail } from './types/media';
+import type { MediaItem, MediaDetail, TagCount } from './types/media';
 
 const apiBase = '/api';
 
@@ -15,12 +15,20 @@ async function handleJson<T>(res: Response): Promise<T> {
 export async function fetchMediaPreviews(
 	query: string,
 	page: number,
-	pageSize: number
+	pageSize: number,
+	vector = false
 ): Promise<MediaPreviewsResponse> {
-	const url = query
-		? `${apiBase}/media/previews?q=${encodeURIComponent(query)}&page=${page}&page_size=${pageSize}`
-		: `${apiBase}/media/previews?page=${page}&page_size=${pageSize}`;
-	const res = await fetch(url);
+	const params = new URLSearchParams({
+		page: page.toString(),
+		page_size: pageSize.toString()
+	});
+	if (query) {
+		params.set('q', query);
+	}
+	if (vector) {
+		params.set('vector', '1');
+	}
+	const res = await fetch(`${apiBase}/media/previews?${params.toString()}`);
 	return handleJson(res);
 }
 
@@ -85,4 +93,25 @@ export async function importMediaTags(file: File): Promise<void> {
 		body: file
 	});
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+export async function fetchTags(): Promise<TagCount[]> {
+	const res = await fetch(`${apiBase}/tags`);
+	const data = await handleJson<{ tags: TagCount[] }>(res);
+	return data.tags;
+}
+
+export async function fetchSimilarMedia(
+	vector: number[],
+	limit: number,
+	exclude?: string,
+	name = 'vision'
+): Promise<MediaItem[]> {
+	const res = await fetch(`${apiBase}/media/similar`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ vector, limit, exclude, name })
+	});
+	const data = await handleJson<{ media: MediaItem[] }>(res);
+	return data.media;
 }
