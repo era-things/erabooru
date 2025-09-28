@@ -9,3 +9,8 @@ func VisionEmbedding(any interface{}) ([]float32, error) {
 func TextEmbedding(any interface{}) ([]float32, error) {
 	return nil, nil
 }
+func DefaultModelOptionsFromEnv() ModelOptions {
+	return ModelOptions{}
+}
+
+type ModelOptions struct{}
