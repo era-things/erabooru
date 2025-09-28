@@ -4,16 +4,24 @@ FROM golang:1.25-bookworm AS builder
 # Install build dependencies for CGO
 RUN apt-get update && apt-get install -y gcc libc6-dev wget build-essential && rm -rf /var/lib/apt/lists/*
 
+ARG TARGETARCH
+ARG ONNXRUNTIME_VERSION=1.22.0
 # Install ONNX Runtime 1.22.0
-RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz \
-    && tar -xzf onnxruntime-linux-x64-1.22.0.tgz \
-    && mkdir -p /opt/onnxruntime \
-    && cp -r onnxruntime-linux-x64-1.22.0/* /opt/onnxruntime/ \
-    && ln -sf /opt/onnxruntime/lib/libonnxruntime.so.1.22.0 /opt/onnxruntime/lib/onnxruntime.so \
-    && echo "/opt/onnxruntime/lib" > /etc/ld.so.conf.d/onnxruntime.conf \
-    && ldconfig \
-    && rm -rf onnxruntime-linux-x64-1.22.0*
-
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) onnx_pkg="onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz" ;; \
+        arm64) onnx_pkg="onnxruntime-linux-aarch64-${ONNXRUNTIME_VERSION}.tgz" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    wget -q "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/${onnx_pkg}"; \
+    tar -xzf "${onnx_pkg}"; \
+    onnx_dir="${onnx_pkg%.tgz}"; \
+    mkdir -p /opt/onnxruntime; \
+    cp -r "${onnx_dir}/"* /opt/onnxruntime/; \
+    ln -sf /opt/onnxruntime/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /opt/onnxruntime/lib/onnxruntime.so; \
+    echo "/opt/onnxruntime/lib" > /etc/ld.so.conf.d/onnxruntime.conf; \
+    ldconfig; \
+    rm -rf "${onnx_dir}"*
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -40,15 +48,24 @@ RUN apt-get update && apt-get install -y \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
+ARG TARGETARCH
+ARG ONNXRUNTIME_VERSION=1.22.0
 # Install ONNX Runtime 1.22.0 in runtime stage
-RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz \
-    && tar -xzf onnxruntime-linux-x64-1.22.0.tgz \
-    && mkdir -p /opt/onnxruntime \
-    && cp -r onnxruntime-linux-x64-1.22.0/* /opt/onnxruntime/ \
-    && ln -sf /opt/onnxruntime/lib/libonnxruntime.so.1.22.0 /opt/onnxruntime/lib/onnxruntime.so \
-    && echo "/opt/onnxruntime/lib" > /etc/ld.so.conf.d/onnxruntime.conf \
-    && ldconfig \
-    && rm -rf onnxruntime-linux-x64-1.22.0*
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) onnx_pkg="onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz" ;; \
+        arm64) onnx_pkg="onnxruntime-linux-aarch64-${ONNXRUNTIME_VERSION}.tgz" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    wget -q "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/${onnx_pkg}"; \
+    tar -xzf "${onnx_pkg}"; \
+    onnx_dir="${onnx_pkg%.tgz}"; \
+    mkdir -p /opt/onnxruntime; \
+    cp -r "${onnx_dir}/"* /opt/onnxruntime/; \
+    ln -sf /opt/onnxruntime/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /opt/onnxruntime/lib/onnxruntime.so; \
+    echo "/opt/onnxruntime/lib" > /etc/ld.so.conf.d/onnxruntime.conf; \
+    ldconfig; \
+    rm -rf "${onnx_dir}"*
 
 ENV LD_LIBRARY_PATH="/opt/onnxruntime/lib"
 
