@@ -71,15 +71,24 @@ func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
 		return nil, fmt.Errorf("invalid vision input size %d", S)
 	}
 
+	// 1) Do NOT set loader autorotate — PNG/WebP PNG path will reject it.
 	loadOptions := vips.DefaultLoadOptions()
-	loadOptions.Autorotate = true
+	// loadOptions.Autorotate = true // <-- remove
+
+	// (Optional) If you want autorotation for JPEGs only:
+	// ct := http.DetectContentType(buf)
+	// if strings.Contains(ct, "jpeg") || strings.Contains(ct, "jpg") {
+	//     loadOptions.Autorotate = true
+	// }
 
 	thumbOptions := &vips.ThumbnailBufferOptions{
 		OptionString: loadOptions.OptionString(),
 		Height:       S,
 		Size:         vips.SizeBoth,
 		Crop:         vips.InterestingCentre,
-		FailOn:       vips.FailOnError,
+		// FailOnError will turn unknown loader options into hard errors.
+		// Since we removed Autorotate above, we can keep this strict default.
+		FailOn: vips.FailOnError,
 	}
 
 	img, err := vips.NewThumbnailBuffer(buf, S, thumbOptions)
@@ -91,6 +100,13 @@ func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
 			img.Close()
 		}
 	}()
+
+	// 2) Optional post-load autorotate (safe for all formats; no EXIF -> no-op).
+	// If your binding exposes Autorot:
+	if err := img.Autorot(); err != nil {
+		// ignore "not supported" style errors; treat only unexpected ones as fatal
+		// (you can log at debug if you like)
+	}
 
 	if err := img.Colourspace(vips.InterpretationSrgb, nil); err != nil {
 		return nil, fmt.Errorf("vips colourspace: %w", err)
@@ -216,6 +232,7 @@ func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
 	}
 
 	l2(vec)
+
 	return vec, nil
 }
 
