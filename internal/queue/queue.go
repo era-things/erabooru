@@ -69,7 +69,11 @@ func getConfigForClientType(clientType ClientType, workers *river.Workers) *rive
 
 // Enqueue inserts a job into the default queue.
 func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) error {
-	var queueName string
+	var (
+		queueName   string
+		priority    int
+		setPriority bool
+	)
 
 	switch args.(type) {
 	case ProcessArgs:
@@ -78,8 +82,12 @@ func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) e
 		queueName = "index" // Goes to server
 	case EmbedArgs:
 		queueName = "embed" // Goes to image embed worker
+		priority = 2        // lower priority than search embeddings
+		setPriority = true
 	case EmbedTextArgs:
 		queueName = "embed"
+		priority = 1
+		setPriority = true
 	default:
 		queueName = "" // Default queue
 	}
@@ -87,6 +95,9 @@ func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) e
 	opts := &river.InsertOpts{}
 	if queueName != "" {
 		opts.Queue = queueName
+	}
+	if setPriority {
+		opts.Priority = priority
 	}
 
 	_, err := c.Insert(ctx, args, opts)

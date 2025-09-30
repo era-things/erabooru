@@ -21,7 +21,6 @@ type IndexWorker struct {
 }
 
 func (w *IndexWorker) Work(ctx context.Context, job *river.Job[queue.IndexArgs]) error {
-	log.Printf("Indexing task started for media ID: %s", job.Args.ID)
 	mobj, err := w.DB.Media.Query().Where(media.IDEQ(job.Args.ID)).
 		WithTags().
 		WithDates(func(q *ent.DateQuery) { q.WithMediaDates() }).
