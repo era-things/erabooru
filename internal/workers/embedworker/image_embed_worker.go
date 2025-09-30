@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"era/booru/ent"
 	"era/booru/internal/config"
@@ -94,6 +95,8 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 	if w.Cfg == nil {
 		return nil, fmt.Errorf("missing worker configuration")
 	}
+
+	startTime := time.Now()
 
 	duration := 0
 	if media.Duration != nil && *media.Duration > 0 {
@@ -201,6 +204,10 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 	}
 
 	avg, err := averageVectors(vectors)
+
+	elapsed := time.Since(startTime).Milliseconds()
+	log.Printf("Video embedding for %s: extracted %d frames, %d errors, took %d ms", key, len(vectors), extractErrors, elapsed)
+
 	if err != nil {
 		return nil, err
 	}
