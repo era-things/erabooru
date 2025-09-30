@@ -4,11 +4,16 @@ package embed
 
 import (
 	"context"
+	"image"
 )
 
 // Dummy stubs for vet/test without embeddings tag.
 
 func VisionEmbedding(any interface{}) ([]float32, error) {
+	return nil, nil
+}
+
+func VisionEmbeddingBatch([]image.Image) ([][]float32, error) {
 	return nil, nil
 }
 

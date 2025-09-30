@@ -113,7 +113,7 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 	}
 	defer cleanup()
 
-	vectors := make([][]float32, 0, samples)
+	frames := make([]image.Image, 0, samples)
 	errors := 0
 	for i := 0; i < samples; i++ {
 		ts := sampleTimestamp(duration, samples, i)
@@ -126,11 +126,16 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 			continue
 		}
 
-		vec, err := embed.VisionEmbedding(img)
-		if err != nil {
-			return nil, fmt.Errorf("failed to embed frame %d: %w", i, err)
-		}
-		vectors = append(vectors, vec)
+		frames = append(frames, img)
+	}
+
+	if len(frames) == 0 {
+		return nil, fmt.Errorf("no frames extracted from video %s", key)
+	}
+
+	vectors, err := embed.VisionEmbeddingBatch(frames)
+	if err != nil {
+		return nil, fmt.Errorf("failed to embed frames: %w", err)
 	}
 
 	avg, err := averageVectors(vectors)
