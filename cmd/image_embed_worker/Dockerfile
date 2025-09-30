@@ -16,8 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install libvips from the official prebuilt package so we match the
 # generated bindings shipped with github.com/cshum/vipsgen (libvips 8.17).
 RUN wget -q https://github.com/kleisauke/libvips-packaging/releases/download/v${LIBVIPS_VERSION}/${LIBVIPS_PACKAGE} \
-    && mkdir -p /opt/libvips \
-    && tar -xzf ${LIBVIPS_PACKAGE} -C /opt/libvips \
+    && mkdir -p /opt \
+    && tar -xzf ${LIBVIPS_PACKAGE} -C /opt \
+    && mv /opt/libvips-${LIBVIPS_VERSION}-linux-x64 /opt/libvips \
     && rm ${LIBVIPS_PACKAGE}
 
 ENV PKG_CONFIG_PATH="/opt/libvips/lib/pkgconfig:${PKG_CONFIG_PATH}"
@@ -65,8 +66,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install libvips runtime libraries to match the builder stage
 RUN wget -q https://github.com/kleisauke/libvips-packaging/releases/download/v${LIBVIPS_VERSION}/${LIBVIPS_PACKAGE} \
-    && mkdir -p /opt/libvips \
-    && tar -xzf ${LIBVIPS_PACKAGE} -C /opt/libvips \
+    && mkdir -p /opt \
+    && tar -xzf ${LIBVIPS_PACKAGE} -C /opt \
+    && mv /opt/libvips-${LIBVIPS_VERSION}-linux-x64 /opt/libvips \
     && rm ${LIBVIPS_PACKAGE}
 
 # Install ONNX Runtime in runtime stage
