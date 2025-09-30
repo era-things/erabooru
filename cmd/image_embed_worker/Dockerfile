@@ -1,18 +1,27 @@
 # ---------- build stage ----------
 FROM golang:1.25-bookworm AS builder
 
-# Install build dependencies for CGO
-RUN apt-get update && apt-get install -y gcc libc6-dev wget build-essential && rm -rf /var/lib/apt/lists/*
+ARG ONNXRUNTIME_VERSION=1.22.0
 
-# Install ONNX Runtime 1.22.0
-RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz \
-    && tar -xzf onnxruntime-linux-x64-1.22.0.tgz \
+# Install build dependencies for CGO and libvips
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    libc6-dev \
+    libvips-dev \
+    pkg-config \
+    wget \
+ && rm -rf /var/lib/apt/lists/*
+
+# Install ONNX Runtime
+RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz \
+    && tar -xzf onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz \
     && mkdir -p /opt/onnxruntime \
-    && cp -r onnxruntime-linux-x64-1.22.0/* /opt/onnxruntime/ \
-    && ln -sf /opt/onnxruntime/lib/libonnxruntime.so.1.22.0 /opt/onnxruntime/lib/onnxruntime.so \
+    && cp -r onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}/* /opt/onnxruntime/ \
+    && ln -sf /opt/onnxruntime/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /opt/onnxruntime/lib/onnxruntime.so \
     && echo "/opt/onnxruntime/lib" > /etc/ld.so.conf.d/onnxruntime.conf \
     && ldconfig \
-    && rm -rf onnxruntime-linux-x64-1.22.0*
+    && rm -rf onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}*
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -30,25 +39,28 @@ RUN CGO_ENABLED=1 go build -tags="embeddings" -o /bin/image_embed_worker ./cmd/i
 # ---------- runtime stage ----------
 FROM debian:bookworm-slim
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
+ARG ONNXRUNTIME_VERSION=1.22.0
+
+# Install runtime dependencies, including libvips shared libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     ffmpeg \
     libc6 \
     libgcc-s1 \
     libstdc++6 \
+    libvips42 \
     wget \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/*
 
-# Install ONNX Runtime 1.22.0 in runtime stage
-RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz \
-    && tar -xzf onnxruntime-linux-x64-1.22.0.tgz \
+# Install ONNX Runtime in runtime stage
+RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz \
+    && tar -xzf onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz \
     && mkdir -p /opt/onnxruntime \
-    && cp -r onnxruntime-linux-x64-1.22.0/* /opt/onnxruntime/ \
-    && ln -sf /opt/onnxruntime/lib/libonnxruntime.so.1.22.0 /opt/onnxruntime/lib/onnxruntime.so \
+    && cp -r onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}/* /opt/onnxruntime/ \
+    && ln -sf /opt/onnxruntime/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /opt/onnxruntime/lib/onnxruntime.so \
     && echo "/opt/onnxruntime/lib" > /etc/ld.so.conf.d/onnxruntime.conf \
     && ldconfig \
-    && rm -rf onnxruntime-linux-x64-1.22.0*
+    && rm -rf onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}*
 
 ENV LD_LIBRARY_PATH="/opt/onnxruntime/lib"
 
