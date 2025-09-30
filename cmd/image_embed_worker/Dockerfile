@@ -15,11 +15,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install libvips from the official prebuilt package so we match the
 # generated bindings shipped with github.com/cshum/vipsgen (libvips 8.17).
-RUN wget -q https://github.com/kleisauke/libvips-packaging/releases/download/v${LIBVIPS_VERSION}/${LIBVIPS_PACKAGE} \
-    && mkdir -p /opt \
-    && tar -xzf ${LIBVIPS_PACKAGE} -C /opt \
-    && mv /opt/libvips-${LIBVIPS_VERSION}-linux-x64 /opt/libvips \
-    && rm ${LIBVIPS_PACKAGE}
+RUN set -eux; \
+    wget -q "https://github.com/kleisauke/libvips-packaging/releases/download/v${LIBVIPS_VERSION}/${LIBVIPS_PACKAGE}"; \
+    mkdir -p /opt; \
+    tar -xzf "${LIBVIPS_PACKAGE}" -C /opt; \
+    LIBVIPS_DIR="$(tar -tzf "${LIBVIPS_PACKAGE}" | head -1 | cut -d/ -f1)"; \
+    rm -rf /opt/libvips; \
+    mv "/opt/${LIBVIPS_DIR}" /opt/libvips; \
+    rm "${LIBVIPS_PACKAGE}"
 
 ENV PKG_CONFIG_PATH="/opt/libvips/lib/pkgconfig:${PKG_CONFIG_PATH}"
 ENV LD_LIBRARY_PATH="/opt/libvips/lib:${LD_LIBRARY_PATH}"
@@ -65,11 +68,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # Install libvips runtime libraries to match the builder stage
-RUN wget -q https://github.com/kleisauke/libvips-packaging/releases/download/v${LIBVIPS_VERSION}/${LIBVIPS_PACKAGE} \
-    && mkdir -p /opt \
-    && tar -xzf ${LIBVIPS_PACKAGE} -C /opt \
-    && mv /opt/libvips-${LIBVIPS_VERSION}-linux-x64 /opt/libvips \
-    && rm ${LIBVIPS_PACKAGE}
+RUN set -eux; \
+    wget -q "https://github.com/kleisauke/libvips-packaging/releases/download/v${LIBVIPS_VERSION}/${LIBVIPS_PACKAGE}"; \
+    mkdir -p /opt; \
+    tar -xzf "${LIBVIPS_PACKAGE}" -C /opt; \
+    LIBVIPS_DIR="$(tar -tzf "${LIBVIPS_PACKAGE}" | head -1 | cut -d/ -f1)"; \
+    rm -rf /opt/libvips; \
+    mv "/opt/${LIBVIPS_DIR}" /opt/libvips; \
+    rm "${LIBVIPS_PACKAGE}"
 
 # Install ONNX Runtime in runtime stage
 RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz \
