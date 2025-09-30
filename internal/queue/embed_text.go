@@ -18,7 +18,7 @@ func RequestTextEmbedding(ctx context.Context, client *river.Client[pgx.Tx], tex
 		return nil, fmt.Errorf("queue client is not configured")
 	}
 
-	insertRes, err := client.Insert(ctx, EmbedTextArgs{Text: text}, &river.InsertOpts{Queue: "embed"})
+	insertRes, err := client.Insert(ctx, EmbedTextArgs{Text: text}, &river.InsertOpts{Queue: "embed", Priority: 1})
 	if err != nil {
 		return nil, fmt.Errorf("enqueue text embedding: %w", err)
 	}

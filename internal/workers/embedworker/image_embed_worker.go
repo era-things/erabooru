@@ -88,7 +88,7 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 		log.Printf("Failed to enqueue reindex for %s: %v", job.Args.Key, err)
 	}
 
-	log.Printf("Successfully generated and saved embedding for key %s", job.Args.Key)
+	logEmbedQueueDepth(ctx, fmt.Sprintf("Successfully generated and saved embedding for key %s (job %d)", job.Args.Key, job.ID))
 	return nil
 }
 
@@ -263,7 +263,7 @@ func videoSampleCount(durationSeconds int) int {
 	case durationSeconds < 5:
 		return 5
 	case durationSeconds < 60:
-		return durationSeconds - 1
+		return durationSeconds
 	default:
 		return 60
 	}
