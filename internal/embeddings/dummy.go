@@ -8,7 +8,7 @@ import (
 
 // Dummy stubs for vet/test without embeddings tag.
 
-func VisionEmbedding(any interface{}) ([]float32, error) {
+func VisionEmbedding([]byte) ([]float32, error) {
 	return nil, nil
 }
 

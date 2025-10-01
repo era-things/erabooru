@@ -4,16 +4,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"image"
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
 	"io"
 	"log"
 	"math"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	"era/booru/ent"
 	"era/booru/internal/config"
@@ -65,13 +64,13 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 		}
 		defer obj.Close()
 
-		img, _, err := image.Decode(obj)
+		data, err := io.ReadAll(obj)
 		if err != nil {
-			log.Printf("Failed to decode image: %v", err)
+			log.Printf("Failed to read image object: %v", err)
 			return err
 		}
 
-		vec, err = embed.VisionEmbedding(img)
+		vec, err = embed.VisionEmbedding(data)
 		if err != nil {
 			log.Printf("Failed to generate embedding: %v", err)
 			return err
@@ -97,6 +96,8 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 		return nil, fmt.Errorf("missing worker configuration")
 	}
 
+	startTime := time.Now()
+
 	duration := 0
 	if media.Duration != nil && *media.Duration > 0 {
 		duration = int(*media.Duration)
@@ -113,34 +114,107 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 	}
 	defer cleanup()
 
-	vectors := make([][]float32, 0, samples)
-	errors := 0
-	for i := 0; i < samples; i++ {
-		ts := sampleTimestamp(duration, samples, i)
-		img, err := extractFrame(ctx, src, ts)
-		if err != nil {
-			errors++
-			if errors > 2 { // tolerate errors in a case of encoding quirks
-				return nil, fmt.Errorf("too many errors extracting frames from video %s: last error: %w", key, err)
-			}
-			continue
-		}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-		vec, err := embed.VisionEmbedding(img)
-		if err != nil {
-			return nil, fmt.Errorf("failed to embed frame %d: %w", i, err)
+	vectors := make([][]float32, 0, samples)
+	var mu sync.Mutex
+	var extractErrors int
+	var lastExtractErr error
+	var fatalErr error
+	var fatalMu sync.Mutex
+
+	concurrency := runtime.NumCPU()
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	if concurrency > samples {
+		concurrency = samples
+	}
+	if concurrency == 0 {
+		concurrency = 1
+	}
+
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+
+	for i := 0; i < samples; i++ {
+		fatalMu.Lock()
+		if fatalErr != nil {
+			fatalMu.Unlock()
+			break
 		}
-		vectors = append(vectors, vec)
+		fatalMu.Unlock()
+
+		ts := sampleTimestamp(duration, samples, i)
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int, ts float64) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			fatalMu.Lock()
+			if fatalErr != nil {
+				fatalMu.Unlock()
+				return
+			}
+			fatalMu.Unlock()
+
+			frame, err := extractFrame(ctx, src, ts)
+			if err != nil {
+				mu.Lock()
+				extractErrors++
+				lastExtractErr = err
+				mu.Unlock()
+				return
+			}
+
+			vec, err := embed.VisionEmbedding(frame)
+			if err != nil {
+				fatalMu.Lock()
+				if fatalErr == nil {
+					fatalErr = fmt.Errorf("failed to embed frame %d: %w", idx, err)
+					cancel()
+				}
+				fatalMu.Unlock()
+				return
+			}
+
+			mu.Lock()
+			vectors = append(vectors, vec)
+			mu.Unlock()
+		}(i, ts)
+	}
+
+	wg.Wait()
+
+	if fatalErr != nil {
+		return nil, fatalErr
+	}
+
+	if extractErrors > 2 {
+		return nil, fmt.Errorf("too many errors extracting frames from video %s: last error: %w", key, lastExtractErr)
+	}
+
+	if len(vectors) == 0 {
+		if lastExtractErr != nil {
+			return nil, lastExtractErr
+		}
+		return nil, fmt.Errorf("no frames extracted for video %s", key)
 	}
 
 	avg, err := averageVectors(vectors)
+
+	elapsed := time.Since(startTime).Milliseconds()
+	log.Printf("Video embedding for %s: extracted %d frames, %d errors, took %d ms", key, len(vectors), extractErrors, elapsed)
+
 	if err != nil {
 		return nil, err
 	}
 	return avg, nil
 }
 
-func extractFrame(ctx context.Context, src string, timestamp float64) (image.Image, error) {
+func extractFrame(ctx context.Context, src string, timestamp float64) ([]byte, error) {
 	ts := formatTimestamp(timestamp)
 	args := []string{"-ss", ts, "-i", src, "-frames:v", "1", "-f", "image2", "-vcodec", "png", "-loglevel", "error", "-"}
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
@@ -163,11 +237,13 @@ func extractFrame(ctx context.Context, src string, timestamp float64) (image.Ima
 		return nil, fmt.Errorf("ffmpeg produced no data for timestamp %s", ts)
 	}
 
-	img, _, err := image.Decode(&stdout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode frame image: %w", err)
+	data := stdout.Bytes()
+	if len(data) == 0 {
+		return nil, fmt.Errorf("ffmpeg produced empty frame for timestamp %s", ts)
 	}
-	return img, nil
+	frame := make([]byte, len(data))
+	copy(frame, data)
+	return frame, nil
 }
 
 func (w *ImageEmbedWorker) cachedVideoPath(ctx context.Context, bucket, key string) (string, func(), error) {

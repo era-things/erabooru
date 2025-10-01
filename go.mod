@@ -19,7 +19,8 @@ require (
 )
 
 require (
-	github.com/emirpasic/gods v1.18.1 // indirect
+        github.com/cshum/vipsgen v1.1.2
+        github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
@@ -66,7 +67,6 @@ require (
 	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/disintegration/imaging v1.6.2 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/docker v28.0.1+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
