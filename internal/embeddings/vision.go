@@ -66,6 +66,33 @@ func l2(v []float32) {
 	}
 }
 
+func VisionEmbeddingRGB24(buf []byte) ([]float32, error) {
+	const maxAttempts = 3
+
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		S := InputSpatialSize()
+		if S <= 0 {
+			return nil, fmt.Errorf("invalid vision input size %d", S)
+		}
+
+		vec, err := visionEmbeddingRGB24WithSize(buf, S)
+		if err == nil {
+			return vec, nil
+		}
+		lastErr = err
+
+		if newSize, ok := retargetVisionInputSize(err, S); ok {
+			setInputSpatialSize(newSize)
+			continue
+		}
+
+		return nil, err
+	}
+
+	return nil, lastErr
+}
+
 func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
 	if S <= 0 {
 		return nil, fmt.Errorf("invalid vision input size %d", S)
@@ -172,20 +199,52 @@ func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
 	if err != nil {
 		return nil, fmt.Errorf("vips rawsave: %w", err)
 	}
-	if len(raw) != 3*S*S {
-		return nil, fmt.Errorf("unexpected raw buffer length %d (expected %d)", len(raw), 3*S*S)
+
+	return visionEmbeddingRGB24WithSize(raw, S)
+}
+
+func visionEmbeddingRGB24WithSize(raw []byte, S int) ([]float32, error) {
+	pix, err := normalizeRGB24(raw, S)
+	if err != nil {
+		return nil, err
+	}
+	return runVisionModel(pix, S)
+}
+
+func normalizeRGB24(raw []byte, S int) ([]float32, error) {
+	if S <= 0 {
+		return nil, fmt.Errorf("invalid vision input size %d", S)
+	}
+	expected := 3 * S * S
+	if len(raw) != expected {
+		return nil, fmt.Errorf("unexpected raw buffer length %d (expected %d)", len(raw), expected)
 	}
 
-	pix := make([]float32, 3*S*S)
+	pix := make([]float32, expected)
+	planeSize := S * S
 	for y := 0; y < S; y++ {
 		rowOffset := y * S
 		for x := 0; x < S; x++ {
 			idx := rowOffset + x
 			base := idx * 3
-			pix[idx] = (float32(raw[base])/255 - .5) / .5
-			pix[S*S+idx] = (float32(raw[base+1])/255 - .5) / .5
-			pix[2*S*S+idx] = (float32(raw[base+2])/255 - .5) / .5
+			normR := (float32(raw[base])/255 - .5) / .5
+			normG := (float32(raw[base+1])/255 - .5) / .5
+			normB := (float32(raw[base+2])/255 - .5) / .5
+			pix[idx] = normR
+			pix[planeSize+idx] = normG
+			pix[2*planeSize+idx] = normB
 		}
+	}
+
+	return pix, nil
+}
+
+func runVisionModel(pix []float32, S int) ([]float32, error) {
+	if S <= 0 {
+		return nil, fmt.Errorf("invalid vision input size %d", S)
+	}
+	if len(pix) != 3*S*S {
+		return nil, fmt.Errorf("unexpected tensor length %d (expected %d)", len(pix), 3*S*S)
 	}
 
 	in, err := ort.NewTensor[float32](ort.NewShape(1, 3, int64(S), int64(S)), pix)
@@ -194,8 +253,13 @@ func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
 	}
 	defer in.Destroy()
 
+	sess := Session()
+	if sess == nil {
+		return nil, fmt.Errorf("vision session not initialised")
+	}
+
 	outputs := []ort.Value{nil}
-	if err := Session().Run(
+	if err := sess.Run(
 		[]ort.Value{in},
 		outputs,
 	); err != nil {

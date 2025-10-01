@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -38,8 +37,6 @@ type ImageEmbedWorker struct {
 	DB    *ent.Client
 	Cfg   *config.Config
 }
-
-var visionEmbedding = embed.VisionEmbedding
 
 func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedArgs]) error {
 	log.Printf("Generating embedding for bucket %s, key %s", job.Args.Bucket, job.Args.Key)
@@ -176,7 +173,7 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			vec, err := visionEmbedding(frame)
+			vec, err := embed.VisionEmbeddingRGB24(frame)
 			if err != nil {
 				fatalMu.Lock()
 				if fatalErr == nil {
@@ -228,12 +225,34 @@ func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples
 		}
 	}
 
+	S := embed.InputSpatialSize()
+	if S <= 0 {
+		return nil, nil, fmt.Errorf("invalid vision input size %d", S)
+	}
+
+	frameSize := 3 * S * S
+	if frameSize <= 0 {
+		return nil, nil, fmt.Errorf("invalid frame size computed for %d", S)
+	}
+
+	vf := fmt.Sprintf(
+		"fps=%d/%d,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(%d-iw)/2:(%d-ih)/2:color=black",
+		samples,
+		denom,
+		S,
+		S,
+		S,
+		S,
+		S,
+		S,
+	)
+
 	args := []string{
 		"-i", src,
-		"-vf", fmt.Sprintf("fps=%d/%d", samples, denom),
+		"-vf", vf,
 		"-vframes", strconv.Itoa(samples),
-		"-f", "image2pipe",
-		"-vcodec", "png",
+		"-pix_fmt", "rgb24",
+		"-f", "rawvideo",
 		"-loglevel", "error",
 		"-",
 	}
@@ -257,7 +276,7 @@ func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples
 
 	go func() {
 		reader := bufio.NewReader(stdout)
-		err := readPNGFrames(reader, frameCh)
+		err := readRawVideoFrames(reader, frameSize, samples, frameCh)
 		if err != nil {
 			errCh <- err
 		} else {
@@ -313,62 +332,26 @@ func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples
 	return frameCh, wait, nil
 }
 
-var pngSignature = []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
+func readRawVideoFrames(r *bufio.Reader, frameSize, samples int, out chan<- []byte) error {
+	if frameSize <= 0 {
+		return fmt.Errorf("invalid frame size %d", frameSize)
+	}
+	if samples <= 0 {
+		return fmt.Errorf("invalid sample count %d", samples)
+	}
 
-func readPNGFrames(r *bufio.Reader, out chan<- []byte) error {
-	for {
-		frame, err := readPNGFrame(r)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
+	for i := 0; i < samples; i++ {
+		frame := make([]byte, frameSize)
+		if _, err := io.ReadFull(r, frame); err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 				return nil
 			}
 			return err
 		}
 		out <- frame
 	}
-}
 
-func readPNGFrame(r *bufio.Reader) ([]byte, error) {
-	header := make([]byte, len(pngSignature))
-	if _, err := io.ReadFull(r, header); err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil, io.EOF
-		}
-		return nil, err
-	}
-	if !bytes.Equal(header, pngSignature) {
-		return nil, fmt.Errorf("unexpected PNG signature")
-	}
-
-	buf := bytes.NewBuffer(make([]byte, 0, 1024))
-	if _, err := buf.Write(header); err != nil {
-		return nil, err
-	}
-
-	for {
-		chunkHeader := make([]byte, 8)
-		if _, err := io.ReadFull(r, chunkHeader); err != nil {
-			return nil, err
-		}
-		if _, err := buf.Write(chunkHeader); err != nil {
-			return nil, err
-		}
-
-		length := binary.BigEndian.Uint32(chunkHeader[:4])
-		data := make([]byte, length+4)
-		if _, err := io.ReadFull(r, data); err != nil {
-			return nil, err
-		}
-		if _, err := buf.Write(data); err != nil {
-			return nil, err
-		}
-
-		if string(chunkHeader[4:8]) == "IEND" {
-			break
-		}
-	}
-
-	return buf.Bytes(), nil
+	return nil
 }
 
 func (w *ImageEmbedWorker) cachedVideoPath(ctx context.Context, bucket, key string) (string, func(), error) {
