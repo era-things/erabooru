@@ -67,11 +67,30 @@ func l2(v []float32) {
 }
 
 func VisionEmbeddingRGB24(buf []byte) ([]float32, error) {
-	S := InputSpatialSize()
-	if S <= 0 {
-		return nil, fmt.Errorf("invalid vision input size %d", S)
+	const maxAttempts = 3
+
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		S := InputSpatialSize()
+		if S <= 0 {
+			return nil, fmt.Errorf("invalid vision input size %d", S)
+		}
+
+		vec, err := visionEmbeddingRGB24WithSize(buf, S)
+		if err == nil {
+			return vec, nil
+		}
+		lastErr = err
+
+		if newSize, ok := retargetVisionInputSize(err, S); ok {
+			setInputSpatialSize(newSize)
+			continue
+		}
+
+		return nil, err
 	}
-	return visionEmbeddingRGB24WithSize(buf, S)
+
+	return nil, lastErr
 }
 
 func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
