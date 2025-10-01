@@ -12,6 +12,10 @@ func VisionEmbedding([]byte) ([]float32, error) {
 	return nil, nil
 }
 
+func VisionEmbeddingBatch([][]byte) ([][]float32, error) {
+	return nil, nil
+}
+
 func TextEmbedding(any interface{}) ([]float32, error) {
 	return nil, nil
 }

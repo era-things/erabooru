@@ -117,12 +117,9 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	vectors := make([][]float32, 0, samples)
-	var mu sync.Mutex
+	frames := make([][]byte, 0, samples)
 	var extractErrors int
 	var lastExtractErr error
-	var fatalErr error
-	var fatalMu sync.Mutex
 
 	concurrency := runtime.NumCPU()
 	if concurrency <= 0 {
@@ -135,72 +132,80 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 		concurrency = 1
 	}
 
+	type frameResult struct {
+		data []byte
+		err  error
+	}
+
 	sem := make(chan struct{}, concurrency)
+	frameCh := make(chan frameResult, samples)
 	var wg sync.WaitGroup
 
 	for i := 0; i < samples; i++ {
-		fatalMu.Lock()
-		if fatalErr != nil {
-			fatalMu.Unlock()
-			break
-		}
-		fatalMu.Unlock()
-
 		ts := sampleTimestamp(duration, samples, i)
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(idx int, ts float64) {
+		go func(ts float64) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			fatalMu.Lock()
-			if fatalErr != nil {
-				fatalMu.Unlock()
-				return
-			}
-			fatalMu.Unlock()
-
 			frame, err := extractFrame(ctx, src, ts)
-			if err != nil {
-				mu.Lock()
-				extractErrors++
-				lastExtractErr = err
-				mu.Unlock()
-				return
-			}
-
-			vec, err := embed.VisionEmbedding(frame)
-			if err != nil {
-				fatalMu.Lock()
-				if fatalErr == nil {
-					fatalErr = fmt.Errorf("failed to embed frame %d: %w", idx, err)
-					cancel()
-				}
-				fatalMu.Unlock()
-				return
-			}
-
-			mu.Lock()
-			vectors = append(vectors, vec)
-			mu.Unlock()
-		}(i, ts)
+			frameCh <- frameResult{data: frame, err: err}
+		}(ts)
 	}
 
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		close(frameCh)
+	}()
 
-	if fatalErr != nil {
-		return nil, fatalErr
+	for res := range frameCh {
+		if res.err != nil {
+			extractErrors++
+			lastExtractErr = res.err
+			if extractErrors > 2 {
+				cancel()
+			}
+			continue
+		}
+
+		frames = append(frames, res.data)
 	}
 
 	if extractErrors > 2 {
 		return nil, fmt.Errorf("too many errors extracting frames from video %s: last error: %w", key, lastExtractErr)
 	}
 
-	if len(vectors) == 0 {
+	if len(frames) == 0 {
 		if lastExtractErr != nil {
 			return nil, lastExtractErr
 		}
 		return nil, fmt.Errorf("no frames extracted for video %s", key)
+	}
+
+	vectors := make([][]float32, 0, len(frames))
+	batchSize := concurrency
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+
+	remaining := frames
+	for len(remaining) > 0 {
+		n := batchSize
+		if len(remaining) < n {
+			n = len(remaining)
+		}
+
+		vecBatch, err := embed.VisionEmbeddingBatch(remaining[:n])
+		if err != nil {
+			return nil, fmt.Errorf("failed to embed video frame batch: %w", err)
+		}
+
+		vectors = append(vectors, vecBatch...)
+		for i := 0; i < n; i++ {
+			remaining[i] = nil
+		}
+		remaining = remaining[n:]
 	}
 
 	avg, err := averageVectors(vectors)

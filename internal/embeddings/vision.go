@@ -24,8 +24,23 @@ func ensureVips() {
 
 // VisionEmbedding converts an image buffer to an L2-normalised embedding vector.
 func VisionEmbedding(buf []byte) ([]float32, error) {
-	if len(buf) == 0 {
-		return nil, fmt.Errorf("vision embedding: empty image buffer")
+	vecs, err := VisionEmbeddingBatch([][]byte{buf})
+	if err != nil {
+		return nil, err
+	}
+	return vecs[0], nil
+}
+
+// VisionEmbeddingBatch converts multiple image buffers to L2-normalised embedding vectors using a single model invocation.
+func VisionEmbeddingBatch(bufs [][]byte) ([][]float32, error) {
+	if len(bufs) == 0 {
+		return nil, fmt.Errorf("vision embedding batch: empty input")
+	}
+
+	for i, buf := range bufs {
+		if len(buf) == 0 {
+			return nil, fmt.Errorf("vision embedding: empty image buffer at index %d", i)
+		}
 	}
 
 	ensureVips()
@@ -35,9 +50,9 @@ func VisionEmbedding(buf []byte) ([]float32, error) {
 	var lastErr error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		S := InputSpatialSize()
-		vec, err := visionEmbeddingWithSize(buf, S)
+		vecs, err := visionEmbeddingWithSizeBatch(bufs, S)
 		if err == nil {
-			return vec, nil
+			return vecs, nil
 		}
 		lastErr = err
 
@@ -66,129 +81,26 @@ func l2(v []float32) {
 	}
 }
 
-func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
+func visionEmbeddingWithSizeBatch(bufs [][]byte, S int) ([][]float32, error) {
 	if S <= 0 {
 		return nil, fmt.Errorf("invalid vision input size %d", S)
 	}
-
-	// 1) Do NOT set loader autorotate — PNG/WebP PNG path will reject it.
-	loadOptions := vips.DefaultLoadOptions()
-	// loadOptions.Autorotate = true // <-- remove
-
-	// (Optional) If you want autorotation for JPEGs only:
-	// ct := http.DetectContentType(buf)
-	// if strings.Contains(ct, "jpeg") || strings.Contains(ct, "jpg") {
-	//     loadOptions.Autorotate = true
-	// }
-
-	thumbOptions := &vips.ThumbnailBufferOptions{
-		OptionString: loadOptions.OptionString(),
-		Height:       S,
-		Size:         vips.SizeBoth,
-		Crop:         vips.InterestingCentre,
-		// FailOnError will turn unknown loader options into hard errors.
-		// Since we removed Autorotate above, we can keep this strict default.
-		FailOn: vips.FailOnError,
+	if len(bufs) == 0 {
+		return nil, fmt.Errorf("vision embedding batch: empty input")
 	}
 
-	img, err := vips.NewThumbnailBuffer(buf, S, thumbOptions)
-	if err != nil {
-		return nil, fmt.Errorf("vips thumbnail: %w", err)
-	}
-	defer func() {
-		if img != nil {
-			img.Close()
-		}
-	}()
+	batch := len(bufs)
+	pixSize := 3 * S * S
+	pixels := make([]float32, batch*pixSize)
 
-	// 2) Optional post-load autorotate (safe for all formats; no EXIF -> no-op).
-	// If your binding exposes Autorot:
-	if err := img.Autorot(); err != nil {
-		// ignore "not supported" style errors; treat only unexpected ones as fatal
-		// (you can log at debug if you like)
-	}
-
-	if err := img.Colourspace(vips.InterpretationSrgb, nil); err != nil {
-		return nil, fmt.Errorf("vips colourspace: %w", err)
-	}
-
-	if img.HasAlpha() {
-		if err := img.Flatten(&vips.FlattenOptions{Background: []float64{0, 0, 0}}); err != nil {
-			return nil, fmt.Errorf("vips flatten: %w", err)
+	for i, buf := range bufs {
+		offset := i * pixSize
+		if err := preprocessVisionBuffer(buf, S, pixels[offset:offset+pixSize]); err != nil {
+			return nil, fmt.Errorf("vision embedding (index %d): %w", i, err)
 		}
 	}
 
-	bands := img.Bands()
-	switch {
-	case bands > 3:
-		if err := img.ExtractBand(0, &vips.ExtractBandOptions{N: 3}); err != nil {
-			return nil, fmt.Errorf("vips extract band: %w", err)
-		}
-		bands = img.Bands()
-	case bands < 3:
-		// Expand to RGB by joining bands with themselves.
-		bandImages := make([]*vips.Image, 0, 3)
-		for bands < 3 {
-			dup, dupErr := img.Copy(nil)
-			if dupErr != nil {
-				for _, im := range bandImages {
-					im.Close()
-				}
-				return nil, fmt.Errorf("vips duplicate band: %w", dupErr)
-			}
-			bandImages = append(bandImages, dup)
-			bands++
-		}
-		joined, joinErr := vips.NewBandjoin(append([]*vips.Image{img}, bandImages...))
-		for _, im := range bandImages {
-			im.Close()
-		}
-		if joinErr != nil {
-			return nil, fmt.Errorf("vips bandjoin: %w", joinErr)
-		}
-		old := img
-		img = joined
-		old.Close()
-		bands = img.Bands()
-	}
-
-	if bands != 3 {
-		return nil, fmt.Errorf("unexpected band count %d", bands)
-	}
-
-	if img.BandFormat() != vips.BandFormatUchar {
-		if err := img.Cast(vips.BandFormatUchar, nil); err != nil {
-			return nil, fmt.Errorf("vips cast: %w", err)
-		}
-	}
-
-	width := img.Width()
-	height := img.Height()
-	if width != S || height != S {
-		return nil, fmt.Errorf("unexpected thumbnail size %dx%d (expected %d)", width, height, S)
-	}
-
-	raw, err := img.RawsaveBuffer(nil)
-	if err != nil {
-		return nil, fmt.Errorf("vips rawsave: %w", err)
-	}
-	if len(raw) != 3*S*S {
-		return nil, fmt.Errorf("unexpected raw buffer length %d (expected %d)", len(raw), 3*S*S)
-	}
-
-	pix := make([]float32, 3*S*S)
-	for y := 0; y < S; y++ {
-		rowOffset := y * S
-		for x := 0; x < S; x++ {
-			idx := rowOffset + x
-			base := idx * 3
-			pix[idx] = (float32(raw[base])/255 - .5) / .5
-			pix[S*S+idx] = (float32(raw[base+1])/255 - .5) / .5
-			pix[2*S*S+idx] = (float32(raw[base+2])/255 - .5) / .5
-		}
-	}
-
-	in, err := ort.NewTensor[float32](ort.NewShape(1, 3, int64(S), int64(S)), pix)
+	in, err := ort.NewTensor[float32](ort.NewShape(int64(batch), 3, int64(S), int64(S)), pixels)
 	if err != nil {
 		return nil, err
 	}
@@ -214,26 +126,153 @@ func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
 	if len(shape) < 2 {
 		return nil, fmt.Errorf("unexpected embedding rank %d", len(shape))
 	}
-	if shape[0] != 1 {
-		return nil, fmt.Errorf("unexpected batch dimension %d", shape[0])
+	if int(shape[0]) != batch {
+		return nil, fmt.Errorf("unexpected batch dimension %d (expected %d)", shape[0], batch)
 	}
 
-	var vec []float32
+	var vectors [][]float32
 	switch len(shape) {
 	case 2:
 		dim := int(shape[1])
-		if len(data) != dim {
-			return nil, fmt.Errorf("embedding data length mismatch: got %d, expected %d", len(data), dim)
+		if len(data) != batch*dim {
+			return nil, fmt.Errorf("embedding data length mismatch: got %d, expected %d", len(data), batch*dim)
 		}
-		vec = make([]float32, dim)
-		copy(vec, data)
+		vectors = make([][]float32, batch)
+		for i := 0; i < batch; i++ {
+			start := i * dim
+			vec := make([]float32, dim)
+			copy(vec, data[start:start+dim])
+			l2(vec)
+			vectors[i] = vec
+		}
 	default:
 		return nil, fmt.Errorf("unsupported embedding rank %d", len(shape))
 	}
 
-	l2(vec)
+	return vectors, nil
+}
 
-	return vec, nil
+func preprocessVisionBuffer(buf []byte, S int, dst []float32) error {
+	if len(dst) != 3*S*S {
+		return fmt.Errorf("invalid destination buffer size %d (expected %d)", len(dst), 3*S*S)
+	}
+
+	// 1) Do NOT set loader autorotate — PNG/WebP PNG path will reject it.
+	loadOptions := vips.DefaultLoadOptions()
+	// loadOptions.Autorotate = true // <-- remove
+
+	// (Optional) If you want autorotation for JPEGs only:
+	// ct := http.DetectContentType(buf)
+	// if strings.Contains(ct, "jpeg") || strings.Contains(ct, "jpg") {
+	//     loadOptions.Autorotate = true
+	// }
+
+	thumbOptions := &vips.ThumbnailBufferOptions{
+		OptionString: loadOptions.OptionString(),
+		Height:       S,
+		Size:         vips.SizeBoth,
+		Crop:         vips.InterestingCentre,
+		// FailOnError will turn unknown loader options into hard errors.
+		// Since we removed Autorotate above, we can keep this strict default.
+		FailOn: vips.FailOnError,
+	}
+
+	img, err := vips.NewThumbnailBuffer(buf, S, thumbOptions)
+	if err != nil {
+		return fmt.Errorf("vips thumbnail: %w", err)
+	}
+	defer func() {
+		if img != nil {
+			img.Close()
+		}
+	}()
+
+	// 2) Optional post-load autorotate (safe for all formats; no EXIF -> no-op).
+	// If your binding exposes Autorot:
+	if err := img.Autorot(); err != nil {
+		// ignore "not supported" style errors; treat only unexpected ones as fatal
+		// (you can log at debug if you like)
+	}
+
+	if err := img.Colourspace(vips.InterpretationSrgb, nil); err != nil {
+		return fmt.Errorf("vips colourspace: %w", err)
+	}
+
+	if img.HasAlpha() {
+		if err := img.Flatten(&vips.FlattenOptions{Background: []float64{0, 0, 0}}); err != nil {
+			return fmt.Errorf("vips flatten: %w", err)
+		}
+	}
+
+	bands := img.Bands()
+	switch {
+	case bands > 3:
+		if err := img.ExtractBand(0, &vips.ExtractBandOptions{n: 3}); err != nil {
+			return fmt.Errorf("vips extract band: %w", err)
+		}
+		bands = img.Bands()
+	case bands < 3:
+		bandImages := make([]*vips.Image, 0, 3-bands)
+		for bands < 3 {
+			dup, dupErr := img.Copy()
+			if dupErr != nil {
+				for _, im := range bandImages {
+					im.Close()
+				}
+				return fmt.Errorf("vips duplicate band: %w", dupErr)
+			}
+			bandImages = append(bandImages, dup)
+			bands++
+		}
+		joined, joinErr := vips.NewBandjoin(append([]*vips.Image{img}, bandImages...))
+		for _, im := range bandImages {
+			im.Close()
+		}
+		if joinErr != nil {
+			return fmt.Errorf("vips bandjoin: %w", joinErr)
+		}
+		old := img
+		img = joined
+		old.Close()
+		bands = img.Bands()
+	}
+
+	if bands != 3 {
+		return fmt.Errorf("unexpected band count %d", bands)
+	}
+
+	if img.BandFormat() != vips.BandFormatUchar {
+		if err := img.Cast(vips.BandFormatUchar, nil); err != nil {
+			return fmt.Errorf("vips cast: %w", err)
+		}
+	}
+
+	width := img.Width()
+	height := img.Height()
+	if width != S || height != S {
+		return fmt.Errorf("unexpected thumbnail size %dx%d (expected %d)", width, height, S)
+	}
+
+	raw, err := img.RawsaveBuffer(nil)
+	if err != nil {
+		return fmt.Errorf("vips rawsave: %w", err)
+	}
+	if len(raw) != len(dst) {
+		return fmt.Errorf("unexpected raw buffer length %d (expected %d)", len(raw), len(dst))
+	}
+
+	for y := 0; y < S; y++ {
+		rowOffset := y * S
+		for x := 0; x < S; x++ {
+			idx := rowOffset + x
+			base := idx * 3
+			dst[idx] = (float32(raw[base])/255 - .5) / .5
+			dst[S*S+idx] = (float32(raw[base+1])/255 - .5) / .5
+			dst[2*S*S+idx] = (float32(raw[base+2])/255 - .5) / .5
+		}
+	}
+
+	return nil
 }
 
 func retargetVisionInputSize(err error, current int) (int, bool) {
