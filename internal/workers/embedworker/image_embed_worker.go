@@ -1,8 +1,11 @@
 package embedworker
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -10,8 +13,10 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"era/booru/ent"
@@ -33,6 +38,8 @@ type ImageEmbedWorker struct {
 	DB    *ent.Client
 	Cfg   *config.Config
 }
+
+var visionEmbedding = embed.VisionEmbedding
 
 func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedArgs]) error {
 	log.Printf("Generating embedding for bucket %s, key %s", job.Args.Bucket, job.Args.Key)
@@ -91,7 +98,7 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 	return nil
 }
 
-func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key string, media *ent.Media) ([]float32, error) {
+func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key string, media *ent.Media) (vec []float32, retErr error) {
 	if w.Cfg == nil {
 		return nil, fmt.Errorf("missing worker configuration")
 	}
@@ -119,8 +126,6 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 
 	vectors := make([][]float32, 0, samples)
 	var mu sync.Mutex
-	var extractErrors int
-	var lastExtractErr error
 	var fatalErr error
 	var fatalMu sync.Mutex
 
@@ -135,41 +140,43 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 		concurrency = 1
 	}
 
+	frameCh, waitStream, err := streamVideoFrames(ctx, src, duration, samples)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		if err := waitStream(); err != nil {
+			if retErr == nil {
+				retErr = err
+			}
+			vec = nil
+		}
+	}()
+
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
+	processed := 0
 
-	for i := 0; i < samples; i++ {
+	for frame := range frameCh {
 		fatalMu.Lock()
 		if fatalErr != nil {
 			fatalMu.Unlock()
-			break
+			continue
 		}
 		fatalMu.Unlock()
 
-		ts := sampleTimestamp(duration, samples, i)
+		data := frame
+		idx := processed
+		processed++
+
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(idx int, ts float64) {
+		go func(idx int, frame []byte) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			fatalMu.Lock()
-			if fatalErr != nil {
-				fatalMu.Unlock()
-				return
-			}
-			fatalMu.Unlock()
-
-			frame, err := extractFrame(ctx, src, ts)
-			if err != nil {
-				mu.Lock()
-				extractErrors++
-				lastExtractErr = err
-				mu.Unlock()
-				return
-			}
-
-			vec, err := embed.VisionEmbedding(frame)
+			vec, err := visionEmbedding(frame)
 			if err != nil {
 				fatalMu.Lock()
 				if fatalErr == nil {
@@ -183,7 +190,7 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 			mu.Lock()
 			vectors = append(vectors, vec)
 			mu.Unlock()
-		}(i, ts)
+		}(idx, data)
 	}
 
 	wg.Wait()
@@ -192,58 +199,176 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 		return nil, fatalErr
 	}
 
-	if extractErrors > 2 {
-		return nil, fmt.Errorf("too many errors extracting frames from video %s: last error: %w", key, lastExtractErr)
-	}
-
 	if len(vectors) == 0 {
-		if lastExtractErr != nil {
-			return nil, lastExtractErr
-		}
 		return nil, fmt.Errorf("no frames extracted for video %s", key)
 	}
 
 	avg, err := averageVectors(vectors)
-
-	elapsed := time.Since(startTime).Milliseconds()
-	log.Printf("Video embedding for %s: extracted %d frames, %d errors, took %d ms", key, len(vectors), extractErrors, elapsed)
-
 	if err != nil {
 		return nil, err
 	}
-	return avg, nil
+
+	elapsed := time.Since(startTime).Milliseconds()
+	log.Printf("Video embedding for %s: processed %d frames in %d ms", key, len(vectors), elapsed)
+
+	vec = avg
+	return vec, nil
 }
 
-func extractFrame(ctx context.Context, src string, timestamp float64) ([]byte, error) {
-	ts := formatTimestamp(timestamp)
-	args := []string{"-ss", ts, "-i", src, "-frames:v", "1", "-f", "image2", "-vcodec", "png", "-loglevel", "error", "-"}
+func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples int) (<-chan []byte, func() error, error) {
+	if samples <= 0 {
+		return nil, nil, fmt.Errorf("invalid frame sample count")
+	}
+
+	denom := durationSeconds
+	if denom <= 0 {
+		denom = samples
+		if denom <= 0 {
+			denom = 1
+		}
+	}
+
+	args := []string{
+		"-i", src,
+		"-vf", fmt.Sprintf("fps=%d/%d", samples, denom),
+		"-vframes", strconv.Itoa(samples),
+		"-f", "image2pipe",
+		"-vcodec", "png",
+		"-loglevel", "error",
+		"-",
+	}
+
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	var stdout bytes.Buffer
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create ffmpeg stdout pipe: %w", err)
+	}
+
 	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
-		if stderr.Len() > 0 {
-			return nil, fmt.Errorf("ffmpeg error: %v: %s", err, strings.TrimSpace(stderr.String()))
-		}
-		return nil, fmt.Errorf("ffmpeg error: %w", err)
+	if err := cmd.Start(); err != nil {
+		return nil, nil, fmt.Errorf("failed to start ffmpeg: %w", err)
 	}
 
-	if stdout.Len() == 0 {
-		if stderr.Len() > 0 {
-			return nil, fmt.Errorf("ffmpeg produced no data: %s", strings.TrimSpace(stderr.String()))
+	frameCh := make(chan []byte)
+	errCh := make(chan error, 2)
+	doneCh := make(chan struct{})
+
+	go func() {
+		reader := bufio.NewReader(stdout)
+		err := readPNGFrames(reader, frameCh)
+		if err != nil {
+			errCh <- err
+		} else {
+			errCh <- nil
 		}
-		return nil, fmt.Errorf("ffmpeg produced no data for timestamp %s", ts)
+		close(frameCh)
+	}()
+
+	go func() {
+		err := cmd.Wait()
+		if err != nil {
+			if stderr.Len() > 0 {
+				err = fmt.Errorf("ffmpeg error: %w: %s", err, strings.TrimSpace(stderr.String()))
+			} else {
+				err = fmt.Errorf("ffmpeg error: %w", err)
+			}
+		}
+		errCh <- err
+		close(doneCh)
+	}()
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			if cmd.Process != nil {
+				_ = cmd.Process.Signal(syscall.SIGTERM)
+				select {
+				case <-doneCh:
+				case <-time.After(2 * time.Second):
+					_ = cmd.Process.Kill()
+				}
+			}
+		case <-doneCh:
+		}
+	}()
+
+	wait := func() error {
+		var firstErr error
+		for i := 0; i < 2; i++ {
+			err := <-errCh
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					continue
+				}
+				if firstErr == nil {
+					firstErr = err
+				}
+			}
+		}
+		return firstErr
 	}
 
-	data := stdout.Bytes()
-	if len(data) == 0 {
-		return nil, fmt.Errorf("ffmpeg produced empty frame for timestamp %s", ts)
+	return frameCh, wait, nil
+}
+
+var pngSignature = []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
+
+func readPNGFrames(r *bufio.Reader, out chan<- []byte) error {
+	for {
+		frame, err := readPNGFrame(r)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		out <- frame
 	}
-	frame := make([]byte, len(data))
-	copy(frame, data)
-	return frame, nil
+}
+
+func readPNGFrame(r *bufio.Reader) ([]byte, error) {
+	header := make([]byte, len(pngSignature))
+	if _, err := io.ReadFull(r, header); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, io.EOF
+		}
+		return nil, err
+	}
+	if !bytes.Equal(header, pngSignature) {
+		return nil, fmt.Errorf("unexpected PNG signature")
+	}
+
+	buf := bytes.NewBuffer(make([]byte, 0, 1024))
+	if _, err := buf.Write(header); err != nil {
+		return nil, err
+	}
+
+	for {
+		chunkHeader := make([]byte, 8)
+		if _, err := io.ReadFull(r, chunkHeader); err != nil {
+			return nil, err
+		}
+		if _, err := buf.Write(chunkHeader); err != nil {
+			return nil, err
+		}
+
+		length := binary.BigEndian.Uint32(chunkHeader[:4])
+		data := make([]byte, length+4)
+		if _, err := io.ReadFull(r, data); err != nil {
+			return nil, err
+		}
+		if _, err := buf.Write(data); err != nil {
+			return nil, err
+		}
+
+		if string(chunkHeader[4:8]) == "IEND" {
+			break
+		}
+	}
+
+	return buf.Bytes(), nil
 }
 
 func (w *ImageEmbedWorker) cachedVideoPath(ctx context.Context, bucket, key string) (string, func(), error) {
