@@ -4,6 +4,7 @@ package embed
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,11 +110,14 @@ func Load(dir string) error {
 			return
 		}
 
+		sessionOpts, releaseSessionOpts := sessionOptionsWithCUDA()
+		defer releaseSessionOpts()
+
 		dynSess, loadErr = ort.NewDynamicAdvancedSessionWithONNXData(
 			onx,
 			[]string{"pixel_values"}, // input
 			[]string{outputName},     // output
-			nil,                      // default SessionOptions
+			sessionOpts,
 		)
 
 		if loadErr != nil {
@@ -178,10 +182,47 @@ func Load(dir string) error {
 			textModel,
 			textInputNames,
 			[]string{textOutputName},
-			nil,
+			sessionOpts,
 		)
 	})
 	return loadErr
+}
+
+func sessionOptionsWithCUDA() (*ort.SessionOptions, func()) {
+	options, err := ort.NewSessionOptions()
+	if err != nil {
+		log.Printf("embeddings: CUDA execution provider unavailable (creating session options failed): %v; using CPU execution provider", err)
+		return nil, func() {}
+	}
+
+	cleanup := func() {
+		if destroyErr := options.Destroy(); destroyErr != nil {
+			log.Printf("embeddings: warning: failed to release session options: %v", destroyErr)
+		}
+	}
+
+	cudaOpts, err := ort.NewCUDAProviderOptions()
+	if err != nil {
+		log.Printf("embeddings: CUDA execution provider unavailable (creating provider options failed): %v; using CPU execution provider", err)
+		cleanup()
+		return nil, func() {}
+	}
+
+	if err := options.AppendExecutionProviderCUDA(cudaOpts); err != nil {
+		log.Printf("embeddings: CUDA execution provider unavailable (append failed): %v; using CPU execution provider", err)
+		if destroyErr := cudaOpts.Destroy(); destroyErr != nil {
+			log.Printf("embeddings: warning: failed to release CUDA provider options: %v", destroyErr)
+		}
+		cleanup()
+		return nil, func() {}
+	}
+
+	if err := cudaOpts.Destroy(); err != nil {
+		log.Printf("embeddings: warning: failed to release CUDA provider options: %v", err)
+	}
+
+	log.Printf("embeddings: using CUDA execution provider for ONNX Runtime sessions")
+	return options, cleanup
 }
 
 func Session() *ort.DynamicAdvancedSession { return dynSess }
