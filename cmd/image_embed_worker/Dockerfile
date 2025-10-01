@@ -4,31 +4,14 @@ FROM golang:1.25-bookworm AS builder
 ARG ONNXRUNTIME_VERSION=1.22.0
 ARG LIBVIPS_VERSION=8.17.2
 
-# CGO + libvips build deps
+# CGO + libvips build deps (no pip/gettext)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    ca-certificates \
-    pkg-config \
-    git \
-    meson \
-    ninja-build \
-    python3 \
-    python3-pip \
-    gettext \
-    # vips deps
-    libglib2.0-dev \
-    libexpat1-dev \
-    zlib1g-dev \
-    libjpeg62-turbo-dev \
-    libpng-dev \
-    libtiff-dev \
-    libwebp-dev \
-    libexif-dev \
-    liborc-0.4-dev \
-    wget \
+    build-essential ca-certificates pkg-config git meson ninja-build python3 \
+    libglib2.0-dev libexpat1-dev zlib1g-dev libjpeg62-turbo-dev libpng-dev \
+    libtiff-dev libwebp-dev libexif-dev liborc-0.4-dev wget \
  && rm -rf /var/lib/apt/lists/*
 
-# ---- Build libvips 8.17.x from source into /opt/libvips ----
+# ---- Build libvips 8.17.x into /opt/libvips ----
 RUN set -eux; \
     git clone --depth 1 --branch v${LIBVIPS_VERSION} https://github.com/libvips/libvips.git /tmp/libvips; \
     cd /tmp/libvips; \
@@ -43,7 +26,8 @@ RUN set -eux; \
       -Dpdfium=disabled \
       -Dpoppler=disabled \
       -Dcfitsio=disabled \
-      -Djpeg-xl=disabled; \
+      -Djpeg-xl=disabled \
+      -Db_lto=true -Db_ndebug=true; \
     meson compile -C build; \
     meson install -C build; \
     cd /; rm -rf /tmp/libvips
@@ -51,18 +35,17 @@ RUN set -eux; \
 # Make pkg-config and linker see our libvips
 ENV PKG_CONFIG_PATH="/opt/libvips/lib/pkgconfig:/opt/libvips/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH}"
 ENV LD_LIBRARY_PATH="/opt/libvips/lib:/opt/libvips/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
-
 RUN pkg-config --modversion vips && pkg-config --cflags --libs vips
 
-# ---- ONNX Runtime (CPU) ----
+# ---- ONNX Runtime (CPU) in builder; copy later to runtime ----
 RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz \
     && tar -xzf onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz \
     && mkdir -p /opt/onnxruntime \
     && cp -r onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}/* /opt/onnxruntime/ \
-    && ln -sf /opt/onnxruntime/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /opt/onnxruntime/lib/onnxruntime.so \
-    && echo "/opt/onnxruntime/lib" > /etc/ld.so.conf.d/onnxruntime.conf \
-    && ldconfig \
     && rm -rf onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}*
+
+# Create the alias the Go wrapper expects
+RUN ln -sf /opt/onnxruntime/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /opt/onnxruntime/lib/onnxruntime.so
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -78,46 +61,34 @@ ENV CGO_CFLAGS="-I/opt/onnxruntime/include"
 ENV CGO_LDFLAGS="-L/opt/onnxruntime/lib -lonnxruntime"
 ENV LD_LIBRARY_PATH="/opt/onnxruntime/lib:/opt/libvips/lib:/opt/libvips/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
 
-# Build
-RUN CGO_ENABLED=1 go build -tags="embeddings" -o /bin/image_embed_worker ./cmd/image_embed_worker
+# Build (smaller binary)
+RUN CGO_ENABLED=1 go build -tags="embeddings" -trimpath -ldflags="-s -w" -o /bin/image_embed_worker ./cmd/image_embed_worker \
+ && strip /bin/image_embed_worker || true
+
+# Optional: strip libvips *.so to shave a few MB
+RUN find /opt/libvips -type f -name "*.so*" -exec sh -c 'for f; do strip --strip-unneeded "$f" || true; done' sh {} +
 
 # ---------- runtime stage ----------
 FROM debian:bookworm-slim
 
-ARG ONNXRUNTIME_VERSION=1.22.0
-
 # Runtime libs (match codecs enabled above)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    ffmpeg \
-    libc6 \
-    libgcc-s1 \
-    libstdc++6 \
-    liborc-0.4-0 \
-    libjpeg62-turbo \
-    libpng16-16 \
-    libtiff6 \
-    libwebp7 \
-    libwebpdemux2 \
-    libwebpmux3 \
-    libexif12 \
-    wget \
+    ca-certificates ffmpeg libc6 libgcc-s1 libstdc++6 \
+    liborc-0.4-0 libjpeg62-turbo libpng16-16 libtiff6 \
+    libwebp7 libwebpdemux2 libwebpmux3 libexif12 \
  && rm -rf /var/lib/apt/lists/*
 
-# Bring the libvips we built
-COPY --from=builder /opt/libvips /opt/libvips
+# Copy only libvips runtime bits (no headers)
+COPY --from=builder /opt/libvips/lib /opt/libvips/lib
+COPY --from=builder /opt/libvips/share /opt/libvips/share
 
-# ---- ONNX Runtime runtime ----
-RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz \
-    && tar -xzf onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz \
-    && mkdir -p /opt/onnxruntime \
-    && cp -r onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}/* /opt/onnxruntime/ \
-    && ln -sf /opt/onnxruntime/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /opt/onnxruntime/lib/onnxruntime.so \
-    && echo "/opt/onnxruntime/lib" > /etc/ld.so.conf.d/onnxruntime.conf \
-    && ldconfig \
-    && rm -rf onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}*
+# Copy ONNX Runtime from builder (includes the onnxruntime.so alias)
+COPY --from=builder /opt/onnxruntime /opt/onnxruntime
 
+# Runtime linker paths
 ENV LD_LIBRARY_PATH="/opt/onnxruntime/lib:/opt/libvips/lib:/opt/libvips/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
 
+# App binary
 COPY --from=builder /bin/image_embed_worker /usr/local/bin/image_embed_worker
+
 ENTRYPOINT ["image_embed_worker"]
