@@ -19,6 +19,10 @@ type Config struct {
 	BlevePath             string // path to Bleve index, e.g., "/data/bleve"
 	MinioSSL              bool
 	DevMode               bool // enable development features like auto migration
+	VideoHWAccel          string
+	VideoHWOutputFormat   string
+	VideoHWDevice         string
+	VideoHWAccelDisable   bool
 }
 
 func Load() (*Config, error) {
@@ -37,6 +41,10 @@ func Load() (*Config, error) {
 		BlevePath:             getEnv("BLEVE_PATH"),
 		MinioSSL:              getEnv("MINIO_SSL") == "true",
 		DevMode:               getEnv("DEV_MODE") == "true",
+		VideoHWAccel:          getEnvOrDefault("VIDEO_HWACCEL", ""),
+		VideoHWOutputFormat:   getEnvOrDefault("VIDEO_HW_OUTPUT_FORMAT", ""),
+		VideoHWDevice:         getEnvOrDefault("VIDEO_HW_DEVICE", ""),
+		VideoHWAccelDisable:   getEnvOrDefault("VIDEO_HWACCEL_DISABLE", "") == "true",
 	}
 	return cfg, nil
 }
