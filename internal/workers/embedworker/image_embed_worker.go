@@ -252,6 +252,15 @@ func streamVideoFrames(ctx context.Context, cfg *config.Config, src string, dura
 		return nil, nil, err
 	}
 
+	switch {
+	case len(args) > 1 && args[1] != "":
+		log.Printf("FFmpeg hardware acceleration enabled using %s", args[1])
+	case cfg != nil && cfg.VideoHWAccelDisable:
+		log.Printf("FFmpeg hardware acceleration disabled via configuration")
+	default:
+		log.Printf("FFmpeg hardware acceleration not in use; falling back to software decoding")
+	}
+
 	args = append(args,
 		"-i", src,
 		"-vf", vf,
