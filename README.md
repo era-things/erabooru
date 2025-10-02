@@ -45,3 +45,24 @@ downloads the required weights on startup using the settings below:
 If you set `MODEL_DIR` the embed worker skips downloading and loads models directly from the
 provided path (useful for local development with pre-downloaded weights).
 
+## Video hardware acceleration
+
+The image embedding worker samples video frames with `ffmpeg`. By default it
+searches for a supported GPU decoder and enables it automatically when
+available. You can override the selection or disable the feature entirely with
+the following variables in `.env`:
+
+| Variable | Description | Example |
+| --- | --- | --- |
+| `VIDEO_HWACCEL` | Hardware acceleration profile. Supported value: `cuda`. Leave empty to auto-detect. | `cuda` |
+| `VIDEO_HW_OUTPUT_FORMAT` | Optional override for `-hwaccel_output_format`. Defaults to the profile's recommendation. | `cuda` |
+| `VIDEO_HW_DEVICE` | Device selector passed to ffmpeg (for CUDA this is the GPU index). Leave empty to use the default device. | `0` |
+| `VIDEO_HWACCEL_DISABLE` | Force ffmpeg to use CPU decoding even if a supported accelerator is detected. | `true` |
+
+When no accelerator is detected (or you set `VIDEO_HWACCEL_DISABLE=true`) the
+worker keeps its existing CPU-only behavior.
+If you enable CUDA acceleration inside Docker you must run the container with
+the NVIDIA runtime (`NVIDIA_VISIBLE_DEVICES`, `NVIDIA_DRIVER_CAPABILITIES`) so
+that `/dev/nvidia*` devices are available, as shown in the provided compose
+files.
+
