@@ -120,6 +120,10 @@ type ProcessArgs struct {
 
 func (ProcessArgs) Kind() string { return "process_media" }
 
+func (ProcessArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 3}
+}
+
 type IndexArgs struct {
 	ID string `json:"id"`
 }
@@ -132,6 +136,10 @@ type EmbedArgs struct {
 }
 
 func (EmbedArgs) Kind() string { return "embed_media" }
+
+func (EmbedArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 3}
+}
 
 type EmbedTextArgs struct {
 	Text string `json:"text"`
