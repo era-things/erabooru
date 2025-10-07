@@ -3,7 +3,9 @@ package mediaworker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"image"
 	"io"
 	"log"
 	"os/exec"
@@ -120,6 +122,10 @@ func (w *ProcessWorker) processImage(ctx context.Context, bucket, key string) (s
 
 	meta, err := processing.GetMetadata(data)
 	if err != nil {
+		if errors.Is(err, image.ErrFormat) {
+			log.Printf("Unsupported image format for %s: %v", key, err)
+			return "", river.JobCancel(fmt.Errorf("unsupported image format: %w", err))
+		}
 		return "", err
 	}
 

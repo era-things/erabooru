@@ -46,6 +46,10 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 	}
 
 	media, err := w.DB.Media.Get(ctx, job.Args.Key)
+	if ent.IsNotFound(err) {
+		log.Printf("Media metadata missing for %s: %v", job.Args.Key, err)
+		return river.JobCancel(fmt.Errorf("media %s not found: %w", job.Args.Key, err))
+	}
 	if err != nil {
 		log.Printf("Failed to load media metadata: %v", err)
 		return err
@@ -58,13 +62,13 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 		vec, err = w.videoEmbedding(ctx, bucket, job.Args.Key, media)
 		if err != nil {
 			log.Printf("Failed to generate video embedding: %v", err)
-			return err
+			return classifyEmbeddingError(err, job.Args.Key)
 		}
 	} else {
 		obj, err := w.Minio.GetObject(ctx, bucket, job.Args.Key, mc.GetObjectOptions{})
 		if err != nil {
 			log.Printf("Failed to get object from MinIO: %v", err)
-			return err
+			return classifyObjectError(err, job.Args.Key)
 		}
 		defer obj.Close()
 
@@ -77,7 +81,7 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 		vec, err = embed.VisionEmbedding(data)
 		if err != nil {
 			log.Printf("Failed to generate embedding: %v", err)
-			return err
+			return classifyEmbeddingError(err, job.Args.Key)
 		}
 	}
 
@@ -93,6 +97,53 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 
 	logEmbedQueueDepth(ctx, fmt.Sprintf("Successfully generated and saved embedding for key %s (job %d)", job.Args.Key, job.ID))
 	return nil
+}
+
+func classifyObjectError(err error, key string) error {
+	if err == nil {
+		return nil
+	}
+	var resp mc.ErrorResponse
+	if errors.As(err, &resp) {
+		switch resp.Code {
+		case "NoSuchKey":
+			return river.JobCancel(fmt.Errorf("object %s missing: %w", key, err))
+		}
+	}
+	return err
+}
+
+func classifyEmbeddingError(err error, key string) error {
+	if err == nil {
+		return nil
+	}
+	if isFatalEmbeddingError(err) {
+		return river.JobCancel(fmt.Errorf("embedding cannot be generated for %s: %w", key, err))
+	}
+	return err
+}
+
+func isFatalEmbeddingError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	fatalSubstrings := []string{
+		"Corrupt JPEG data",
+		"no frames extracted",
+		"unexpected raw buffer length",
+		"invalid sample count",
+		"invalid vision input size",
+	}
+	for _, sub := range fatalSubstrings {
+		if strings.Contains(msg, sub) {
+			return true
+		}
+	}
+	if strings.Contains(msg, "vips thumbnail") && strings.Contains(msg, "VipsJpeg") {
+		return true
+	}
+	return false
 }
 
 func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key string, media *ent.Media) (vec []float32, retErr error) {
