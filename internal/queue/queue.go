@@ -69,6 +69,8 @@ func getConfigForClientType(clientType ClientType, workers *river.Workers) *rive
 
 // Enqueue inserts a job into the default queue.
 func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) error {
+	opts := &river.InsertOpts{}
+
 	var (
 		queueName   string
 		priority    int
@@ -80,6 +82,7 @@ func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) e
 		queueName = "process" // Goes to media worker
 	case IndexArgs:
 		queueName = "index" // Goes to server
+		opts.UniqueOpts = river.UniqueOpts{ByArgs: true}
 	case EmbedArgs:
 		queueName = "embed" // Goes to image embed worker
 		priority = 2        // lower priority than search embeddings
@@ -92,7 +95,6 @@ func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) e
 		queueName = "" // Default queue
 	}
 
-	opts := &river.InsertOpts{}
 	if queueName != "" {
 		opts.Queue = queueName
 	}
