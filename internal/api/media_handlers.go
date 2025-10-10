@@ -61,8 +61,21 @@ func listPreviewsHandler(cfg *config.Config, db *ent.Client, queueClient *river.
 
 func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db *ent.Client, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		q := c.Query("q")
-		vectorSearch := c.Query("vector") == "1"
+		rawQuery := strings.TrimSpace(c.Query("q"))
+		vectorQueryParamRaw, hasVectorQueryParam := c.GetQuery("vector_q")
+		vectorQueryParam := strings.TrimSpace(vectorQueryParamRaw)
+		vectorFlag := c.Query("vector") == "1"
+		tagQuery := rawQuery
+		vectorQuery := vectorQueryParam
+		if vectorFlag && vectorQuery == "" {
+			vectorQuery = rawQuery
+			if !hasVectorQueryParam {
+				tagQuery = ""
+			}
+		}
+		vectorSearch := vectorFlag || vectorQuery != ""
+		vectorQuery = strings.TrimSpace(vectorQuery)
+		tagQuery = strings.TrimSpace(tagQuery)
 		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 		if err != nil || page < 1 {
 			page = 1
@@ -81,11 +94,22 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 			total int
 		)
 
-		if vectorSearch {
-			trimmed := strings.TrimSpace(q)
-			if trimmed == "" {
-				items = []*ent.Media{}
-				total = 0
+		if vectorSearch && vectorQuery != "" {
+			var includeIDs []string
+			if tagQuery != "" {
+				includeIDs, err = search.SearchMediaIDs(tagQuery)
+				if err != nil {
+					log.Printf("filter media ids: %v", err)
+					c.AbortWithStatus(http.StatusInternalServerError)
+					return
+				}
+				if len(includeIDs) == 0 {
+					items = []*ent.Media{}
+					total = 0
+				}
+			}
+			if tagQuery != "" && len(includeIDs) == 0 {
+				// No candidates left after tag filtering; skip vector ordering.
 			} else if queueClient == nil {
 				c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "text embedding unavailable"})
 				return
@@ -93,9 +117,9 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 				ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 				defer cancel()
 
-				vec, err := queue.RequestTextEmbedding(ctx, queueClient, trimmed)
+				vec, err := queue.RequestTextEmbedding(ctx, queueClient, vectorQuery)
 				if err != nil {
-					log.Printf("text embedding %q failed: %v", trimmed, err)
+					log.Printf("text embedding %q failed: %v", vectorQuery, err)
 					status := http.StatusServiceUnavailable
 					if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 						status = http.StatusGatewayTimeout
@@ -107,7 +131,7 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 					items = []*ent.Media{}
 					total = 0
 				} else {
-					items, total, err = search.SimilarMediaByVector(ctx, db, "vision", vec, pageSize, offset, "")
+					items, total, err = search.SimilarMediaByVector(ctx, db, "vision", vec, pageSize, offset, "", includeIDs)
 					if err != nil {
 						log.Printf("vector media search: %v", err)
 						c.AbortWithStatus(http.StatusInternalServerError)
@@ -116,7 +140,7 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 				}
 			}
 		} else {
-			items, total, err = search.SearchMedia(q, pageSize, offset)
+			items, total, err = search.SearchMedia(tagQuery, pageSize, offset)
 			if err != nil {
 				log.Printf("search media: %v", err)
 				c.AbortWithStatus(http.StatusInternalServerError)
@@ -264,7 +288,7 @@ func similarMediaHandler(db *ent.Client, cfg *config.Config) gin.HandlerFunc {
 			body.Limit = 50
 		}
 
-		results, _, err := search.SimilarMediaByVector(c.Request.Context(), db, body.Name, body.Vector, body.Limit, 0, body.Exclude)
+		results, _, err := search.SimilarMediaByVector(c.Request.Context(), db, body.Name, body.Vector, body.Limit, 0, body.Exclude, nil)
 		if err != nil {
 			log.Printf("similar media search: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)

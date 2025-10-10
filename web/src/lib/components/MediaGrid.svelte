@@ -7,14 +7,14 @@
 
 	let {
 		query = '',
+		vectorQuery = '',
 		page = 1,
 		pageSize = Number(PAGE_SIZE),
-		vector = false,
 		total = $bindable(1)
 	} = $props();
 	let lastQuery: string = $state('');
 	let lastPage: number = $state(1);
-	let lastVector: boolean = $state(false);
+	let lastVectorQuery: string = $state('');
 
 	let media: MediaPreviewItem[] = $state([]);
 	let innerWidth = $state(0);
@@ -25,17 +25,17 @@
 	let columnWidths = $derived(Array(columnCount).fill('1fr'));
 
 	$effect(() => {
-		if (mounted && (query !== lastQuery || page !== lastPage || vector !== lastVector)) {
+		if (mounted && (query !== lastQuery || page !== lastPage || vectorQuery !== lastVectorQuery)) {
 			lastQuery = query;
 			lastPage = page;
-			lastVector = vector;
+			lastVectorQuery = vectorQuery;
 			load();
 		}
 	});
 
 	async function load() {
 		try {
-			const data = await fetchMediaPreviews(query, page, pageSize, vector);
+			const data = await fetchMediaPreviews(query, page, pageSize, vectorQuery);
 			const items = data.media as MediaItem[];
 			media = items.map((it) => {
 				const displayHeight = Math.min(it.height, it.width * 3);
@@ -57,7 +57,7 @@
 		mounted = true;
 		lastQuery = query;
 		lastPage = page;
-		lastVector = vector;
+		lastVectorQuery = vectorQuery;
 		await load();
 	});
 </script>

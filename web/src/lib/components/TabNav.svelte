@@ -8,49 +8,40 @@
 	import { PAGE_SIZE } from '$lib/constants';
 
 	let tagQuery: string = $state('');
-	let textQuery: string = $state('');
-	let vectorMode: boolean = $state(false);
-	const tagActive = $derived(!vectorMode && tagQuery.trim().length > 0);
-	const textActive = $derived(vectorMode && textQuery.trim().length > 0);
+	let vectorQuery: string = $state('');
+	const tagActive = $derived(tagQuery.trim().length > 0);
+	const vectorActive = $derived(vectorQuery.trim().length > 0);
 	let active: 'media' | 'upload' | 'tags' | 'settings' = $props();
 
 	$effect(() => {
 		const params = get(page).url.searchParams;
-		const current = params.get('q') ?? '';
-		const isVector = params.get('vector') === '1';
-		vectorMode = isVector;
-		if (isVector) {
-			textQuery = current;
+		const rawQuery = params.get('q') ?? '';
+		const vectorFlag = params.get('vector') === '1';
+		const hasVectorParam = params.has('vector_q');
+		const vectorParam = params.get('vector_q') ?? '';
+		if (vectorFlag && !hasVectorParam) {
 			tagQuery = '';
+			vectorQuery = rawQuery;
 		} else {
-			tagQuery = current;
-			textQuery = '';
+			tagQuery = rawQuery;
+			vectorQuery = vectorParam;
 		}
 	});
 
-	function searchTags(event: Event) {
+	function submitSearch(event: Event) {
 		event.preventDefault();
-		const trimmed = tagQuery.trim();
+		const trimmedTag = tagQuery.trim();
+		const trimmedVector = vectorQuery.trim();
 		const params = new URLSearchParams({
 			page: '1',
 			page_size: PAGE_SIZE
 		});
-		if (trimmed) {
-			params.set('q', trimmed);
+		if (trimmedTag) {
+			params.set('q', trimmedTag);
 		}
-		goto(`/?${params.toString()}`);
-	}
-
-	function searchText(event: Event) {
-		event.preventDefault();
-		const trimmed = textQuery.trim();
-		const params = new URLSearchParams({
-			page: '1',
-			page_size: PAGE_SIZE,
-			vector: '1'
-		});
-		if (trimmed) {
-			params.set('q', trimmed);
+		if (trimmedVector) {
+			params.set('vector', '1');
+			params.set('vector_q', trimmedVector);
 		}
 		goto(`/?${params.toString()}`);
 	}
@@ -99,7 +90,7 @@
 			Settings
 		</a>
 		<div class="ml-auto flex items-center gap-2">
-			<form onsubmit={searchTags}>
+			<form class="flex items-center gap-2" onsubmit={submitSearch}>
 				<input
 					type="text"
 					name="tag-search"
@@ -108,16 +99,15 @@
 					class="rounded border px-2 py-1"
 					class:border-blue-500={tagActive}
 				/>
-			</form>
-			<form onsubmit={searchText}>
 				<input
 					type="text"
-					name="text-search"
-					placeholder="Text search"
-					bind:value={textQuery}
+					name="vector-search"
+					placeholder="Vector search"
+					bind:value={vectorQuery}
 					class="rounded border px-2 py-1"
-					class:border-blue-500={textActive}
+					class:border-blue-500={vectorActive}
 				/>
+				<button type="submit" class="hidden" aria-hidden="true">Search</button>
 			</form>
 		</div>
 	</nav>

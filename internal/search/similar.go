@@ -17,7 +17,15 @@ import (
 // vector. When Bleve vector search is available the build can provide a
 // specialised implementation via build tags. The default implementation uses
 // pgvector for similarity calculation.
-func SimilarMediaByVector(ctx context.Context, db *ent.Client, vectorName string, query []float32, limit, offset int, excludeID string) ([]*ent.Media, int, error) {
+func SimilarMediaByVector(
+	ctx context.Context,
+	db *ent.Client,
+	vectorName string,
+	query []float32,
+	limit, offset int,
+	excludeID string,
+	includeIDs []string,
+) ([]*ent.Media, int, error) {
 	if limit <= 0 || len(query) == 0 {
 		return []*ent.Media{}, 0, nil
 	}
@@ -28,6 +36,9 @@ func SimilarMediaByVector(ctx context.Context, db *ent.Client, vectorName string
 
 	if excludeID != "" {
 		baseQuery = baseQuery.Where(mediavector.MediaIDNEQ(excludeID))
+	}
+	if len(includeIDs) > 0 {
+		baseQuery = baseQuery.Where(mediavector.MediaIDIn(includeIDs...))
 	}
 
 	total, err := baseQuery.Clone().Count(ctx)
