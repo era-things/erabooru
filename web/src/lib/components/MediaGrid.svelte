@@ -25,17 +25,22 @@
 	let columnWidths = $derived(Array(columnCount).fill('1fr'));
 
 	$effect(() => {
-		if (mounted && (query !== lastQuery || page !== lastPage || vectorQuery !== lastVectorQuery)) {
+		const normalizedVectorQuery = typeof vectorQuery === 'string' ? vectorQuery : '';
+		if (
+			mounted &&
+			(query !== lastQuery || page !== lastPage || normalizedVectorQuery !== lastVectorQuery)
+		) {
 			lastQuery = query;
 			lastPage = page;
-			lastVectorQuery = vectorQuery;
+			lastVectorQuery = normalizedVectorQuery;
 			load();
 		}
 	});
 
 	async function load() {
 		try {
-			const data = await fetchMediaPreviews(query, page, pageSize, vectorQuery);
+			const vectorTerm = typeof vectorQuery === 'string' ? vectorQuery : '';
+			const data = await fetchMediaPreviews(query, page, pageSize, vectorTerm);
 			const items = data.media as MediaItem[];
 			media = items.map((it) => {
 				const displayHeight = Math.min(it.height, it.width * 3);
@@ -57,7 +62,7 @@
 		mounted = true;
 		lastQuery = query;
 		lastPage = page;
-		lastVectorQuery = vectorQuery;
+		lastVectorQuery = typeof vectorQuery === 'string' ? vectorQuery : '';
 		await load();
 	});
 </script>

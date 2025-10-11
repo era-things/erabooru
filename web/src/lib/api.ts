@@ -16,7 +16,7 @@ export async function fetchMediaPreviews(
 	query: string,
 	page: number,
 	pageSize: number,
-	vectorQuery = ''
+	vectorQuery?: string | null
 ): Promise<MediaPreviewsResponse> {
 	const params = new URLSearchParams({
 		page: page.toString(),
@@ -25,7 +25,8 @@ export async function fetchMediaPreviews(
 	if (query) {
 		params.set('q', query);
 	}
-	const trimmedVector = vectorQuery.trim();
+	const vectorText = typeof vectorQuery === 'string' ? vectorQuery : '';
+	const trimmedVector = vectorText.trim();
 	if (trimmedVector) {
 		params.set('vector', '1');
 		params.set('vector_q', trimmedVector);
