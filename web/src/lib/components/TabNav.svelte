@@ -34,7 +34,7 @@
 		const trimmedVector = vectorQuery.trim();
 		const params = new URLSearchParams({
 			page: '1',
-			page_size: PAGE_SIZE
+			page_size: PAGE_SIZE.toString()
 		});
 		if (trimmedTag) {
 			params.set('q', trimmedTag);
