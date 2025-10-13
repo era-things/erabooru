@@ -1,8 +1,8 @@
 # ---------- build stage ----------
 FROM golang:1.25-bookworm AS builder
 
+ARG TARGETARCH
 ARG ONNXRUNTIME_VERSION=1.22.0
-ARG ONNXRUNTIME_PACKAGE=onnxruntime-linux-x64-gpu
 ARG LIBVIPS_VERSION=8.17.2
 
 # CGO + libvips build deps (no pip/gettext)
@@ -38,16 +38,20 @@ ENV PKG_CONFIG_PATH="/opt/libvips/lib/pkgconfig:/opt/libvips/lib/x86_64-linux-gn
 ENV LD_LIBRARY_PATH="/opt/libvips/lib:/opt/libvips/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
 RUN pkg-config --modversion vips && pkg-config --cflags --libs vips
 
-# ---- ONNX Runtime (GPU enabled) in builder; copy later to runtime ----
-RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/${ONNXRUNTIME_PACKAGE}-${ONNXRUNTIME_VERSION}.tgz \
-    && tar -xzf ${ONNXRUNTIME_PACKAGE}-${ONNXRUNTIME_VERSION}.tgz \
-    && mkdir -p /opt/onnxruntime \
-    && cp -r ${ONNXRUNTIME_PACKAGE}-${ONNXRUNTIME_VERSION}/* /opt/onnxruntime/ \
-    && rm -rf ${ONNXRUNTIME_PACKAGE}-${ONNXRUNTIME_VERSION}*
-
-# Create the alias the Go wrapper expects
-RUN ln -sf /opt/onnxruntime/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /opt/onnxruntime/lib/onnxruntime.so
-
+# ---- Multi-arch ONNX Runtime with GPU support for amd64 ----
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) onnx_pkg="onnxruntime-linux-x64-gpu-${ONNXRUNTIME_VERSION}.tgz" ;; \
+        arm64) onnx_pkg="onnxruntime-linux-aarch64-${ONNXRUNTIME_VERSION}.tgz" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    wget -q "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/${onnx_pkg}"; \
+    tar -xzf "${onnx_pkg}"; \
+    onnx_dir="${onnx_pkg%.tgz}"; \
+    mkdir -p /opt/onnxruntime; \
+    cp -r "${onnx_dir}/"* /opt/onnxruntime/; \
+    ln -sf /opt/onnxruntime/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /opt/onnxruntime/lib/onnxruntime.so; \
+    rm -rf "${onnx_dir}"*
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

@@ -1,10 +1,6 @@
 <script lang="ts">
-	/**
-	 * Page currently shown so we can highlight the active tab
-	 */
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
-	import { get } from 'svelte/store';
+	import { page } from '$app/state';
 	import { PAGE_SIZE } from '$lib/constants';
 
 	let tagQuery: string = $state('');
@@ -14,7 +10,7 @@
 	let active: 'media' | 'upload' | 'tags' | 'settings' = $props();
 
 	$effect(() => {
-		const params = get(page).url.searchParams;
+		const params = page.url.searchParams;
 		const rawQuery = params.get('q') ?? '';
 		const vectorFlag = params.get('vector') === '1';
 		const hasVectorParam = params.has('vector_q');
@@ -34,7 +30,7 @@
 		const trimmedVector = vectorQuery.trim();
 		const params = new URLSearchParams({
 			page: '1',
-			page_size: PAGE_SIZE.toString()
+			page_size: String(PAGE_SIZE)
 		});
 		if (trimmedTag) {
 			params.set('q', trimmedTag);
