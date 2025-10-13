@@ -11,6 +11,7 @@
 	} from '$lib/api';
 	import type { HiddenTagFilter } from '$lib/api';
 	import { onMount } from 'svelte';
+	import TagAssistInput from '$lib/components/TagAssistInput.svelte';
 
 	let fileInput: HTMLInputElement;
 	let filters = $state<HiddenTagFilter[]>([]);
@@ -136,14 +137,14 @@
 <TabNav active="settings" />
 <div class="space-y-6 p-4">
 	<div class="flex flex-wrap gap-2">
-		<button class="rounded border px-3 py-1" on:click={regenerate}>
+		<button class="rounded border px-3 py-1" onclick={regenerate}>
 			Regenerate reverse index
 		</button>
-		<button class="rounded border px-3 py-1" on:click={exportTags}> Export tags </button>
-		<button class="rounded border px-3 py-1" on:click={() => fileInput.click()}>
+		<button class="rounded border px-3 py-1" onclick={exportTags}> Export tags </button>
+		<button class="rounded border px-3 py-1" onclick={() => fileInput.click()}>
 			Import tags
 		</button>
-		<input type="file" bind:this={fileInput} accept=".gz" class="hidden" on:change={importTags} />
+		<input type="file" bind:this={fileInput} accept=".gz" class="hidden" onchange={importTags} />
 	</div>
 
 	<section class="space-y-4 rounded border border-gray-200 p-4">
@@ -151,7 +152,7 @@
 			<h2 class="text-lg font-semibold">Hidden tag filters</h2>
 			<button
 				class="rounded border px-3 py-1 text-sm"
-				on:click={loadHiddenFilters}
+				onclick={loadHiddenFilters}
 				disabled={filtersLoading}
 			>
 				Refresh
@@ -162,20 +163,14 @@
 			remove all restrictions.
 		</p>
 		<div class="flex flex-wrap gap-2">
-			<input
-				class="min-w-[16rem] flex-1 rounded border px-3 py-2"
-				type="text"
-				placeholder="e.g. human -disturbing -nudity"
+			<TagAssistInput
 				bind:value={newFilterValue}
-				on:keydown={(event) => {
-					if (event.key === 'Enter') {
-						event.preventDefault();
-						addHiddenFilter();
-					}
-				}}
+				placeholder="e.g. human -disturbing -nudity"
+				inputClass="min-w-[16rem] flex-1 rounded border px-3 py-2"
 				disabled={filtersLoading}
+				oncommit={() => addHiddenFilter()}
 			/>
-			<button class="rounded border px-3 py-2" on:click={addHiddenFilter} disabled={filtersLoading}>
+			<button class="rounded border px-3 py-2" onclick={addHiddenFilter} disabled={filtersLoading}>
 				Add filter
 			</button>
 		</div>
@@ -193,7 +188,7 @@
 					>
 						<button
 							class={`flex-1 text-left ${filtersLoading ? 'opacity-70' : ''}`}
-							on:click={() => setActiveHiddenFilter(filter)}
+							onclick={() => setActiveHiddenFilter(filter)}
 							disabled={filtersLoading}
 						>
 							<span class="font-medium">{labelFor(filter)}</span>
@@ -203,7 +198,7 @@
 						</button>
 						<button
 							class="rounded border px-2 py-1 text-sm"
-							on:click={() => removeHiddenFilter(filter)}
+							onclick={() => removeHiddenFilter(filter)}
 							disabled={filtersLoading || filter.is_default}
 						>
 							Remove

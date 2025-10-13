@@ -118,6 +118,13 @@ export async function fetchTags(): Promise<TagCount[]> {
 	return data.tags;
 }
 
+export async function fetchTagSuggestions(prefix: string): Promise<TagCount[]> {
+	const params = new URLSearchParams({ q: prefix });
+	const res = await fetch(`${apiBase}/tags/suggest?${params.toString()}`);
+	const data = await handleJson<{ tags: TagCount[] }>(res);
+	return data.tags;
+}
+
 export async function fetchSimilarMedia(
 	vector: number[],
 	limit: number,

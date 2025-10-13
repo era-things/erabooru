@@ -5,6 +5,7 @@
 	import { fetchMediaDetail, deleteMedia, updateMediaTags, fetchSimilarMedia } from '$lib/api';
 	import type { MediaDetail, MediaItem } from '$lib/types/media';
 	import { isFormatVideo } from '$lib/utils/media_utils';
+	import TagAssistInput from '$lib/components/TagAssistInput.svelte';
 
 	let media = $state<MediaDetail | null>(null);
 	let tagsInput = $state('');
@@ -146,7 +147,11 @@
 				<div class="mt-4 flex flex-col items-center gap-2">
 					<div class="flex w-1/2 flex-col rounded px-2 py-1">
 						<label for="tags-input" class="ml-4 self-start font-semibold">Tags</label>
-						<input id="tags-input" bind:value={tagsInput} />
+						<TagAssistInput
+							id="tags-input"
+							bind:value={tagsInput}
+							inputClass="w-full rounded border px-2 py-1"
+						/>
 					</div>
 					<button class="rounded bg-green-500 px-4 py-2 text-white" onclick={saveTags}
 						>Save changes</button
