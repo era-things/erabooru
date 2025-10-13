@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { PAGE_SIZE } from '$lib/constants';
+	import { buildSearchUrl } from '$lib/utils/searchParams';
 
 	const rawQuery = $derived(page.url.searchParams.get('q') ?? '');
 	const vectorFlag = $derived(page.url.searchParams.get('vector') === '1');
@@ -17,22 +18,15 @@
 	let total = $state(1);
 	let totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
 
+	const vectorParamForUrl = $derived(vectorSearch ? vectorQuery : undefined);
+
 	function buildUrl(targetPage: number): string {
-		const params = new URLSearchParams({
-			page: targetPage.toString(),
-			page_size: pageSize.toString()
+		return buildSearchUrl({
+			page: targetPage,
+			pageSize,
+			query: q,
+			vectorQuery: vectorParamForUrl
 		});
-		if (q) {
-			params.set('q', q);
-		}
-		if (vectorSearch) {
-			params.set('vector', '1');
-			const trimmedVector = vectorQuery.trim();
-			if (trimmedVector) {
-				params.set('vector_q', trimmedVector);
-			}
-		}
-		return `/?${params.toString()}`;
 	}
 
 	function prev() {

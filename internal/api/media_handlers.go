@@ -365,16 +365,11 @@ func uploadURLHandler(m *minio.Client, cfg *config.Config) gin.HandlerFunc {
 
 func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id, ok := idParam(c)
-		if !ok {
-			return
-		}
-
 		var body struct {
 			Tags []string `json:"tags"`
 		}
-		if err := c.BindJSON(&body); err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
+		id, ok := bindIDAndJSON(c, &body)
+		if !ok {
 			return
 		}
 
@@ -391,19 +386,14 @@ func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
 
 func updateMediaDatesHandler(dbClient *ent.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id, ok := idParam(c)
-		if !ok {
-			return
-		}
-
 		var body struct {
 			Dates []struct {
 				Name  string `json:"name"`
 				Value string `json:"value"`
 			} `json:"dates"`
 		}
-		if err := c.BindJSON(&body); err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
+		id, ok := bindIDAndJSON(c, &body)
+		if !ok {
 			return
 		}
 
@@ -429,19 +419,14 @@ func updateMediaDatesHandler(dbClient *ent.Client) gin.HandlerFunc {
 
 func updateMediaVectorsHandler(dbClient *ent.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id, ok := idParam(c)
-		if !ok {
-			return
-		}
-
 		var body struct {
 			Vectors []struct {
 				Name  string    `json:"name"`
 				Value []float32 `json:"value"`
 			} `json:"vectors"`
 		}
-		if err := c.BindJSON(&body); err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
+		id, ok := bindIDAndJSON(c, &body)
+		if !ok {
 			return
 		}
 

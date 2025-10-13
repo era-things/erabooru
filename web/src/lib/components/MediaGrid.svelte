@@ -23,9 +23,9 @@
 
 	let columnCount = $derived(Math.max(Math.floor(innerWidth / 300), 2));
 	let columnWidths = $derived(Array(columnCount).fill('1fr'));
+	const normalizedVectorQuery = $derived(typeof vectorQuery === 'string' ? vectorQuery : '');
 
 	$effect(() => {
-		const normalizedVectorQuery = typeof vectorQuery === 'string' ? vectorQuery : '';
 		if (
 			mounted &&
 			(query !== lastQuery || page !== lastPage || normalizedVectorQuery !== lastVectorQuery)
@@ -39,8 +39,7 @@
 
 	async function load() {
 		try {
-			const vectorTerm = typeof vectorQuery === 'string' ? vectorQuery : '';
-			const data = await fetchMediaPreviews(query, page, pageSize, vectorTerm);
+			const data = await fetchMediaPreviews(query, page, pageSize, normalizedVectorQuery);
 			const items = data.media as MediaItem[];
 			media = items.map((it) => {
 				const displayHeight = Math.min(it.height, it.width * 3);
@@ -62,7 +61,7 @@
 		mounted = true;
 		lastQuery = query;
 		lastPage = page;
-		lastVectorQuery = typeof vectorQuery === 'string' ? vectorQuery : '';
+		lastVectorQuery = normalizedVectorQuery;
 		await load();
 	});
 </script>
