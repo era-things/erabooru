@@ -7,14 +7,14 @@
 
 	let {
 		query = '',
+		vectorQuery = '',
 		page = 1,
 		pageSize = Number(PAGE_SIZE),
-		vector = false,
 		total = $bindable(1)
 	} = $props();
 	let lastQuery: string = $state('');
 	let lastPage: number = $state(1);
-	let lastVector: boolean = $state(false);
+	let lastVectorQuery: string = $state('');
 
 	let media: MediaPreviewItem[] = $state([]);
 	let innerWidth = $state(0);
@@ -25,17 +25,22 @@
 	let columnWidths = $derived(Array(columnCount).fill('1fr'));
 
 	$effect(() => {
-		if (mounted && (query !== lastQuery || page !== lastPage || vector !== lastVector)) {
+		const normalizedVectorQuery = typeof vectorQuery === 'string' ? vectorQuery : '';
+		if (
+			mounted &&
+			(query !== lastQuery || page !== lastPage || normalizedVectorQuery !== lastVectorQuery)
+		) {
 			lastQuery = query;
 			lastPage = page;
-			lastVector = vector;
+			lastVectorQuery = normalizedVectorQuery;
 			load();
 		}
 	});
 
 	async function load() {
 		try {
-			const data = await fetchMediaPreviews(query, page, pageSize, vector);
+			const vectorTerm = typeof vectorQuery === 'string' ? vectorQuery : '';
+			const data = await fetchMediaPreviews(query, page, pageSize, vectorTerm);
 			const items = data.media as MediaItem[];
 			media = items.map((it) => {
 				const displayHeight = Math.min(it.height, it.width * 3);
@@ -57,7 +62,7 @@
 		mounted = true;
 		lastQuery = query;
 		lastPage = page;
-		lastVector = vector;
+		lastVectorQuery = typeof vectorQuery === 'string' ? vectorQuery : '';
 		await load();
 	});
 </script>

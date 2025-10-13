@@ -2,6 +2,7 @@ package indexworker
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"era/booru/ent"
@@ -21,7 +22,6 @@ type IndexWorker struct {
 }
 
 func (w *IndexWorker) Work(ctx context.Context, job *river.Job[queue.IndexArgs]) error {
-	log.Printf("Indexing task started for media ID: %s", job.Args.ID)
 	mobj, err := w.DB.Media.Query().Where(media.IDEQ(job.Args.ID)).
 		WithTags().
 		WithDates(func(q *ent.DateQuery) { q.WithMediaDates() }).
@@ -33,11 +33,21 @@ func (w *IndexWorker) Work(ctx context.Context, job *river.Job[queue.IndexArgs])
 		Only(ctx)
 	if ent.IsNotFound(err) {
 		log.Printf("Media with ID %s not found, deleting from index", job.Args.ID)
-		return search.DeleteMedia(job.Args.ID)
+		if err := search.DeleteMedia(job.Args.ID); err != nil {
+			return err
+		}
+		logIndexQueueDepth(ctx, fmt.Sprintf("Deleted stale index entry for media %s (job %d)", job.Args.ID, job.ID))
+		return nil
 	}
 	if err != nil {
 		log.Printf("Error retrieving media with ID %s: %v", job.Args.ID, err)
 		return err
 	}
-	return search.IndexMedia(mobj)
+	if err := search.IndexMedia(mobj); err != nil {
+		return err
+	}
+
+	logIndexQueueDepth(ctx, fmt.Sprintf("Indexed media %s (job %d)", job.Args.ID, job.ID))
+
+	return nil
 }

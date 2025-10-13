@@ -2,6 +2,7 @@ package embedworker
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	embed "era/booru/internal/embeddings"
@@ -29,6 +30,8 @@ func (w *TextEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedTe
 		log.Printf("Failed to record text embedding output: %v", err)
 		return err
 	}
+
+	logEmbedQueueDepth(ctx, fmt.Sprintf("Generated text embedding for job %d", job.ID))
 
 	return nil
 }

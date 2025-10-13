@@ -6,74 +6,13 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"era/booru/ent"
 
 	"github.com/blevesearch/bleve/v2"
-	q "github.com/blevesearch/bleve/v2/search/query"
 )
-
-// parseQuery turns a string like "width>300 type=image" into a Bleve query.
-// Numeric fields support range comparisons (> < >= <= =) while string fields
-// only allow equality checks.
-func boolPtr(b bool) *bool { return &b }
-
-func parseQuery(expr string) q.Query {
-	tokens := strings.Fields(expr)
-	parts := make([]q.Query, 0, len(tokens))
-	for _, t := range tokens {
-		var field, op, val string
-		for _, o := range []string{"<=", ">=", "<", ">", "="} {
-			if idx := strings.Index(t, o); idx > 0 {
-				field = t[:idx]
-				op = o
-				val = t[idx+len(o):]
-				break
-			}
-		}
-		if field == "" {
-			// If no field/op, treat as tag search
-			tq := bleve.NewTermQuery(t)
-			tq.SetField("tags")
-			parts = append(parts, tq)
-			continue
-		}
-
-		if n, err := strconv.ParseFloat(val, 64); err == nil {
-			var qr *q.NumericRangeQuery
-			switch op {
-			case "=":
-				qr = bleve.NewNumericRangeInclusiveQuery(&n, &n, boolPtr(true), boolPtr(true))
-			case ">":
-				qr = bleve.NewNumericRangeInclusiveQuery(&n, nil, boolPtr(false), nil)
-			case ">=":
-				qr = bleve.NewNumericRangeInclusiveQuery(&n, nil, boolPtr(true), nil)
-			case "<":
-				qr = bleve.NewNumericRangeInclusiveQuery(nil, &n, nil, boolPtr(false))
-			case "<=":
-				qr = bleve.NewNumericRangeInclusiveQuery(nil, &n, nil, boolPtr(true))
-			}
-			qr.SetField(field)
-			parts = append(parts, qr)
-		} else if op == "=" {
-			tq := bleve.NewTermQuery(val)
-			tq.SetField(field)
-			parts = append(parts, tq)
-		}
-	}
-
-	switch len(parts) {
-	case 0:
-		return bleve.NewMatchAllQuery()
-	case 1:
-		return parts[0]
-	default:
-		return bleve.NewConjunctionQuery(parts...)
-	}
-}
 
 // SearchMedia executes a query against the Bleve index and returns the matching
 // Media documents. It does not touch the Postgres database.
@@ -118,6 +57,40 @@ func SearchMedia(expr string, limit, offset int) ([]*ent.Media, int, error) {
 		items = append(items, &m)
 	}
 	return items, int(res.Total), nil
+}
+
+// SearchMediaIDs returns all media IDs that match the provided expression. The
+// order of IDs follows Bleve's default ordering, but callers should treat the
+// output as an unordered set and apply their own ordering when needed.
+func SearchMediaIDs(expr string) ([]string, error) {
+	if IDX == nil {
+		return nil, fmt.Errorf("index not open")
+	}
+	trimmed := strings.TrimSpace(expr)
+	if trimmed == "" {
+		return nil, nil
+	}
+	query := parseQuery(trimmed)
+	const batchSize = 500
+	ids := make([]string, 0)
+	for offset := 0; ; offset += batchSize {
+		req := bleve.NewSearchRequestOptions(query, batchSize, offset, false)
+		req.Fields = []string{}
+		res, err := IDX.Search(req)
+		if err != nil {
+			return nil, err
+		}
+		for _, hit := range res.Hits {
+			ids = append(ids, hit.ID)
+		}
+		if len(res.Hits) == 0 || offset+batchSize >= int(res.Total) {
+			break
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return ids, nil
 }
 
 var IDX bleve.Index // global handle

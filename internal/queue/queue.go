@@ -69,24 +69,37 @@ func getConfigForClientType(clientType ClientType, workers *river.Workers) *rive
 
 // Enqueue inserts a job into the default queue.
 func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) error {
-	var queueName string
+	opts := &river.InsertOpts{}
+
+	var (
+		queueName   string
+		priority    int
+		setPriority bool
+	)
 
 	switch args.(type) {
 	case ProcessArgs:
 		queueName = "process" // Goes to media worker
 	case IndexArgs:
 		queueName = "index" // Goes to server
+		opts.UniqueOpts = river.UniqueOpts{ByArgs: true}
 	case EmbedArgs:
 		queueName = "embed" // Goes to image embed worker
+		priority = 2        // lower priority than search embeddings
+		setPriority = true
 	case EmbedTextArgs:
 		queueName = "embed"
+		priority = 1
+		setPriority = true
 	default:
 		queueName = "" // Default queue
 	}
 
-	opts := &river.InsertOpts{}
 	if queueName != "" {
 		opts.Queue = queueName
+	}
+	if setPriority {
+		opts.Priority = priority
 	}
 
 	_, err := c.Insert(ctx, args, opts)
@@ -109,6 +122,10 @@ type ProcessArgs struct {
 
 func (ProcessArgs) Kind() string { return "process_media" }
 
+func (ProcessArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 3}
+}
+
 type IndexArgs struct {
 	ID string `json:"id"`
 }
@@ -121,6 +138,10 @@ type EmbedArgs struct {
 }
 
 func (EmbedArgs) Kind() string { return "embed_media" }
+
+func (EmbedArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 3}
+}
 
 type EmbedTextArgs struct {
 	Text string `json:"text"`
