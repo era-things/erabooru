@@ -9,6 +9,9 @@ import (
 // Date is the predicate function for date builders.
 type Date func(*sql.Selector)
 
+// HiddenTagFilter is the predicate function for hiddentagfilter builders.
+type HiddenTagFilter func(*sql.Selector)
+
 // Media is the predicate function for media builders.
 type Media func(*sql.Selector)
 
@@ -17,6 +20,9 @@ type MediaDate func(*sql.Selector)
 
 // MediaVector is the predicate function for mediavector builders.
 type MediaVector func(*sql.Selector)
+
+// Setting is the predicate function for setting builders.
+type Setting func(*sql.Selector)
 
 // Tag is the predicate function for tag builders.
 type Tag func(*sql.Selector)

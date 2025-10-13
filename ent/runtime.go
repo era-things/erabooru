@@ -3,18 +3,55 @@
 package ent
 
 import (
+	"era/booru/ent/hiddentagfilter"
 	"era/booru/ent/media"
 	"era/booru/ent/schema"
+	"era/booru/ent/setting"
+	"time"
 )
 
 // The init function reads all schema descriptors with runtime code
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	hiddentagfilterFields := schema.HiddenTagFilter{}.Fields()
+	_ = hiddentagfilterFields
+	// hiddentagfilterDescValue is the schema descriptor for value field.
+	hiddentagfilterDescValue := hiddentagfilterFields[0].Descriptor()
+	// hiddentagfilter.ValueValidator is a validator for the "value" field. It is called by the builders before save.
+	hiddentagfilter.ValueValidator = hiddentagfilterDescValue.Validators[0].(func(string) error)
+	// hiddentagfilterDescCreatedAt is the schema descriptor for created_at field.
+	hiddentagfilterDescCreatedAt := hiddentagfilterFields[1].Descriptor()
+	// hiddentagfilter.DefaultCreatedAt holds the default value on creation for the created_at field.
+	hiddentagfilter.DefaultCreatedAt = hiddentagfilterDescCreatedAt.Default.(func() time.Time)
+	// hiddentagfilterDescUpdatedAt is the schema descriptor for updated_at field.
+	hiddentagfilterDescUpdatedAt := hiddentagfilterFields[2].Descriptor()
+	// hiddentagfilter.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	hiddentagfilter.DefaultUpdatedAt = hiddentagfilterDescUpdatedAt.Default.(func() time.Time)
+	// hiddentagfilter.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	hiddentagfilter.UpdateDefaultUpdatedAt = hiddentagfilterDescUpdatedAt.UpdateDefault.(func() time.Time)
 	mediaFields := schema.Media{}.Fields()
 	_ = mediaFields
 	// mediaDescID is the schema descriptor for id field.
 	mediaDescID := mediaFields[0].Descriptor()
 	// media.IDValidator is a validator for the "id" field. It is called by the builders before save.
 	media.IDValidator = mediaDescID.Validators[0].(func(string) error)
+	settingFields := schema.Setting{}.Fields()
+	_ = settingFields
+	// settingDescKey is the schema descriptor for key field.
+	settingDescKey := settingFields[0].Descriptor()
+	// setting.KeyValidator is a validator for the "key" field. It is called by the builders before save.
+	setting.KeyValidator = settingDescKey.Validators[0].(func(string) error)
+	// settingDescValue is the schema descriptor for value field.
+	settingDescValue := settingFields[1].Descriptor()
+	// setting.DefaultValue holds the default value on creation for the value field.
+	setting.DefaultValue = settingDescValue.Default.(string)
+	// setting.ValueValidator is a validator for the "value" field. It is called by the builders before save.
+	setting.ValueValidator = settingDescValue.Validators[0].(func(string) error)
+	// settingDescUpdatedAt is the schema descriptor for updated_at field.
+	settingDescUpdatedAt := settingFields[2].Descriptor()
+	// setting.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	setting.DefaultUpdatedAt = settingDescUpdatedAt.Default.(func() time.Time)
+	// setting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	setting.UpdateDefaultUpdatedAt = settingDescUpdatedAt.UpdateDefault.(func() time.Time)
 }

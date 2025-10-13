@@ -98,6 +98,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 	api.RegisterMediaRoutes(r, database, m, cfg, riverClient)
 	api.RegisterTagRoutes(r, database)
 	api.RegisterAdminRoutes(r, database, m, cfg, riverClient)
+	api.RegisterSettingsRoutes(r, database)
 	api.RegisterStaticRoutes(r)
 
 	s := &Server{

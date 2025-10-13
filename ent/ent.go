@@ -5,9 +5,11 @@ package ent
 import (
 	"context"
 	"era/booru/ent/date"
+	"era/booru/ent/hiddentagfilter"
 	"era/booru/ent/media"
 	"era/booru/ent/mediadate"
 	"era/booru/ent/mediavector"
+	"era/booru/ent/setting"
 	"era/booru/ent/tag"
 	"era/booru/ent/vector"
 	"errors"
@@ -78,12 +80,14 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			date.Table:        date.ValidColumn,
-			media.Table:       media.ValidColumn,
-			mediadate.Table:   mediadate.ValidColumn,
-			mediavector.Table: mediavector.ValidColumn,
-			tag.Table:         tag.ValidColumn,
-			vector.Table:      vector.ValidColumn,
+			date.Table:            date.ValidColumn,
+			hiddentagfilter.Table: hiddentagfilter.ValidColumn,
+			media.Table:           media.ValidColumn,
+			mediadate.Table:       mediadate.ValidColumn,
+			mediavector.Table:     mediavector.ValidColumn,
+			setting.Table:         setting.ValidColumn,
+			tag.Table:             tag.ValidColumn,
+			vector.Table:          vector.ValidColumn,
 		})
 	})
 	return columnCheck(table, column)

@@ -7,6 +7,20 @@ export interface MediaPreviewsResponse {
 	total: number;
 }
 
+export interface HiddenTagFilter {
+	id: number;
+	value: string;
+	is_default: boolean;
+}
+
+export interface HiddenTagFiltersResponse {
+	filters: HiddenTagFilter[];
+	active: {
+		id: number | null;
+		value: string;
+	};
+}
+
 async function handleJson<T>(res: Response): Promise<T> {
 	if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
 	return res.json() as Promise<T>;
@@ -117,4 +131,40 @@ export async function fetchSimilarMedia(
 	});
 	const data = await handleJson<{ media: MediaItem[] }>(res);
 	return data.media;
+}
+
+export async function fetchHiddenTagFilters(): Promise<HiddenTagFiltersResponse> {
+	const res = await fetch(`${apiBase}/settings/hidden-tags`);
+	return handleJson<HiddenTagFiltersResponse>(res);
+}
+
+export async function createHiddenTagFilter(value: string): Promise<void> {
+	const res = await fetch(`${apiBase}/settings/hidden-tags`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ value })
+	});
+	if (!res.ok) {
+		const message = await res.json().catch(() => ({}));
+		throw new Error(message.error ?? `HTTP ${res.status}`);
+	}
+}
+
+export async function selectHiddenTagFilter(id: number): Promise<void> {
+	const res = await fetch(`${apiBase}/settings/hidden-tags/${id}/select`, {
+		method: 'POST'
+	});
+	if (!res.ok) {
+		throw new Error(`HTTP ${res.status}`);
+	}
+}
+
+export async function deleteHiddenTagFilter(id: number): Promise<void> {
+	const res = await fetch(`${apiBase}/settings/hidden-tags/${id}`, {
+		method: 'DELETE'
+	});
+	if (!res.ok && res.status !== 404) {
+		const message = await res.json().catch(() => ({}));
+		throw new Error(message.error ?? `HTTP ${res.status}`);
+	}
 }

@@ -59,7 +59,7 @@ func listPreviewsHandler(cfg *config.Config, db *ent.Client, queueClient *river.
 	return listCommon(cfg.MinioPublicPrefix, cfg.PreviewBucket, cfg.MinioBucket, db, queueClient)
 }
 
-func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db *ent.Client, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
+func listCommon(minioPrefix string, videoBucket string, pictureBucket string, dbClient *ent.Client, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		rawQuery := strings.TrimSpace(c.Query("q"))
 		vectorQueryParamRaw, hasVectorQueryParam := c.GetQuery("vector_q")
@@ -76,6 +76,17 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 		vectorSearch := vectorFlag || vectorQuery != ""
 		vectorQuery = strings.TrimSpace(vectorQuery)
 		tagQuery = strings.TrimSpace(tagQuery)
+		if filterExpr, err := db.ActiveHiddenTagFilterValue(c.Request.Context(), dbClient); err != nil {
+			log.Printf("load hidden tag filter: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		} else if filterExpr != "" {
+			if tagQuery != "" {
+				tagQuery = strings.TrimSpace(tagQuery + " " + filterExpr)
+			} else {
+				tagQuery = filterExpr
+			}
+		}
 		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 		if err != nil || page < 1 {
 			page = 1
@@ -131,7 +142,7 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 					items = []*ent.Media{}
 					total = 0
 				} else {
-					items, total, err = search.SimilarMediaByVector(ctx, db, "vision", vec, pageSize, offset, "", includeIDs)
+					items, total, err = search.SimilarMediaByVector(ctx, dbClient, "vision", vec, pageSize, offset, "", includeIDs)
 					if err != nil {
 						log.Printf("vector media search: %v", err)
 						c.AbortWithStatus(http.StatusInternalServerError)
@@ -261,7 +272,7 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 	}
 }
 
-func similarMediaHandler(db *ent.Client, cfg *config.Config) gin.HandlerFunc {
+func similarMediaHandler(dbClient *ent.Client, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
 			Vector  []float32 `json:"vector"`
@@ -288,7 +299,26 @@ func similarMediaHandler(db *ent.Client, cfg *config.Config) gin.HandlerFunc {
 			body.Limit = 50
 		}
 
-		results, _, err := search.SimilarMediaByVector(c.Request.Context(), db, body.Name, body.Vector, body.Limit, 0, body.Exclude, nil)
+		includeIDs := []string(nil)
+		if filterExpr, filterErr := db.ActiveHiddenTagFilterValue(c.Request.Context(), dbClient); filterErr != nil {
+			log.Printf("load hidden tag filter: %v", filterErr)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		} else if filterExpr != "" {
+			ids, searchErr := search.SearchMediaIDs(filterExpr)
+			if searchErr != nil {
+				log.Printf("filter similar media ids: %v", searchErr)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			if len(ids) == 0 {
+				c.JSON(http.StatusOK, gin.H{"media": []gin.H{}})
+				return
+			}
+			includeIDs = ids
+		}
+
+		results, _, err := search.SimilarMediaByVector(c.Request.Context(), dbClient, body.Name, body.Vector, body.Limit, 0, body.Exclude, includeIDs)
 		if err != nil {
 			log.Printf("similar media search: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
