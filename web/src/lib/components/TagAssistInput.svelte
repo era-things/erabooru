@@ -1,11 +1,6 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
 	import { fetchTagSuggestions } from '$lib/api';
 	import type { TagCount } from '$lib/types/media';
-
-	const dispatch = createEventDispatcher<{
-		commit: { value: string; nativeEvent: KeyboardEvent };
-	}>();
 
 	let {
 		value = $bindable(''),
@@ -15,7 +10,8 @@
 		containerClass = '',
 		id,
 		name,
-		autofocus = false
+		autofocus = false,
+		oncommit
 	} = $props<{
 		value: string;
 		placeholder?: string;
@@ -25,6 +21,7 @@
 		id?: string;
 		name?: string;
 		autofocus?: boolean;
+		oncommit?: (event: { value: string; nativeEvent: KeyboardEvent }) => void;
 	}>();
 
 	const fallbackId = `tag-assist-${Math.random().toString(36).slice(2, 10)}`;
@@ -156,15 +153,17 @@
 			return;
 		}
 		if (event.key === 'Enter') {
+			// First priority: apply suggestion if one is highlighted
 			if (suggestions.length && highlighted >= 0) {
 				event.preventDefault();
 				applySuggestion(suggestions[highlighted]);
 				return;
 			}
-			const cancelled = dispatch('commit', { value, nativeEvent: event }, { cancelable: true });
-			if (cancelled) {
-				event.preventDefault();
+			// Second priority: trigger commit callback if provided
+			if (oncommit) {
+				oncommit({ value, nativeEvent: event });
 			}
+			// Don't prevent default if no commit handler - let form submit naturally
 			return;
 		}
 		if (event.key === 'Escape' && suggestions.length) {
@@ -195,11 +194,11 @@
 		aria-autocomplete="list"
 		aria-expanded={suggestions.length > 0}
 		aria-activedescendant={highlighted >= 0 ? `${resolvedId}-option-${highlighted}` : undefined}
-		on:input={handleInput}
-		on:focus={handleFocus}
-		on:blur={handleBlur}
-		on:keydown={handleKeydown}
-		{autofocus}
+		oninput={handleInput}
+		onfocus={handleFocus}
+		onblur={handleBlur}
+		onkeydown={handleKeydown}
+		{...(autofocus ? { autofocus: true } : {})}
 	/>
 	{#if suggestions.length}
 		<ul
@@ -214,8 +213,11 @@
 					class={`flex cursor-pointer items-center justify-between gap-3 px-3 py-1 ${
 						index === highlighted ? 'bg-blue-50 text-blue-900' : ''
 					}`}
-					on:mousedown|preventDefault={() => applySuggestion(suggestion)}
-					on:mousemove={() => (highlighted = index)}
+					onmousedown={(e) => {
+						e.preventDefault();
+						applySuggestion(suggestion);
+					}}
+					onmousemove={() => (highlighted = index)}
 				>
 					<span class="truncate">{suggestion.name}</span>
 					<span class="text-xs text-gray-500">{suggestion.count.toLocaleString()}</span>

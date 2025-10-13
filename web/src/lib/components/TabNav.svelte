@@ -94,6 +94,7 @@
 					name="tag-search"
 					placeholder="Tag search"
 					inputClass={tagInputClass}
+					oncommit={() => submitSearch(new Event('submit'))}
 				/>
 				<input
 					type="text"
