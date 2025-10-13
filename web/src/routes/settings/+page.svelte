@@ -11,6 +11,7 @@
 	} from '$lib/api';
 	import type { HiddenTagFilter } from '$lib/api';
 	import { onMount } from 'svelte';
+	import TagAssistInput from '$lib/components/TagAssistInput.svelte';
 
 	let fileInput: HTMLInputElement;
 	let filters = $state<HiddenTagFilter[]>([]);
@@ -162,18 +163,15 @@
 			remove all restrictions.
 		</p>
 		<div class="flex flex-wrap gap-2">
-			<input
-				class="min-w-[16rem] flex-1 rounded border px-3 py-2"
-				type="text"
-				placeholder="e.g. human -disturbing -nudity"
+			<TagAssistInput
 				bind:value={newFilterValue}
-				on:keydown={(event) => {
-					if (event.key === 'Enter') {
-						event.preventDefault();
-						addHiddenFilter();
-					}
-				}}
+				placeholder="e.g. human -disturbing -nudity"
+				inputClass="min-w-[16rem] flex-1 rounded border px-3 py-2"
 				disabled={filtersLoading}
+				on:commit={(event) => {
+					event.preventDefault();
+					addHiddenFilter();
+				}}
 			/>
 			<button class="rounded border px-3 py-2" on:click={addHiddenFilter} disabled={filtersLoading}>
 				Add filter

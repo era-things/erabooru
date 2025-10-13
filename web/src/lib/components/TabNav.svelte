@@ -2,11 +2,13 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { PAGE_SIZE } from '$lib/constants';
+	import TagAssistInput from '$lib/components/TagAssistInput.svelte';
 
 	let tagQuery: string = $state('');
 	let vectorQuery: string = $state('');
 	const tagActive = $derived(tagQuery.trim().length > 0);
 	const vectorActive = $derived(vectorQuery.trim().length > 0);
+	const tagInputClass = $derived(`rounded border px-2 py-1 ${tagActive ? 'border-blue-500' : ''}`);
 	let active: 'media' | 'upload' | 'tags' | 'settings' = $props();
 
 	$effect(() => {
@@ -87,13 +89,11 @@
 		</a>
 		<div class="ml-auto flex items-center gap-2">
 			<form class="flex items-center gap-2" onsubmit={submitSearch}>
-				<input
-					type="text"
+				<TagAssistInput
+					bind:value={tagQuery}
 					name="tag-search"
 					placeholder="Tag search"
-					bind:value={tagQuery}
-					class="rounded border px-2 py-1"
-					class:border-blue-500={tagActive}
+					inputClass={tagInputClass}
 				/>
 				<input
 					type="text"
