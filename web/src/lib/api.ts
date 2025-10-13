@@ -1,4 +1,5 @@
 import type { MediaItem, MediaDetail, TagCount } from './types/media';
+import { buildSearchParams } from './utils/searchParams';
 
 const apiBase = '/api';
 
@@ -32,19 +33,7 @@ export async function fetchMediaPreviews(
 	pageSize: number,
 	vectorQuery?: string | null
 ): Promise<MediaPreviewsResponse> {
-	const params = new URLSearchParams({
-		page: page.toString(),
-		page_size: pageSize.toString()
-	});
-	if (query) {
-		params.set('q', query);
-	}
-	const vectorText = typeof vectorQuery === 'string' ? vectorQuery : '';
-	const trimmedVector = vectorText.trim();
-	if (trimmedVector) {
-		params.set('vector', '1');
-		params.set('vector_q', trimmedVector);
-	}
+	const params = buildSearchParams({ page, pageSize, query, vectorQuery });
 	const res = await fetch(`${apiBase}/media/previews?${params.toString()}`);
 	return handleJson(res);
 }

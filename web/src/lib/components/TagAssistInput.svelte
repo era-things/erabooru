@@ -198,7 +198,7 @@
 		onfocus={handleFocus}
 		onblur={handleBlur}
 		onkeydown={handleKeydown}
-		{...(autofocus ? { autofocus: true } : {})}
+		{...autofocus ? { autofocus: true } : {}}
 	/>
 	{#if suggestions.length}
 		<ul
