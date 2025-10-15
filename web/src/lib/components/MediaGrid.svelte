@@ -10,7 +10,15 @@
 		vectorQuery = '',
 		page = 1,
 		pageSize = Number(PAGE_SIZE),
-		total = $bindable(1)
+		total = $bindable(1),
+		items
+	}: {
+		query?: string;
+		vectorQuery?: string;
+		page?: number;
+		pageSize?: number;
+		total?: number;
+		items?: MediaPreviewItem[];
 	} = $props();
 	let lastQuery: string = $state('');
 	let lastPage: number = $state(1);
@@ -25,7 +33,15 @@
 	let columnWidths = $derived(Array(columnCount).fill('1fr'));
 	const normalizedVectorQuery = $derived(typeof vectorQuery === 'string' ? vectorQuery : '');
 
+	const usingProvidedItems = $derived(items !== undefined);
+
 	$effect(() => {
+		if (usingProvidedItems) {
+			media = items ?? [];
+			total = media.length;
+			return;
+		}
+
 		if (
 			mounted &&
 			(query !== lastQuery || page !== lastPage || normalizedVectorQuery !== lastVectorQuery)
@@ -62,6 +78,11 @@
 		lastQuery = query;
 		lastPage = page;
 		lastVectorQuery = normalizedVectorQuery;
+		if (usingProvidedItems) {
+			media = items ?? [];
+			total = media.length;
+			return;
+		}
 		await load();
 	});
 </script>
