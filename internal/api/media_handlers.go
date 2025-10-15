@@ -150,6 +150,13 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 					}
 				}
 			}
+		} else if tagQuery == "" {
+			items, total, err = db.ListMediaByDate(c.Request.Context(), dbClient, "upload", pageSize, offset)
+			if err != nil {
+				log.Printf("list media by date: %v", err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
 		} else {
 			items, total, err = search.SearchMedia(tagQuery, pageSize, offset)
 			if err != nil {
