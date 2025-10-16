@@ -62,6 +62,7 @@ func listPreviewsHandler(cfg *config.Config, db *ent.Client, queueClient *river.
 func listCommon(minioPrefix string, videoBucket string, pictureBucket string, dbClient *ent.Client, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		rawQuery := strings.TrimSpace(c.Query("q"))
+		hasTextQuery := rawQuery != ""
 		vectorQueryParamRaw, hasVectorQueryParam := c.GetQuery("vector_q")
 		vectorQueryParam := strings.TrimSpace(vectorQueryParamRaw)
 		vectorFlag := c.Query("vector") == "1"
@@ -76,6 +77,7 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 		vectorSearch := vectorFlag || vectorQuery != ""
 		vectorQuery = strings.TrimSpace(vectorQuery)
 		tagQuery = strings.TrimSpace(tagQuery)
+		var filterOnlyIDs []string
 		if filterExpr, err := db.ActiveHiddenTagFilterValue(c.Request.Context(), dbClient); err != nil {
 			log.Printf("load hidden tag filter: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -85,6 +87,15 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 				tagQuery = strings.TrimSpace(tagQuery + " " + filterExpr)
 			} else {
 				tagQuery = filterExpr
+			}
+			if !hasTextQuery {
+				ids, err := search.SearchMediaIDs(filterExpr)
+				if err != nil {
+					log.Printf("filter media ids: %v", err)
+					c.AbortWithStatus(http.StatusInternalServerError)
+					return
+				}
+				filterOnlyIDs = ids
 			}
 		}
 		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -149,6 +160,27 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 						return
 					}
 				}
+			}
+		} else if !hasTextQuery {
+			if tagQuery == "" {
+				items, total, err = db.ListMediaByDate(c.Request.Context(), dbClient, "upload", pageSize, offset, nil)
+			} else {
+				includeIDs := filterOnlyIDs
+				if includeIDs == nil {
+					var searchErr error
+					includeIDs, searchErr = search.SearchMediaIDs(tagQuery)
+					if searchErr != nil {
+						log.Printf("filter media ids: %v", searchErr)
+						c.AbortWithStatus(http.StatusInternalServerError)
+						return
+					}
+				}
+				items, total, err = db.ListMediaByDate(c.Request.Context(), dbClient, "upload", pageSize, offset, includeIDs)
+			}
+			if err != nil {
+				log.Printf("list media by date: %v", err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
 			}
 		} else {
 			items, total, err = search.SearchMedia(tagQuery, pageSize, offset)
