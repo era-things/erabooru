@@ -132,28 +132,63 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 			}
 			if tagQuery != "" && len(includeIDs) == 0 {
 				// No candidates left after tag filtering; skip vector ordering.
-			} else if queueClient == nil {
-				c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "text embedding unavailable"})
-				return
 			} else {
-				ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
-				defer cancel()
+				requestCtx := c.Request.Context()
+				vectorName := "vision"
+				excludeID := ""
+				var vec []float32
 
-				vec, err := queue.RequestTextEmbedding(ctx, queueClient, vectorQuery)
-				if err != nil {
-					log.Printf("text embedding %q failed: %v", vectorQuery, err)
-					status := http.StatusServiceUnavailable
-					if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-						status = http.StatusGatewayTimeout
+				if strings.HasPrefix(vectorQuery, "media:") {
+					raw := strings.TrimSpace(strings.TrimPrefix(vectorQuery, "media:"))
+					desiredName := "vision"
+					if parts := strings.SplitN(raw, ":", 2); len(parts) == 2 {
+						if parts[0] != "" {
+							desiredName = parts[0]
+						}
+						raw = parts[1]
 					}
-					c.AbortWithStatusJSON(status, gin.H{"error": err.Error()})
-					return
+					excludeID = strings.TrimSpace(raw)
+					if desiredName != "" {
+						vectorName = desiredName
+					}
+					if excludeID != "" {
+						loaded, actualName, loadErr := loadMediaVectorForSearch(requestCtx, dbClient, excludeID, desiredName)
+						if loadErr != nil {
+							log.Printf("load media vector %s: %v", excludeID, loadErr)
+							c.AbortWithStatus(http.StatusInternalServerError)
+							return
+						}
+						if actualName != "" {
+							vectorName = actualName
+						}
+						vec = loaded
+					}
+				} else {
+					if queueClient == nil {
+						c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "text embedding unavailable"})
+						return
+					}
+					ctx, cancel := context.WithTimeout(requestCtx, 15*time.Second)
+					defer cancel()
+
+					var embedErr error
+					vec, embedErr = queue.RequestTextEmbedding(ctx, queueClient, vectorQuery)
+					if embedErr != nil {
+						log.Printf("text embedding %q failed: %v", vectorQuery, embedErr)
+						status := http.StatusServiceUnavailable
+						if errors.Is(embedErr, context.DeadlineExceeded) || errors.Is(embedErr, context.Canceled) {
+							status = http.StatusGatewayTimeout
+						}
+						c.AbortWithStatusJSON(status, gin.H{"error": embedErr.Error()})
+						return
+					}
 				}
+
 				if len(vec) == 0 {
 					items = []*ent.Media{}
 					total = 0
 				} else {
-					items, total, err = search.SimilarMediaByVector(ctx, dbClient, "vision", vec, pageSize, offset, "", includeIDs)
+					items, total, err = search.SimilarMediaByVector(requestCtx, dbClient, vectorName, vec, pageSize, offset, excludeID, includeIDs)
 					if err != nil {
 						log.Printf("vector media search: %v", err)
 						c.AbortWithStatus(http.StatusInternalServerError)
@@ -209,6 +244,72 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 		}
 		c.JSON(http.StatusOK, gin.H{"media": out, "total": total})
 	}
+}
+
+func loadMediaVectorForSearch(
+	ctx context.Context,
+	dbClient *ent.Client,
+	mediaID string,
+	desiredName string,
+) ([]float32, string, error) {
+	if mediaID == "" {
+		return nil, "", nil
+	}
+
+	records, err := dbClient.MediaVector.Query().
+		Where(mediavector.MediaIDEQ(mediaID)).
+		WithVector().
+		All(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(records) == 0 {
+		return nil, "", nil
+	}
+
+	targetName := desiredName
+	if targetName == "" {
+		targetName = "vision"
+	}
+
+	var fallback []float32
+	fallbackName := ""
+
+	for _, record := range records {
+		if record == nil {
+			continue
+		}
+		data := record.Value.Slice()
+		if len(data) == 0 {
+			continue
+		}
+		name := ""
+		if record.Edges.Vector != nil {
+			name = record.Edges.Vector.Name
+		}
+		copyVec := make([]float32, len(data))
+		copy(copyVec, data)
+		if name == targetName {
+			if name == "" {
+				name = targetName
+			}
+			return copyVec, name, nil
+		}
+		if fallback == nil {
+			fallback = copyVec
+			fallbackName = name
+		}
+	}
+
+	if fallback != nil {
+		name := fallbackName
+		if name == "" {
+			name = targetName
+		}
+		return fallback, name, nil
+	}
+
+	return nil, "", nil
 }
 
 func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.HandlerFunc {
