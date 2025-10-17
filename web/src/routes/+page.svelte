@@ -1,6 +1,7 @@
 <script lang="ts">
 	import MediaGrid from '$lib/components/MediaGrid.svelte';
 	import TabNav from '$lib/components/TabNav.svelte';
+	import PaginationControls from '$lib/components/PaginationControls.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { PAGE_SIZE } from '$lib/constants';
@@ -29,14 +30,9 @@
 		});
 	}
 
-	function prev() {
-		if (currentPage > 1) {
-			goto(buildUrl(currentPage - 1));
-		}
-	}
-
-	function next() {
-		goto(buildUrl(currentPage + 1));
+	function navigateTo(pageNumber: number) {
+		if (pageNumber === currentPage) return;
+		goto(buildUrl(pageNumber));
 	}
 </script>
 
@@ -44,12 +40,6 @@
 	<TabNav active="media" />
 	<MediaGrid query={q} {vectorQuery} page={currentPage} {pageSize} bind:total />
 	<div class="my-4 flex items-center justify-center gap-4">
-		{#if currentPage > 1}
-			<button class="rounded border px-3 py-1" onclick={prev}>Prev</button>
-		{/if}
-		<span>Page {currentPage} of {totalPages}</span>
-		{#if currentPage < totalPages}
-			<button class="rounded border px-3 py-1" onclick={next}>Next</button>
-		{/if}
+		<PaginationControls {currentPage} {totalPages} buildLink={buildUrl} onSelectPage={navigateTo} />
 	</div>
 </div>

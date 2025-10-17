@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import TabNav from '$lib/components/TabNav.svelte';
 	import MediaGrid from '$lib/components/MediaGrid.svelte';
+	import PaginationControls from '$lib/components/PaginationControls.svelte';
 	import { PAGE_SIZE } from '$lib/constants';
 	import { fetchMediaDetail, deleteMedia, updateMediaTags } from '$lib/api';
 	import type { MediaDetail } from '$lib/types/media';
@@ -90,16 +91,15 @@
 		});
 	}
 
-	function prevSimilar() {
-		if (similarPage > 1) {
-			similarPage -= 1;
+	$effect(() => {
+		if (similarPage > similarTotalPages) {
+			similarPage = similarTotalPages;
 		}
-	}
+	});
 
-	function nextSimilar() {
-		if (similarPage < similarTotalPages) {
-			similarPage += 1;
-		}
+	function goToSimilar(pageNumber: number) {
+		if (pageNumber === similarPage) return;
+		similarPage = pageNumber;
 	}
 </script>
 
@@ -129,7 +129,7 @@
 					{/if}
 				</div>
 				<div class="flex flex-col gap-3">
-					<button class="rounded bg-blue-500 px-4 py-2 text-white" onclick={() => (edit = !edit)}
+					<button class="rounded bg-blue-500 px-4 py-2 text-white" on:click={() => (edit = !edit)}
 						>{edit ? 'Cancel' : 'Edit'} tags</button
 					>
 					{#if edit}
@@ -142,7 +142,7 @@
 							/>
 							<button
 								class="self-start rounded bg-green-500 px-4 py-2 text-white"
-								onclick={saveTags}>Save changes</button
+								on:click={saveTags}>Save changes</button
 							>
 						</div>
 					{/if}
@@ -177,7 +177,7 @@
 						</p>
 					{/each}
 				</div>
-				<button class="rounded bg-red-500 px-4 py-2 text-white" onclick={remove}>Delete</button>
+				<button class="rounded bg-red-500 px-4 py-2 text-white" on:click={remove}>Delete</button>
 			</div>
 		</div>
 
@@ -193,14 +193,12 @@
 						bind:total={similarTotal}
 					/>
 				{/key}
-				<div class="flex items-center justify-center gap-4">
-					{#if similarPage > 1}
-						<button class="rounded border px-3 py-1" onclick={prevSimilar}>Prev</button>
-					{/if}
-					<span>Page {similarPage} of {similarTotalPages}</span>
-					{#if similarPage < similarTotalPages}
-						<button class="rounded border px-3 py-1" onclick={nextSimilar}>Next</button>
-					{/if}
+				<div class="flex flex-wrap items-center justify-center gap-4">
+					<PaginationControls
+						currentPage={similarPage}
+						totalPages={similarTotalPages}
+						onSelectPage={goToSimilar}
+					/>
 				</div>
 			{:else}
 				<p class="text-sm text-gray-500">No similar media yet.</p>
