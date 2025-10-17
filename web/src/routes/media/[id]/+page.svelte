@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import TabNav from '$lib/components/TabNav.svelte';
 	import MediaGrid from '$lib/components/MediaGrid.svelte';
+	import PaginationControls from '$lib/components/PaginationControls.svelte';
 	import { PAGE_SIZE } from '$lib/constants';
 	import { fetchMediaDetail, deleteMedia, updateMediaTags } from '$lib/api';
 	import type { MediaDetail } from '$lib/types/media';
@@ -14,11 +15,6 @@
 	let edit = $state(false);
 	let vectorSearchQuery = $state<string | null>(null);
 	let similarPage = $state(1);
-	let similarPageInputRaw = $state('');
-	let similarPageInputDirty = $state(false);
-	const similarPageInput = $derived(
-		similarPageInputDirty ? similarPageInputRaw : String(similarPage)
-	);
 	const similarPageSize = Number(PAGE_SIZE);
 	let similarTotal = $state(0);
 	let lastVectorQuery = $state<string | null>(null);
@@ -58,7 +54,6 @@
 			lastVectorQuery = vectorSearchQuery;
 			similarPage = 1;
 			similarTotal = 0;
-			similarPageInputDirty = false;
 		}
 	});
 
@@ -96,44 +91,15 @@
 		});
 	}
 
-	function prevSimilar() {
-		if (similarPage > 1) {
-			similarPageInputDirty = false;
-			similarPage -= 1;
-		}
-	}
-
-	function nextSimilar() {
-		if (similarPage < similarTotalPages) {
-			similarPageInputDirty = false;
-			similarPage += 1;
-		}
-	}
-
 	$effect(() => {
 		if (similarPage > similarTotalPages) {
 			similarPage = similarTotalPages;
-			similarPageInputDirty = false;
 		}
 	});
 
-	function submitSimilarPage(event: SubmitEvent) {
-		event.preventDefault();
-		const parsed = Number(similarPageInput);
-		if (!Number.isFinite(parsed)) return;
-		const clamped = Math.min(Math.max(Math.trunc(parsed), 1), similarTotalPages);
-		if (clamped === similarPage) {
-			similarPageInputDirty = false;
-			return;
-		}
-		similarPageInputDirty = false;
-		similarPage = clamped;
-	}
-
-	function handleSimilarPageInput(event: Event) {
-		const target = event.currentTarget as HTMLInputElement;
-		similarPageInputRaw = target.value;
-		similarPageInputDirty = true;
+	function goToSimilar(pageNumber: number) {
+		if (pageNumber === similarPage) return;
+		similarPage = pageNumber;
 	}
 </script>
 
@@ -163,7 +129,7 @@
 					{/if}
 				</div>
 				<div class="flex flex-col gap-3">
-					<button class="rounded bg-blue-500 px-4 py-2 text-white" onclick={() => (edit = !edit)}
+					<button class="rounded bg-blue-500 px-4 py-2 text-white" on:click={() => (edit = !edit)}
 						>{edit ? 'Cancel' : 'Edit'} tags</button
 					>
 					{#if edit}
@@ -176,7 +142,7 @@
 							/>
 							<button
 								class="self-start rounded bg-green-500 px-4 py-2 text-white"
-								onclick={saveTags}>Save changes</button
+								on:click={saveTags}>Save changes</button
 							>
 						</div>
 					{/if}
@@ -211,7 +177,7 @@
 						</p>
 					{/each}
 				</div>
-				<button class="rounded bg-red-500 px-4 py-2 text-white" onclick={remove}>Delete</button>
+				<button class="rounded bg-red-500 px-4 py-2 text-white" on:click={remove}>Delete</button>
 			</div>
 		</div>
 
@@ -227,28 +193,13 @@
 						bind:total={similarTotal}
 					/>
 				{/key}
-				<div class="flex items-center justify-center gap-4">
-					{#if similarPage > 1}
-						<button class="rounded border px-3 py-1" onclick={prevSimilar}>Prev</button>
-					{/if}
+				<div class="flex flex-wrap items-center justify-center gap-4">
 					<span>Page {similarPage} of {similarTotalPages}</span>
-					<form class="flex items-center gap-2 text-sm" onsubmit={submitSimilarPage}>
-						<label class="text-gray-600" for="similar-page-input">Go to</label>
-						<input
-							id="similar-page-input"
-							class="w-16 rounded border px-2 py-1"
-							type="number"
-							min="1"
-							max={similarTotalPages}
-							value={similarPageInput}
-							inputmode="numeric"
-							on:input={handleSimilarPageInput}
-						/>
-						<button type="submit" class="rounded border px-2 py-1">Go</button>
-					</form>
-					{#if similarPage < similarTotalPages}
-						<button class="rounded border px-3 py-1" onclick={nextSimilar}>Next</button>
-					{/if}
+					<PaginationControls
+						currentPage={similarPage}
+						totalPages={similarTotalPages}
+						onSelectPage={goToSimilar}
+					/>
 				</div>
 			{:else}
 				<p class="text-sm text-gray-500">No similar media yet.</p>
