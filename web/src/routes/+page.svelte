@@ -40,7 +40,6 @@
 	<TabNav active="media" />
 	<MediaGrid query={q} {vectorQuery} page={currentPage} {pageSize} bind:total />
 	<div class="my-4 flex items-center justify-center gap-4">
-		<span>Page {currentPage} of {totalPages}</span>
 		<PaginationControls {currentPage} {totalPages} buildLink={buildUrl} onSelectPage={navigateTo} />
 	</div>
 </div>

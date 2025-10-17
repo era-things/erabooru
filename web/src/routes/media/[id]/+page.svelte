@@ -194,7 +194,6 @@
 					/>
 				{/key}
 				<div class="flex flex-wrap items-center justify-center gap-4">
-					<span>Page {similarPage} of {similarTotalPages}</span>
 					<PaginationControls
 						currentPage={similarPage}
 						totalPages={similarTotalPages}

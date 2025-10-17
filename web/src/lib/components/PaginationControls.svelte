@@ -40,31 +40,19 @@
 		machine.compute({ current: Math.max(1, currentPage), total: Math.max(1, totalPages) })
 	);
 
-	let pageInputValueRaw = $state('');
-	let pageInputDirty = $state(false);
-	let lastExternalPage = $state(currentPage);
+	let pageInputValue = $state('');
 
-	const pageInputValue = $derived(pageInputDirty ? pageInputValueRaw : String(currentPage));
-
-	$effect(() => {
-		if (currentPage !== lastExternalPage) {
-			pageInputDirty = false;
-			lastExternalPage = currentPage;
-		}
-	});
-
-	function handleInput(event: InputEvent & { currentTarget: EventTarget & HTMLInputElement }) {
-		pageInputValueRaw = event.currentTarget.value;
-		pageInputDirty = true;
+	function handleInput(event: Event & { currentTarget: EventTarget & HTMLInputElement }) {
+		pageInputValue = event.currentTarget.value;
 	}
 
 	function selectPage(page: number) {
 		if (page === currentPage) {
-			pageInputDirty = false;
+			pageInputValue = '';
 			return;
 		}
 
-		pageInputDirty = false;
+		pageInputValue = '';
 		onSelectPage(page);
 	}
 
@@ -85,7 +73,12 @@
 	}
 
 	function submit() {
-		const parsed = Number(pageInputValue);
+		const trimmed = pageInputValue.trim();
+		if (!trimmed) {
+			return;
+		}
+		
+		const parsed = Number(trimmed);
 		if (!Number.isFinite(parsed)) {
 			return;
 		}
@@ -96,16 +89,16 @@
 	}
 </script>
 
-<div class="flex flex-wrap items-center gap-2 text-sm">
+<div class="flex flex-wrap items-center gap-2 text-m">
 	{#each controls as control (control.kind === 'page' ? `page-${control.page}` : `${control.kind}-${control.page}`)}
 		{#if control.kind === 'page'}
 			{#if control.current}
-				<span class="font-semibold">{control.page}</span>
+				<span class="font-bold">{control.page}</span>
 			{:else if buildLink}
 				<a
 					href={buildLink(control.page)}
 					class="rounded border px-2 py-1"
-					on:click={(event) => handleTrigger(event, control.page)}
+					onclick={(event) => handleTrigger(event, control.page)}
 				>
 					{control.page}
 				</a>
@@ -113,7 +106,7 @@
 				<button
 					type="button"
 					class="rounded border px-2 py-1"
-					on:click={() => selectPage(control.page)}
+					onclick={() => selectPage(control.page)}
 				>
 					{control.page}
 				</button>
@@ -123,7 +116,7 @@
 				href={buildLink(control.page)}
 				class="rounded border px-2 py-1"
 				aria-label={CONTROL_ARIA[control.kind]}
-				on:click={(event) => handleTrigger(event, control.page)}
+				onclick={(event) => handleTrigger(event, control.page)}
 			>
 				{CONTROL_LABELS[control.kind]}
 			</a>
@@ -132,25 +125,25 @@
 				type="button"
 				class="rounded border px-2 py-1"
 				aria-label={CONTROL_ARIA[control.kind]}
-				on:click={() => selectPage(control.page)}
+				onclick={() => selectPage(control.page)}
 			>
 				{CONTROL_LABELS[control.kind]}
 			</button>
 		{/if}
 	{/each}
-	<form class="flex items-center gap-2" on:submit|preventDefault={submit}>
+	<form class="flex items-center gap-2" onsubmit={(e) => { e.preventDefault(); submit(); }}>
 		<label class="flex items-center gap-2 text-gray-600">
-			<span>Go to</span>
 			<input
-				class="w-16 rounded border px-2 py-1 text-black"
+				class="w-12 h-6 rounded border border-gray-400 bg-gray-100 px-1 py-0.5 text-gray-900 placeholder-gray-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
 				type="number"
 				min="1"
 				max={Math.max(totalPages, 1)}
 				inputmode="numeric"
-				value={pageInputValue}
-				on:input={handleInput}
+				placeholder="page"
+				bind:value={pageInputValue}
+				oninput={handleInput}
 			/>
 		</label>
-		<button type="submit" class="rounded border px-2 py-1">Go</button>
+		<button type="submit" class="rounded border h-6 border-gray-400 bg-gray-100 px-2 py-0.5 text-gray-900">Go</button>
 	</form>
 </div>
