@@ -20,10 +20,6 @@
 		total?: number;
 		items?: MediaPreviewItem[];
 	} = $props();
-	let lastQuery: string = $state('');
-	let lastPage: number = $state(1);
-	let lastVectorQuery: string = $state('');
-
 	let media: MediaPreviewItem[] = $state([]);
 	let innerWidth = $state(0);
 	let mounted = $state(false);
@@ -35,6 +31,8 @@
 
 	const usingProvidedItems = $derived(items !== undefined);
 
+	let requestCounter = 0;
+
 	$effect(() => {
 		if (usingProvidedItems) {
 			media = items ?? [];
@@ -42,20 +40,28 @@
 			return;
 		}
 
-		if (
-			mounted &&
-			(query !== lastQuery || page !== lastPage || normalizedVectorQuery !== lastVectorQuery)
-		) {
-			lastQuery = query;
-			lastPage = page;
-			lastVectorQuery = normalizedVectorQuery;
-			load();
-		}
+		if (!mounted) return;
+
+		void load(query, page, pageSize, normalizedVectorQuery);
 	});
 
-	async function load() {
+	async function load(
+		currentQuery: string,
+		currentPage: number,
+		currentPageSize: number,
+		currentVectorQuery: string
+	) {
+		const requestId = ++requestCounter;
 		try {
-			const data = await fetchMediaPreviews(query, page, pageSize, normalizedVectorQuery);
+			const data = await fetchMediaPreviews(
+				currentQuery,
+				currentPage,
+				currentPageSize,
+				currentVectorQuery
+			);
+			if (requestId !== requestCounter) {
+				return;
+			}
 			const items = data.media as MediaItem[];
 			media = items.map((it) => {
 				const displayHeight = Math.min(it.height, it.width * 3);
@@ -73,17 +79,13 @@
 		}
 	}
 
-	onMount(async () => {
+	onMount(() => {
 		mounted = true;
-		lastQuery = query;
-		lastPage = page;
-		lastVectorQuery = normalizedVectorQuery;
 		if (usingProvidedItems) {
 			media = items ?? [];
 			total = media.length;
 			return;
 		}
-		await load();
 	});
 </script>
 

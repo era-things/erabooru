@@ -14,6 +14,11 @@
 	let edit = $state(false);
 	let vectorSearchQuery = $state<string | null>(null);
 	let similarPage = $state(1);
+	let similarPageInputRaw = $state('');
+	let similarPageInputDirty = $state(false);
+	const similarPageInput = $derived(
+		similarPageInputDirty ? similarPageInputRaw : String(similarPage)
+	);
 	const similarPageSize = Number(PAGE_SIZE);
 	let similarTotal = $state(0);
 	let lastVectorQuery = $state<string | null>(null);
@@ -53,6 +58,7 @@
 			lastVectorQuery = vectorSearchQuery;
 			similarPage = 1;
 			similarTotal = 0;
+			similarPageInputDirty = false;
 		}
 	});
 
@@ -92,14 +98,42 @@
 
 	function prevSimilar() {
 		if (similarPage > 1) {
+			similarPageInputDirty = false;
 			similarPage -= 1;
 		}
 	}
 
 	function nextSimilar() {
 		if (similarPage < similarTotalPages) {
+			similarPageInputDirty = false;
 			similarPage += 1;
 		}
+	}
+
+	$effect(() => {
+		if (similarPage > similarTotalPages) {
+			similarPage = similarTotalPages;
+			similarPageInputDirty = false;
+		}
+	});
+
+	function submitSimilarPage(event: SubmitEvent) {
+		event.preventDefault();
+		const parsed = Number(similarPageInput);
+		if (!Number.isFinite(parsed)) return;
+		const clamped = Math.min(Math.max(Math.trunc(parsed), 1), similarTotalPages);
+		if (clamped === similarPage) {
+			similarPageInputDirty = false;
+			return;
+		}
+		similarPageInputDirty = false;
+		similarPage = clamped;
+	}
+
+	function handleSimilarPageInput(event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		similarPageInputRaw = target.value;
+		similarPageInputDirty = true;
 	}
 </script>
 
@@ -198,6 +232,20 @@
 						<button class="rounded border px-3 py-1" onclick={prevSimilar}>Prev</button>
 					{/if}
 					<span>Page {similarPage} of {similarTotalPages}</span>
+					<form class="flex items-center gap-2 text-sm" onsubmit={submitSimilarPage}>
+						<label class="text-gray-600" for="similar-page-input">Go to</label>
+						<input
+							id="similar-page-input"
+							class="w-16 rounded border px-2 py-1"
+							type="number"
+							min="1"
+							max={similarTotalPages}
+							value={similarPageInput}
+							inputmode="numeric"
+							on:input={handleSimilarPageInput}
+						/>
+						<button type="submit" class="rounded border px-2 py-1">Go</button>
+					</form>
 					{#if similarPage < similarTotalPages}
 						<button class="rounded border px-3 py-1" onclick={nextSimilar}>Next</button>
 					{/if}
