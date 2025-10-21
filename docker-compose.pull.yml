@@ -11,7 +11,7 @@ services:
     build: null
 
   image-embed-worker:
-    image: ghcr.io/era-things/erabooru-embed-worker:latest
+    image: ghcr.io/era-things/erabooru-embed-worker:${EMBED_WORKER_VARIANT:-cpu}
     build: null
     environment:
       - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
