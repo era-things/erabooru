@@ -1,10 +1,25 @@
 import type { MediaItem, MediaDetail, TagCount } from './types/media';
+import { buildSearchParams } from './utils/searchParams';
 
 const apiBase = '/api';
 
 export interface MediaPreviewsResponse {
 	media: MediaItem[];
 	total: number;
+}
+
+export interface HiddenTagFilter {
+	id: number;
+	value: string;
+	is_default: boolean;
+}
+
+export interface HiddenTagFiltersResponse {
+	filters: HiddenTagFilter[];
+	active: {
+		id: number | null;
+		value: string;
+	};
 }
 
 async function handleJson<T>(res: Response): Promise<T> {
@@ -18,19 +33,7 @@ export async function fetchMediaPreviews(
 	pageSize: number,
 	vectorQuery?: string | null
 ): Promise<MediaPreviewsResponse> {
-	const params = new URLSearchParams({
-		page: page.toString(),
-		page_size: pageSize.toString()
-	});
-	if (query) {
-		params.set('q', query);
-	}
-	const vectorText = typeof vectorQuery === 'string' ? vectorQuery : '';
-	const trimmedVector = vectorText.trim();
-	if (trimmedVector) {
-		params.set('vector', '1');
-		params.set('vector_q', trimmedVector);
-	}
+	const params = buildSearchParams({ page, pageSize, query, vectorQuery });
 	const res = await fetch(`${apiBase}/media/previews?${params.toString()}`);
 	return handleJson(res);
 }
@@ -104,6 +107,13 @@ export async function fetchTags(): Promise<TagCount[]> {
 	return data.tags;
 }
 
+export async function fetchTagSuggestions(prefix: string): Promise<TagCount[]> {
+	const params = new URLSearchParams({ q: prefix });
+	const res = await fetch(`${apiBase}/tags/suggest?${params.toString()}`);
+	const data = await handleJson<{ tags: TagCount[] }>(res);
+	return data.tags;
+}
+
 export async function fetchSimilarMedia(
 	vector: number[],
 	limit: number,
@@ -117,4 +127,40 @@ export async function fetchSimilarMedia(
 	});
 	const data = await handleJson<{ media: MediaItem[] }>(res);
 	return data.media;
+}
+
+export async function fetchHiddenTagFilters(): Promise<HiddenTagFiltersResponse> {
+	const res = await fetch(`${apiBase}/settings/hidden-tags`);
+	return handleJson<HiddenTagFiltersResponse>(res);
+}
+
+export async function createHiddenTagFilter(value: string): Promise<void> {
+	const res = await fetch(`${apiBase}/settings/hidden-tags`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ value })
+	});
+	if (!res.ok) {
+		const message = await res.json().catch(() => ({}));
+		throw new Error(message.error ?? `HTTP ${res.status}`);
+	}
+}
+
+export async function selectHiddenTagFilter(id: number): Promise<void> {
+	const res = await fetch(`${apiBase}/settings/hidden-tags/${id}/select`, {
+		method: 'POST'
+	});
+	if (!res.ok) {
+		throw new Error(`HTTP ${res.status}`);
+	}
+}
+
+export async function deleteHiddenTagFilter(id: number): Promise<void> {
+	const res = await fetch(`${apiBase}/settings/hidden-tags/${id}`, {
+		method: 'DELETE'
+	});
+	if (!res.ok && res.status !== 404) {
+		const message = await res.json().catch(() => ({}));
+		throw new Error(message.error ?? `HTTP ${res.status}`);
+	}
 }

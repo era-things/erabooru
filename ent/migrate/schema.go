@@ -19,6 +19,19 @@ var (
 		Columns:    DatesColumns,
 		PrimaryKey: []*schema.Column{DatesColumns[0]},
 	}
+	// HiddenTagFiltersColumns holds the columns for the "hidden_tag_filters" table.
+	HiddenTagFiltersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "value", Type: field.TypeString, Unique: true, Size: 1024},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// HiddenTagFiltersTable holds the schema information for the "hidden_tag_filters" table.
+	HiddenTagFiltersTable = &schema.Table{
+		Name:       "hidden_tag_filters",
+		Columns:    HiddenTagFiltersColumns,
+		PrimaryKey: []*schema.Column{HiddenTagFiltersColumns[0]},
+	}
 	// MediaColumns holds the columns for the "media" table.
 	MediaColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
@@ -101,6 +114,19 @@ var (
 			},
 		},
 	}
+	// SettingsColumns holds the columns for the "settings" table.
+	SettingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "key", Type: field.TypeString, Unique: true, Size: 255},
+		{Name: "value", Type: field.TypeString, Size: 2048, Default: ""},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// SettingsTable holds the schema information for the "settings" table.
+	SettingsTable = &schema.Table{
+		Name:       "settings",
+		Columns:    SettingsColumns,
+		PrimaryKey: []*schema.Column{SettingsColumns[0]},
+	}
 	// TagsColumns holds the columns for the "tags" table.
 	TagsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -152,9 +178,11 @@ var (
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		DatesTable,
+		HiddenTagFiltersTable,
 		MediaTable,
 		MediaDatesTable,
 		MediaVectorsTable,
+		SettingsTable,
 		TagsTable,
 		VectorsTable,
 		MediaTagsTable,

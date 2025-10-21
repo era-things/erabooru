@@ -59,9 +59,10 @@ func listPreviewsHandler(cfg *config.Config, db *ent.Client, queueClient *river.
 	return listCommon(cfg.MinioPublicPrefix, cfg.PreviewBucket, cfg.MinioBucket, db, queueClient)
 }
 
-func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db *ent.Client, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
+func listCommon(minioPrefix string, videoBucket string, pictureBucket string, dbClient *ent.Client, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		rawQuery := strings.TrimSpace(c.Query("q"))
+		hasTextQuery := rawQuery != ""
 		vectorQueryParamRaw, hasVectorQueryParam := c.GetQuery("vector_q")
 		vectorQueryParam := strings.TrimSpace(vectorQueryParamRaw)
 		vectorFlag := c.Query("vector") == "1"
@@ -76,6 +77,27 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 		vectorSearch := vectorFlag || vectorQuery != ""
 		vectorQuery = strings.TrimSpace(vectorQuery)
 		tagQuery = strings.TrimSpace(tagQuery)
+		var filterOnlyIDs []string
+		if filterExpr, err := db.ActiveHiddenTagFilterValue(c.Request.Context(), dbClient); err != nil {
+			log.Printf("load hidden tag filter: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		} else if filterExpr != "" {
+			if tagQuery != "" {
+				tagQuery = strings.TrimSpace(tagQuery + " " + filterExpr)
+			} else {
+				tagQuery = filterExpr
+			}
+			if !hasTextQuery {
+				ids, err := search.SearchMediaIDs(filterExpr)
+				if err != nil {
+					log.Printf("filter media ids: %v", err)
+					c.AbortWithStatus(http.StatusInternalServerError)
+					return
+				}
+				filterOnlyIDs = ids
+			}
+		}
 		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 		if err != nil || page < 1 {
 			page = 1
@@ -110,34 +132,90 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 			}
 			if tagQuery != "" && len(includeIDs) == 0 {
 				// No candidates left after tag filtering; skip vector ordering.
-			} else if queueClient == nil {
-				c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "text embedding unavailable"})
-				return
 			} else {
-				ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
-				defer cancel()
+				requestCtx := c.Request.Context()
+				vectorName := "vision"
+				excludeID := ""
+				var vec []float32
 
-				vec, err := queue.RequestTextEmbedding(ctx, queueClient, vectorQuery)
-				if err != nil {
-					log.Printf("text embedding %q failed: %v", vectorQuery, err)
-					status := http.StatusServiceUnavailable
-					if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-						status = http.StatusGatewayTimeout
+				if strings.HasPrefix(vectorQuery, "media:") {
+					raw := strings.TrimSpace(strings.TrimPrefix(vectorQuery, "media:"))
+					desiredName := "vision"
+					if parts := strings.SplitN(raw, ":", 2); len(parts) == 2 {
+						if parts[0] != "" {
+							desiredName = parts[0]
+						}
+						raw = parts[1]
 					}
-					c.AbortWithStatusJSON(status, gin.H{"error": err.Error()})
-					return
+					excludeID = strings.TrimSpace(raw)
+					if desiredName != "" {
+						vectorName = desiredName
+					}
+					if excludeID != "" {
+						loaded, actualName, loadErr := loadMediaVectorForSearch(requestCtx, dbClient, excludeID, desiredName)
+						if loadErr != nil {
+							log.Printf("load media vector %s: %v", excludeID, loadErr)
+							c.AbortWithStatus(http.StatusInternalServerError)
+							return
+						}
+						if actualName != "" {
+							vectorName = actualName
+						}
+						vec = loaded
+					}
+				} else {
+					if queueClient == nil {
+						c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "text embedding unavailable"})
+						return
+					}
+					ctx, cancel := context.WithTimeout(requestCtx, 15*time.Second)
+					defer cancel()
+
+					var embedErr error
+					vec, embedErr = queue.RequestTextEmbedding(ctx, queueClient, vectorQuery)
+					if embedErr != nil {
+						log.Printf("text embedding %q failed: %v", vectorQuery, embedErr)
+						status := http.StatusServiceUnavailable
+						if errors.Is(embedErr, context.DeadlineExceeded) || errors.Is(embedErr, context.Canceled) {
+							status = http.StatusGatewayTimeout
+						}
+						c.AbortWithStatusJSON(status, gin.H{"error": embedErr.Error()})
+						return
+					}
 				}
+
 				if len(vec) == 0 {
 					items = []*ent.Media{}
 					total = 0
 				} else {
-					items, total, err = search.SimilarMediaByVector(ctx, db, "vision", vec, pageSize, offset, "", includeIDs)
+					items, total, err = search.SimilarMediaByVector(requestCtx, dbClient, vectorName, vec, pageSize, offset, excludeID, includeIDs)
 					if err != nil {
 						log.Printf("vector media search: %v", err)
 						c.AbortWithStatus(http.StatusInternalServerError)
 						return
 					}
 				}
+			}
+		} else if !hasTextQuery {
+			if tagQuery == "" {
+				items, total, err = db.ListMediaByDate(c.Request.Context(), dbClient, "upload", pageSize, offset, nil)
+			} else {
+				includeIDs := filterOnlyIDs
+				if includeIDs == nil {
+					var searchErr error
+					includeIDs, searchErr = search.SearchMediaIDs(tagQuery)
+					if searchErr != nil {
+						log.Printf("filter media ids: %v", searchErr)
+						c.AbortWithStatus(http.StatusInternalServerError)
+						return
+					}
+				}
+				items, total, err = db.ListMediaByDate(c.Request.Context(), dbClient, "upload", pageSize, offset, includeIDs)
+			}
+			if err != nil {
+				log.Printf("list media by date: %v", err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
 			}
 		} else {
 			items, total, err = search.SearchMedia(tagQuery, pageSize, offset)
@@ -166,6 +244,72 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 		}
 		c.JSON(http.StatusOK, gin.H{"media": out, "total": total})
 	}
+}
+
+func loadMediaVectorForSearch(
+	ctx context.Context,
+	dbClient *ent.Client,
+	mediaID string,
+	desiredName string,
+) ([]float32, string, error) {
+	if mediaID == "" {
+		return nil, "", nil
+	}
+
+	records, err := dbClient.MediaVector.Query().
+		Where(mediavector.MediaIDEQ(mediaID)).
+		WithVector().
+		All(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(records) == 0 {
+		return nil, "", nil
+	}
+
+	targetName := desiredName
+	if targetName == "" {
+		targetName = "vision"
+	}
+
+	var fallback []float32
+	fallbackName := ""
+
+	for _, record := range records {
+		if record == nil {
+			continue
+		}
+		data := record.Value.Slice()
+		if len(data) == 0 {
+			continue
+		}
+		name := ""
+		if record.Edges.Vector != nil {
+			name = record.Edges.Vector.Name
+		}
+		copyVec := make([]float32, len(data))
+		copy(copyVec, data)
+		if name == targetName {
+			if name == "" {
+				name = targetName
+			}
+			return copyVec, name, nil
+		}
+		if fallback == nil {
+			fallback = copyVec
+			fallbackName = name
+		}
+	}
+
+	if fallback != nil {
+		name := fallbackName
+		if name == "" {
+			name = targetName
+		}
+		return fallback, name, nil
+	}
+
+	return nil, "", nil
 }
 
 func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.HandlerFunc {
@@ -261,7 +405,7 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 	}
 }
 
-func similarMediaHandler(db *ent.Client, cfg *config.Config) gin.HandlerFunc {
+func similarMediaHandler(dbClient *ent.Client, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
 			Vector  []float32 `json:"vector"`
@@ -288,7 +432,26 @@ func similarMediaHandler(db *ent.Client, cfg *config.Config) gin.HandlerFunc {
 			body.Limit = 50
 		}
 
-		results, _, err := search.SimilarMediaByVector(c.Request.Context(), db, body.Name, body.Vector, body.Limit, 0, body.Exclude, nil)
+		includeIDs := []string(nil)
+		if filterExpr, filterErr := db.ActiveHiddenTagFilterValue(c.Request.Context(), dbClient); filterErr != nil {
+			log.Printf("load hidden tag filter: %v", filterErr)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		} else if filterExpr != "" {
+			ids, searchErr := search.SearchMediaIDs(filterExpr)
+			if searchErr != nil {
+				log.Printf("filter similar media ids: %v", searchErr)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			if len(ids) == 0 {
+				c.JSON(http.StatusOK, gin.H{"media": []gin.H{}})
+				return
+			}
+			includeIDs = ids
+		}
+
+		results, _, err := search.SimilarMediaByVector(c.Request.Context(), dbClient, body.Name, body.Vector, body.Limit, 0, body.Exclude, includeIDs)
 		if err != nil {
 			log.Printf("similar media search: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -335,16 +498,11 @@ func uploadURLHandler(m *minio.Client, cfg *config.Config) gin.HandlerFunc {
 
 func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id, ok := idParam(c)
-		if !ok {
-			return
-		}
-
 		var body struct {
 			Tags []string `json:"tags"`
 		}
-		if err := c.BindJSON(&body); err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
+		id, ok := bindIDAndJSON(c, &body)
+		if !ok {
 			return
 		}
 
@@ -361,19 +519,14 @@ func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
 
 func updateMediaDatesHandler(dbClient *ent.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id, ok := idParam(c)
-		if !ok {
-			return
-		}
-
 		var body struct {
 			Dates []struct {
 				Name  string `json:"name"`
 				Value string `json:"value"`
 			} `json:"dates"`
 		}
-		if err := c.BindJSON(&body); err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
+		id, ok := bindIDAndJSON(c, &body)
+		if !ok {
 			return
 		}
 
@@ -399,19 +552,14 @@ func updateMediaDatesHandler(dbClient *ent.Client) gin.HandlerFunc {
 
 func updateMediaVectorsHandler(dbClient *ent.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id, ok := idParam(c)
-		if !ok {
-			return
-		}
-
 		var body struct {
 			Vectors []struct {
 				Name  string    `json:"name"`
 				Value []float32 `json:"value"`
 			} `json:"vectors"`
 		}
-		if err := c.BindJSON(&body); err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
+		id, ok := bindIDAndJSON(c, &body)
+		if !ok {
 			return
 		}
 

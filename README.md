@@ -45,3 +45,10 @@ downloads the required weights on startup using the settings below:
 If you set `MODEL_DIR` the embed worker skips downloading and loads models directly from the
 provided path (useful for local development with pre-downloaded weights).
 
+### Embed worker variants
+
+Set `EMBED_WORKER_VARIANT` to choose between the CPU-only embed worker (`cpu`, the default) and
+the CUDA-enabled build (`gpu-cuda12`). The quickstart script automatically detects NVIDIA GPUs and
+updates `.env`, but you can override the value manually or via the `--cpu` / `--gpu` flags when
+running the installer.
+

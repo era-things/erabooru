@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"log"
 
 	"era/booru/ent"
@@ -27,10 +28,14 @@ func New(cfg *config.Config, q *river.Client[pgx.Tx], useHookSync bool) (*ent.Cl
 
 	ctx := context.Background()
 
-	// Create vector extension before running migrations
-	if _, err := client.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector"); err != nil {
-		log.Printf("Warning: Could not create vector extension: %v", err)
-		// Continue anyway - the extension might already exist or be created elsewhere
+	if raw, err := sql.Open("postgres", dsn); err != nil {
+		log.Printf("Warning: Could not open postgres connection for extension setup: %v", err)
+	} else {
+		if _, execErr := raw.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector"); execErr != nil {
+			log.Printf("Warning: Could not create vector extension: %v", execErr)
+			// Continue anyway - the extension might already exist or be created elsewhere
+		}
+		raw.Close()
 	}
 
 	// Auto migrate (Later: make it work like that only in devmode)
@@ -41,6 +46,10 @@ func New(cfg *config.Config, q *river.Client[pgx.Tx], useHookSync bool) (*ent.Cl
 	)
 
 	if err := client.Schema.Create(ctx, opts...); err != nil {
+		return nil, err
+	}
+
+	if err := EnsureHiddenTagDefaults(ctx, client); err != nil {
 		return nil, err
 	}
 

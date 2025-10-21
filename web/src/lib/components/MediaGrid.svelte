@@ -10,12 +10,16 @@
 		vectorQuery = '',
 		page = 1,
 		pageSize = Number(PAGE_SIZE),
-		total = $bindable(1)
+		total = $bindable(1),
+		items
+	}: {
+		query?: string;
+		vectorQuery?: string;
+		page?: number;
+		pageSize?: number;
+		total?: number;
+		items?: MediaPreviewItem[];
 	} = $props();
-	let lastQuery: string = $state('');
-	let lastPage: number = $state(1);
-	let lastVectorQuery: string = $state('');
-
 	let media: MediaPreviewItem[] = $state([]);
 	let innerWidth = $state(0);
 	let mounted = $state(false);
@@ -23,24 +27,41 @@
 
 	let columnCount = $derived(Math.max(Math.floor(innerWidth / 300), 2));
 	let columnWidths = $derived(Array(columnCount).fill('1fr'));
+	const normalizedVectorQuery = $derived(typeof vectorQuery === 'string' ? vectorQuery : '');
+
+	const usingProvidedItems = $derived(items !== undefined);
+
+	let requestCounter = 0;
 
 	$effect(() => {
-		const normalizedVectorQuery = typeof vectorQuery === 'string' ? vectorQuery : '';
-		if (
-			mounted &&
-			(query !== lastQuery || page !== lastPage || normalizedVectorQuery !== lastVectorQuery)
-		) {
-			lastQuery = query;
-			lastPage = page;
-			lastVectorQuery = normalizedVectorQuery;
-			load();
+		if (usingProvidedItems) {
+			media = items ?? [];
+			total = media.length;
+			return;
 		}
+
+		if (!mounted) return;
+
+		void load(query, page, pageSize, normalizedVectorQuery);
 	});
 
-	async function load() {
+	async function load(
+		currentQuery: string,
+		currentPage: number,
+		currentPageSize: number,
+		currentVectorQuery: string
+	) {
+		const requestId = ++requestCounter;
 		try {
-			const vectorTerm = typeof vectorQuery === 'string' ? vectorQuery : '';
-			const data = await fetchMediaPreviews(query, page, pageSize, vectorTerm);
+			const data = await fetchMediaPreviews(
+				currentQuery,
+				currentPage,
+				currentPageSize,
+				currentVectorQuery
+			);
+			if (requestId !== requestCounter) {
+				return;
+			}
 			const items = data.media as MediaItem[];
 			media = items.map((it) => {
 				const displayHeight = Math.min(it.height, it.width * 3);
@@ -58,12 +79,13 @@
 		}
 	}
 
-	onMount(async () => {
+	onMount(() => {
 		mounted = true;
-		lastQuery = query;
-		lastPage = page;
-		lastVectorQuery = typeof vectorQuery === 'string' ? vectorQuery : '';
-		await load();
+		if (usingProvidedItems) {
+			media = items ?? [];
+			total = media.length;
+			return;
+		}
 	});
 </script>
 
