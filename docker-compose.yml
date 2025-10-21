@@ -118,10 +118,11 @@ services:
         condition: service_healthy
 
   image-embed-worker:
-    image: booru:image-embed-worker
+    image: booru/image-embed-worker:${EMBED_WORKER_VARIANT:-cpu}
     build:
       context: .
       dockerfile: cmd/image_embed_worker/Dockerfile
+      target: ${EMBED_WORKER_VARIANT:-cpu}
     env_file:
       - .env
     environment:
