@@ -11,15 +11,5 @@ services:
     build: null
 
   image-embed-worker:
-    image: ghcr.io/era-things/erabooru-embed-worker:${EMBED_WORKER_VARIANT:-cpu}
+    image: ghcr.io/era-things/erabooru-embed-worker:latest
     build: null
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
-      - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]

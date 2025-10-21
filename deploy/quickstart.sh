@@ -6,33 +6,16 @@
 #
 set -euo pipefail
 
-EMBED_VARIANT_OVERRIDE=${ERABOORU_EMBED_VARIANT:-}
-
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --gpu)
-            EMBED_VARIANT_OVERRIDE="gpu-cuda12"
-            shift
-            ;;
-        --cpu)
-            EMBED_VARIANT_OVERRIDE="cpu"
-            shift
-            ;;
-        --embed-worker-variant=*)
-            EMBED_VARIANT_OVERRIDE="${1#*=}"
-            shift
-            ;;
         -h|--help)
             cat <<'USAGE'
-Usage: quickstart.sh [--cpu|--gpu|--embed-worker-variant=VARIANT]
+Usage: quickstart.sh [--help]
 
 Options:
-  --cpu                     Force the CPU embed worker image.
-  --gpu                     Force the CUDA embed worker image.
-  --embed-worker-variant    Explicitly set the embed worker variant (cpu or gpu-cuda12).
   -h, --help                Show this message.
 
-You can also set ERABOORU_EMBED_VARIANT in the environment.
+The script automatically uses the CPU-only embed worker for compatibility.
 USAGE
             exit 0
             ;;
@@ -42,10 +25,6 @@ USAGE
             ;;
     esac
 done
-
-if [[ -n "$EMBED_VARIANT_OVERRIDE" ]]; then
-    EMBED_VARIANT_OVERRIDE=$(printf '%s' "$EMBED_VARIANT_OVERRIDE" | tr '[:upper:]' '[:lower:]')
-fi
 
 DEST=${BOORU_HOME:-"$HOME/erabooru"}
 
@@ -109,7 +88,7 @@ download_file() {
 
 validate_variant() {
     case "$1" in
-        cpu|gpu-cuda12)
+        cpu)
             return 0
             ;;
         *)
@@ -137,55 +116,9 @@ set_env_value() {
     fi
 }
 
-has_nvidia_gpu() {
-    if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
-        return 0
-    fi
-    if command -v nvidia-smi.exe >/dev/null 2>&1 && nvidia-smi.exe -L >/dev/null 2>&1; then
-        return 0
-    fi
-    if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q 'nvidia'; then
-        return 0
-    fi
-    if docker info --format '{{json .Plugins.Runtime}}' 2>/dev/null | grep -q 'nvidia'; then
-        return 0
-    fi
-    return 1
-}
-
 select_embed_variant() {
-    local existing
-
-    if [[ -n "$EMBED_VARIANT_OVERRIDE" ]]; then
-        if ! validate_variant "$EMBED_VARIANT_OVERRIDE"; then
-            echo "❌ Unsupported embed worker variant '$EMBED_VARIANT_OVERRIDE'. Allowed values: cpu, gpu-cuda12" >&2
-            exit 1
-        fi
-        echo "→ Using embed worker variant from override: $EMBED_VARIANT_OVERRIDE"
-        echo "$EMBED_VARIANT_OVERRIDE"
-        return
-    fi
-
-    if [[ -f .env ]]; then
-        existing=$(grep '^EMBED_WORKER_VARIANT=' .env 2>/dev/null | tail -n1 | cut -d= -f2- || true)
-        if [[ -n "$existing" ]]; then
-            if validate_variant "$existing"; then
-                echo "→ Keeping existing EMBED_WORKER_VARIANT=$existing from .env"
-                echo "$existing"
-                return
-            else
-                echo "→ Existing EMBED_WORKER_VARIANT=$existing not recognized; falling back to auto-detection"
-            fi
-        fi
-    fi
-
-    if has_nvidia_gpu; then
-        echo "→ NVIDIA GPU support detected; using gpu-cuda12 embed worker"
-        echo "gpu-cuda12"
-    else
-        echo "→ No NVIDIA GPU detected; using cpu embed worker"
-        echo "cpu"
-    fi
+    echo "→ Using CPU-only embed worker (GPU variant not available in published images)"
+    echo "cpu"
 }
 
 # ────────────────────────────────────────────────────────────────
