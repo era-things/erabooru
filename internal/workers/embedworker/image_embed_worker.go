@@ -188,7 +188,7 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 		concurrency = 1
 	}
 
-	frameCh, waitStream, err := streamVideoFrames(ctx, src, duration, samples)
+	frameCh, waitStream, err := streamVideoFrames(ctx, w.Cfg, src, duration, samples)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +263,7 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 	return vec, nil
 }
 
-func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples int) (<-chan []byte, func() error, error) {
+func streamVideoFrames(ctx context.Context, cfg *config.Config, src string, durationSeconds, samples int) (<-chan []byte, func() error, error) {
 	if samples <= 0 {
 		return nil, nil, fmt.Errorf("invalid frame sample count")
 	}
@@ -298,7 +298,21 @@ func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples
 		S,
 	)
 
-	args := []string{
+	args, err := config.FFmpegHWAccelArgs(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	switch {
+	case len(args) > 1 && args[1] != "":
+		log.Printf("FFmpeg hardware acceleration enabled using %s", args[1])
+	case cfg != nil && cfg.VideoHWAccelDisable:
+		log.Printf("FFmpeg hardware acceleration disabled via configuration")
+	default:
+		log.Printf("FFmpeg hardware acceleration not in use; falling back to software decoding")
+	}
+
+	args = append(args,
 		"-i", src,
 		"-vf", vf,
 		"-vframes", strconv.Itoa(samples),
@@ -306,7 +320,7 @@ func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples
 		"-f", "rawvideo",
 		"-loglevel", "error",
 		"-",
-	}
+	)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	stdout, err := cmd.StdoutPipe()
