@@ -5,7 +5,7 @@ const apiBase = '/api';
 
 export interface MediaPreviewsResponse {
 	media: MediaItem[];
-	total: number;
+	next_cursor: string;
 }
 
 export interface HiddenTagFilter {
@@ -29,11 +29,11 @@ async function handleJson<T>(res: Response): Promise<T> {
 
 export async function fetchMediaPreviews(
 	query: string,
-	page: number,
 	pageSize: number,
-	vectorQuery?: string | null
+	vectorQuery?: string | null,
+	cursor?: string | null
 ): Promise<MediaPreviewsResponse> {
-	const params = buildSearchParams({ page, pageSize, query, vectorQuery });
+	const params = buildSearchParams({ pageSize, query, vectorQuery, cursor });
 	const res = await fetch(`${apiBase}/media/previews?${params.toString()}`);
 	return handleJson(res);
 }
@@ -100,21 +100,6 @@ export async function fetchTagSuggestions(prefix: string): Promise<TagCount[]> {
 	const res = await fetch(`${apiBase}/tags/suggest?${params.toString()}`);
 	const data = await handleJson<{ tags: TagCount[] }>(res);
 	return data.tags;
-}
-
-export async function fetchSimilarMedia(
-	vector: number[],
-	limit: number,
-	exclude?: string,
-	name = 'vision'
-): Promise<MediaItem[]> {
-	const res = await fetch(`${apiBase}/media/similar`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ vector, limit, exclude, name })
-	});
-	const data = await handleJson<{ media: MediaItem[] }>(res);
-	return data.media;
 }
 
 export async function fetchHiddenTagFilters(): Promise<HiddenTagFiltersResponse> {

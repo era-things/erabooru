@@ -10,9 +10,10 @@ services:
   web:
     image: node:20-bookworm
     working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    command: sh /app/dev-start.sh
     volumes:
       - ./web:/app
+      - web-node-modules:/app/node_modules
     ports:
       - "5173:5173"
 
@@ -27,3 +28,6 @@ services:
       --url postgres://booru:booru@db:5432/booru?sslmode=disable
     depends_on:
       - db
+
+volumes:
+  web-node-modules:

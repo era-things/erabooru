@@ -1,18 +1,17 @@
 export interface SearchParamsOptions {
-	page: number;
 	pageSize: number;
 	query?: string;
 	vectorQuery?: string | null | undefined;
+	cursor?: string | null | undefined;
 }
 
 export function buildSearchParams({
-	page,
 	pageSize,
 	query,
-	vectorQuery
+	vectorQuery,
+	cursor
 }: SearchParamsOptions): URLSearchParams {
 	const params = new URLSearchParams({
-		page: String(page),
 		page_size: String(pageSize)
 	});
 
@@ -25,6 +24,7 @@ export function buildSearchParams({
 		params.set('vector', '1');
 		params.set('vector_q', vectorText);
 	}
+	if (cursor) params.set('cursor', cursor);
 
 	return params;
 }

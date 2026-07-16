@@ -25,6 +25,23 @@ Run `make dev`
 * It will launch an additional helper container to inspect PostgreSQL
 * The UI will be available at `http://localhost:5173`
 
+Development dependencies are installed into a Docker volume and refreshed only when
+`package-lock.json` changes. Caddy remains the development proxy so request paths match production.
+
+## Clean-schema changes
+
+This project intentionally has no legacy schema migrations. After pulling a schema redesign,
+recreate the local PostgreSQL volume before starting the application:
+
+```sh
+docker compose up -d db
+docker compose exec -T db psql -U booru -d booru -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+make dev
+```
+
+This deletes database metadata and tags but preserves the media and model-cache volumes.
+Use Settings → Regenerate after startup to rebuild media metadata from the originals.
+
 ## Prod source launch
 Run `make prod`
 * It will create .env file out of .env.example if there is none, you can redact it if needed
@@ -41,6 +58,14 @@ downloads the required weights on startup using the settings below:
 | `MODEL_REPOSITORY` | Hugging Face repository or a full base URL | `onnx-community/siglip2-base-patch16-224-ONNX` |
 | `MODEL_REVISION` | Hugging Face revision/branch to resolve | `main` |
 | `MODEL_FILES` | Optional override for the files to download (`local|remote|sha`, comma separated) | *(built-in defaults)* |
+
+Media processing uses separate concurrency controls:
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `INGEST_CONCURRENCY` | Concurrent metadata and preview jobs | `2` |
+| `EMBEDDING_CONCURRENCY` | Concurrent embedding jobs, including preprocessing | `2` |
+| `INFERENCE_CONCURRENCY` | Concurrent ONNX model executions | `1` |
 
 If you set `MODEL_DIR` the application skips downloading and loads models directly from the
 provided path (useful for local development with pre-downloaded weights).

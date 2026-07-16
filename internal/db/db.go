@@ -20,6 +20,9 @@ var ErrDefaultFilter = errors.New("cannot delete the default hidden tag filter")
 
 type Media struct {
 	ID         string
+	Generation string
+	Status     string
+	Error      *string
 	Format     string
 	Width      int
 	Height     int
@@ -28,7 +31,7 @@ type Media struct {
 	UploadedAt time.Time
 	Tags       []Tag
 	Dates      []DateValue
-	Vectors    []VectorValue
+	Embeddings []Embedding
 }
 
 type Tag struct {
@@ -42,10 +45,14 @@ type DateValue struct {
 	Value time.Time
 }
 
-type VectorValue struct {
-	Name  string
-	Value pgvector.Vector
+type Embedding struct {
+	Space  string
+	Status string
+	Error  *string
+	Value  pgvector.Vector
 }
+
+const DefaultEmbeddingSpace = "vision"
 
 type HiddenTagFilter struct {
 	ID        int64
@@ -76,14 +83,35 @@ func Open(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 }
 
 func migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	var incompatible bool
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('public.media') IS NOT NULL AND NOT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'media' AND column_name = 'generation'
+	)`).Scan(&incompatible); err != nil {
+		return err
+	}
+	if incompatible {
+		return errors.New("database uses the previous schema; reset the PostgreSQL volume before starting this version")
+	}
+
 	_, err := pool.Exec(ctx, `
 CREATE EXTENSION IF NOT EXISTS vector;
 
+CREATE TABLE IF NOT EXISTS schema_version (
+	singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+	version integer NOT NULL
+);
+INSERT INTO schema_version (singleton, version) VALUES (true, 2)
+ON CONFLICT (singleton) DO UPDATE SET version = EXCLUDED.version;
+
 CREATE TABLE IF NOT EXISTS media (
     id text PRIMARY KEY,
-    format text NOT NULL,
-    width integer NOT NULL CHECK (width > 0),
-    height integer NOT NULL CHECK (height > 0),
+	generation text NOT NULL,
+	status text NOT NULL CHECK (status IN ('queued', 'processing', 'ready', 'failed')),
+	error text,
+    format text,
+    width integer CHECK (width > 0),
+    height integer CHECK (height > 0),
     duration integer CHECK (duration >= 0),
     size bigint NOT NULL CHECK (size >= 0),
     uploaded_at timestamptz NOT NULL DEFAULT now()
@@ -109,14 +137,27 @@ CREATE TABLE IF NOT EXISTS media_date (
     PRIMARY KEY (media_id, name)
 );
 
-CREATE TABLE IF NOT EXISTS media_vector (
-    media_id text NOT NULL REFERENCES media(id) ON DELETE CASCADE,
-    name text NOT NULL,
-    value vector(768) NOT NULL,
-    PRIMARY KEY (media_id, name)
+CREATE TABLE IF NOT EXISTS embedding_space (
+	id text PRIMARY KEY,
+	model text NOT NULL,
+	dimensions integer NOT NULL CHECK (dimensions > 0),
+	distance text NOT NULL CHECK (distance IN ('cosine', 'inner_product', 'l2'))
 );
-CREATE INDEX IF NOT EXISTS media_vector_value_hnsw_idx
-    ON media_vector USING hnsw (value vector_ip_ops);
+INSERT INTO embedding_space (id, model, dimensions, distance)
+VALUES ('vision', 'siglip2-base', 768, 'inner_product') ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS media_embedding (
+    media_id text NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+	space_id text NOT NULL REFERENCES embedding_space(id),
+	generation text NOT NULL,
+	status text NOT NULL CHECK (status IN ('queued', 'processing', 'ready', 'failed')),
+	error text,
+    value vector,
+    PRIMARY KEY (media_id, space_id)
+);
+CREATE INDEX IF NOT EXISTS media_embedding_vision_hnsw_idx
+    ON media_embedding USING hnsw ((value::vector(768)) vector_ip_ops)
+	WHERE space_id = 'vision' AND status = 'ready';
 
 CREATE TABLE IF NOT EXISTS hidden_tag_filter (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -140,31 +181,77 @@ func IsConflict(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-func SaveMedia(ctx context.Context, pool *pgxpool.Pool, item Media) error {
-	tx, err := pool.Begin(ctx)
+func InsertQueuedMedia(ctx context.Context, tx pgx.Tx, id, generation string, size int64, uploadedAt time.Time) (bool, error) {
+	result, err := tx.Exec(ctx, `INSERT INTO media (id, generation, status, size, uploaded_at)
+VALUES ($1, $2, 'queued', $3, $4) ON CONFLICT (id) DO NOTHING`, id, generation, size, uploadedAt)
+	return err == nil && result.RowsAffected() == 1, err
+}
+
+func StartIngestion(ctx context.Context, pool *pgxpool.Pool, id, generation string) (bool, error) {
+	result, err := pool.Exec(ctx, `UPDATE media SET status = 'processing', error = NULL
+WHERE id = $1 AND generation = $2 AND status <> 'ready'`, id, generation)
+	return err == nil && result.RowsAffected() == 1, err
+}
+
+func FailIngestion(ctx context.Context, pool *pgxpool.Pool, id, generation string, cause error) {
+	_, _ = pool.Exec(ctx, `UPDATE media SET status = 'failed', error = $3
+WHERE id = $1 AND generation = $2 AND status <> 'ready'`, id, generation, cause.Error())
+}
+
+func CompleteIngestionTx(ctx context.Context, tx pgx.Tx, item Media) error {
+	result, err := tx.Exec(ctx, `UPDATE media SET status = 'ready', error = NULL,
+format = $3, width = $4, height = $5, duration = $6, size = $7
+WHERE id = $1 AND generation = $2`, item.ID, item.Generation, item.Format, item.Width, item.Height, item.Duration, item.Size)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
-
-	result, err := tx.Exec(ctx, `INSERT INTO media (id, format, width, height, duration, size, uploaded_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO NOTHING`,
-		item.ID, item.Format, item.Width, item.Height, item.Duration, item.Size, item.UploadedAt)
-	if err != nil || result.RowsAffected() == 0 {
-		return err
+	if result.RowsAffected() != 1 {
+		return pgx.ErrNoRows
 	}
 	var tagID int64
 	if err := tx.QueryRow(ctx, `INSERT INTO tag (name) VALUES ('tagme')
 ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`).Scan(&tagID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO media_tag (media_id, tag_id) VALUES ($1, $2)`, item.ID, tagID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO media_tag (media_id, tag_id) VALUES ($1, $2)
+ON CONFLICT DO NOTHING`, item.ID, tagID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO media_date (media_id, name, value) VALUES ($1, 'upload', $2)`, item.ID, item.UploadedAt); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO media_date (media_id, name, value)
+SELECT id, 'upload', uploaded_at FROM media WHERE id = $1 ON CONFLICT DO NOTHING`, item.ID); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	return nil
+}
+
+func QueueEmbeddingTx(ctx context.Context, tx pgx.Tx, mediaID, generation, space string) error {
+	_, err := tx.Exec(ctx, `INSERT INTO media_embedding (media_id, space_id, generation, status)
+VALUES ($1, $2, $3, 'queued')
+ON CONFLICT (media_id, space_id) DO UPDATE
+SET generation = EXCLUDED.generation, status = 'queued', error = NULL, value = NULL`, mediaID, space, generation)
+	return err
+}
+
+func StartEmbedding(ctx context.Context, pool *pgxpool.Pool, mediaID, generation, space string) (bool, error) {
+	result, err := pool.Exec(ctx, `UPDATE media_embedding e SET status = 'processing', error = NULL
+FROM media m WHERE e.media_id = m.id AND e.media_id = $1 AND e.space_id = $2
+AND e.generation = $3 AND m.generation = $3 AND m.status = 'ready'`, mediaID, space, generation)
+	return err == nil && result.RowsAffected() == 1, err
+}
+
+func FailEmbedding(ctx context.Context, pool *pgxpool.Pool, mediaID, generation, space string, cause error) {
+	_, _ = pool.Exec(ctx, `UPDATE media_embedding SET status = 'failed', error = $4
+WHERE media_id = $1 AND space_id = $2 AND generation = $3`, mediaID, space, generation, cause.Error())
+}
+
+func CompleteEmbedding(ctx context.Context, pool *pgxpool.Pool, mediaID, generation, space string, value pgvector.Vector) error {
+	result, err := pool.Exec(ctx, `UPDATE media_embedding e SET status = 'ready', error = NULL, value = $4
+FROM media m WHERE e.media_id = m.id AND e.media_id = $1 AND e.space_id = $2
+AND e.generation = $3 AND m.generation = $3 AND m.status = 'ready'`, mediaID, space, generation, value)
+	if err == nil && result.RowsAffected() != 1 {
+		return pgx.ErrNoRows
+	}
+	return err
 }
 
 func MediaExists(ctx context.Context, pool *pgxpool.Pool, id string) (bool, error) {
@@ -173,10 +260,26 @@ func MediaExists(ctx context.Context, pool *pgxpool.Pool, id string) (bool, erro
 	return exists, err
 }
 
+func MediaLifecycle(ctx context.Context, pool *pgxpool.Pool, id string) (generation, status string, err error) {
+	err = pool.QueryRow(ctx, `SELECT generation, status FROM media WHERE id = $1`, id).Scan(&generation, &status)
+	return
+}
+
+func RequeueIngestionTx(ctx context.Context, tx pgx.Tx, id, generation string) error {
+	_, err := tx.Exec(ctx, `UPDATE media SET status = 'queued', error = NULL WHERE id = $1 AND generation = $2`, id, generation)
+	return err
+}
+
+func EmbeddingLifecycle(ctx context.Context, pool *pgxpool.Pool, mediaID, space string) (status string, err error) {
+	err = pool.QueryRow(ctx, `SELECT status FROM media_embedding WHERE media_id = $1 AND space_id = $2`, mediaID, space).Scan(&status)
+	return
+}
+
 func GetMedia(ctx context.Context, pool *pgxpool.Pool, id string) (Media, error) {
 	var item Media
-	err := pool.QueryRow(ctx, `SELECT id, format, width, height, duration, size, uploaded_at FROM media WHERE id = $1`, id).
-		Scan(&item.ID, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt)
+	err := pool.QueryRow(ctx, `SELECT id, generation, status, error, format, width, height, duration, size, uploaded_at
+FROM media WHERE id = $1 AND status = 'ready'`, id).
+		Scan(&item.ID, &item.Generation, &item.Status, &item.Error, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt)
 	if err != nil {
 		return Media{}, err
 	}
@@ -216,69 +319,107 @@ LEFT JOIN media_tag all_mt ON all_mt.tag_id = t.id GROUP BY t.id, t.name ORDER B
 		return Media{}, err
 	}
 
-	vectorRows, err := pool.Query(ctx, `SELECT name, value FROM media_vector WHERE media_id = $1 ORDER BY name`, id)
+	embeddingRows, err := pool.Query(ctx, `SELECT space_id, status, error FROM media_embedding WHERE media_id = $1 ORDER BY space_id`, id)
 	if err != nil {
 		return Media{}, err
 	}
-	for vectorRows.Next() {
-		var vector VectorValue
-		if err := vectorRows.Scan(&vector.Name, &vector.Value); err != nil {
-			vectorRows.Close()
+	for embeddingRows.Next() {
+		var embedding Embedding
+		if err := embeddingRows.Scan(&embedding.Space, &embedding.Status, &embedding.Error); err != nil {
+			embeddingRows.Close()
 			return Media{}, err
 		}
-		item.Vectors = append(item.Vectors, vector)
+		item.Embeddings = append(item.Embeddings, embedding)
 	}
-	vectorRows.Close()
-	return item, vectorRows.Err()
+	embeddingRows.Close()
+	return item, embeddingRows.Err()
 }
 
 func ListMedia(ctx context.Context, pool *pgxpool.Pool) ([]Media, error) {
-	rows, err := pool.Query(ctx, `SELECT id FROM media ORDER BY id`)
+	rows, err := pool.Query(ctx, `SELECT id, generation, status, error, format, width, height, duration, size, uploaded_at
+FROM media WHERE status = 'ready' ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
-	ids := []string{}
+	defer rows.Close()
+	items := []Media{}
+	byID := map[string]*Media{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	rows.Close()
-	items := make([]Media, 0, len(ids))
-	for _, id := range ids {
-		item, err := GetMedia(ctx, pool, id)
-		if err != nil {
+		var item Media
+		if err := rows.Scan(&item.ID, &item.Generation, &item.Status, &item.Error, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
 	}
-	return items, nil
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range items {
+		byID[items[i].ID] = &items[i]
+	}
+
+	tagRows, err := pool.Query(ctx, `SELECT mt.media_id, t.id, t.name, count(all_mt.media_id)::int
+FROM media_tag mt JOIN tag t ON t.id = mt.tag_id
+LEFT JOIN media_tag all_mt ON all_mt.tag_id = t.id
+GROUP BY mt.media_id, t.id, t.name ORDER BY mt.media_id, t.name`)
+	if err != nil {
+		return nil, err
+	}
+	for tagRows.Next() {
+		var mediaID string
+		var tag Tag
+		if err := tagRows.Scan(&mediaID, &tag.ID, &tag.Name, &tag.Count); err != nil {
+			tagRows.Close()
+			return nil, err
+		}
+		if item := byID[mediaID]; item != nil {
+			item.Tags = append(item.Tags, tag)
+		}
+	}
+	tagRows.Close()
+	if err := tagRows.Err(); err != nil {
+		return nil, err
+	}
+
+	dateRows, err := pool.Query(ctx, `SELECT media_id, name, value FROM media_date ORDER BY media_id, name`)
+	if err != nil {
+		return nil, err
+	}
+	for dateRows.Next() {
+		var mediaID string
+		var date DateValue
+		if err := dateRows.Scan(&mediaID, &date.Name, &date.Value); err != nil {
+			dateRows.Close()
+			return nil, err
+		}
+		if item := byID[mediaID]; item != nil {
+			item.Dates = append(item.Dates, date)
+		}
+	}
+	dateRows.Close()
+	return items, dateRows.Err()
 }
 
-func GetMediaVector(ctx context.Context, pool *pgxpool.Pool, mediaID, desiredName string) ([]float32, string, error) {
-	rows, err := pool.Query(ctx, `SELECT name, value FROM media_vector WHERE media_id = $1 ORDER BY (name = $2) DESC, name`, mediaID, desiredName)
+func GetMediaVector(ctx context.Context, pool *pgxpool.Pool, mediaID, space string) ([]float32, string, error) {
+	if space == "" {
+		space = DefaultEmbeddingSpace
+	}
+	var vector pgvector.Vector
+	err := pool.QueryRow(ctx, `SELECT value FROM media_embedding
+WHERE media_id = $1 AND space_id = $2 AND status = 'ready'`, mediaID, space).Scan(&vector)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, space, nil
+	}
 	if err != nil {
 		return nil, "", err
 	}
-	defer rows.Close()
-	if !rows.Next() {
-		return nil, "", rows.Err()
-	}
-	var name string
-	var vector pgvector.Vector
-	if err := rows.Scan(&name, &vector); err != nil {
-		return nil, "", err
-	}
-	return vector.Slice(), name, nil
+	return vector.Slice(), space, nil
 }
 
 func MediaVectorExists(ctx context.Context, pool *pgxpool.Pool, mediaID, name string) (bool, error) {
 	var exists bool
 	err := pool.QueryRow(ctx, `SELECT EXISTS(
-        SELECT 1 FROM media_vector WHERE media_id = $1 AND name = $2
+        SELECT 1 FROM media_embedding WHERE media_id = $1 AND space_id = $2 AND status = 'ready'
     )`, mediaID, name).Scan(&exists)
 	return exists, err
 }
@@ -297,18 +438,15 @@ func SetMediaTags(ctx context.Context, pool *pgxpool.Pool, mediaID string, names
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `DELETE FROM media_tag WHERE media_id = $1`, mediaID); err != nil {
+	_, err = tx.Exec(ctx, `WITH removed AS (
+	DELETE FROM media_tag WHERE media_id = $1
+), upserted AS (
+	INSERT INTO tag (name) SELECT unnest($2::text[])
+	ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id
+)
+INSERT INTO media_tag (media_id, tag_id) SELECT $1, id FROM upserted`, mediaID, names)
+	if err != nil {
 		return err
-	}
-	for _, name := range names {
-		var id int64
-		if err := tx.QueryRow(ctx, `INSERT INTO tag (name) VALUES ($1)
-ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`, name).Scan(&id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO media_tag (media_id, tag_id) VALUES ($1, $2)`, mediaID, id); err != nil {
-			return err
-		}
 	}
 	return tx.Commit(ctx)
 }
@@ -322,30 +460,23 @@ func SetMediaDates(ctx context.Context, pool *pgxpool.Pool, mediaID string, date
 	if _, err := tx.Exec(ctx, `DELETE FROM media_date WHERE media_id = $1`, mediaID); err != nil {
 		return err
 	}
-	for _, date := range dates {
-		if _, err := tx.Exec(ctx, `INSERT INTO media_date (media_id, name, value) VALUES ($1, $2, $3)`, mediaID, date.Name, date.Value); err != nil {
-			return err
-		}
+	names := make([]string, len(dates))
+	values := make([]time.Time, len(dates))
+	var uploadedAt *time.Time
+	for i, date := range dates {
+		names[i] = date.Name
+		values[i] = date.Value
 		if date.Name == "upload" {
-			if _, err := tx.Exec(ctx, `UPDATE media SET uploaded_at = $2 WHERE id = $1`, mediaID, date.Value); err != nil {
-				return err
-			}
+			value := date.Value
+			uploadedAt = &value
 		}
 	}
-	return tx.Commit(ctx)
-}
-
-func SetMediaVectors(ctx context.Context, pool *pgxpool.Pool, mediaID string, vectors []VectorValue) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO media_date (media_id, name, value)
+SELECT $1, input.name, input.value FROM unnest($2::text[], $3::timestamptz[]) AS input(name, value)`, mediaID, names, values); err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `DELETE FROM media_vector WHERE media_id = $1`, mediaID); err != nil {
-		return err
-	}
-	for _, vector := range vectors {
-		if _, err := tx.Exec(ctx, `INSERT INTO media_vector (media_id, name, value) VALUES ($1, $2, $3)`, mediaID, vector.Name, vector.Value); err != nil {
+	if uploadedAt != nil {
+		if _, err := tx.Exec(ctx, `UPDATE media SET uploaded_at = $2 WHERE id = $1`, mediaID, *uploadedAt); err != nil {
 			return err
 		}
 	}

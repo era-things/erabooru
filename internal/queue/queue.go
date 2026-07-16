@@ -20,7 +20,7 @@ var activeUniqueStates = []rivertype.JobState{
 }
 
 // NewClient creates a River client using the provided database pool and workers.
-func NewClient(ctx context.Context, pool *pgxpool.Pool, workers *river.Workers, concurrency int) (*river.Client[pgx.Tx], error) {
+func NewClient(ctx context.Context, pool *pgxpool.Pool, workers *river.Workers, ingestConcurrency, embedConcurrency int) (*river.Client[pgx.Tx], error) {
 	migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
 	if err != nil {
 		return nil, err
@@ -30,8 +30,8 @@ func NewClient(ctx context.Context, pool *pgxpool.Pool, workers *river.Workers, 
 	}
 	return river.NewClient(riverpgxv5.New(pool), (&river.Config{
 		Queues: map[string]river.QueueConfig{
-			"process": {MaxWorkers: concurrency},
-			"embed":   {MaxWorkers: concurrency},
+			"process": {MaxWorkers: ingestConcurrency},
+			"embed":   {MaxWorkers: embedConcurrency},
 		},
 		Workers: workers,
 	}).WithDefaults())
@@ -39,6 +39,10 @@ func NewClient(ctx context.Context, pool *pgxpool.Pool, workers *river.Workers, 
 
 // Enqueue inserts a job into the default queue.
 func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) error {
+	return EnqueueTx(ctx, c, nil, args)
+}
+
+func EnqueueTx(ctx context.Context, c *river.Client[pgx.Tx], tx pgx.Tx, args river.JobArgs) error {
 	opts := &river.InsertOpts{}
 
 	var (
@@ -65,7 +69,12 @@ func Enqueue(ctx context.Context, c *river.Client[pgx.Tx], args river.JobArgs) e
 		opts.Priority = priority
 	}
 
-	_, err := c.Insert(ctx, args, opts)
+	var err error
+	if tx == nil {
+		_, err = c.Insert(ctx, args, opts)
+	} else {
+		_, err = c.InsertTx(ctx, tx, args, opts)
+	}
 	return err
 }
 
@@ -79,6 +88,7 @@ func WorkerEnqueue(ctx context.Context, args river.JobArgs) error {
 
 type ProcessArgs struct {
 	Key         string `json:"key"`
+	Generation  string `json:"generation"`
 	ContentType string `json:"content_type,omitempty"`
 }
 
@@ -92,7 +102,9 @@ func (ProcessArgs) InsertOpts() river.InsertOpts {
 }
 
 type EmbedArgs struct {
-	Key string `json:"key"`
+	Key        string `json:"key"`
+	Generation string `json:"generation"`
+	Space      string `json:"space"`
 }
 
 func (EmbedArgs) Kind() string { return "embed_media" }

@@ -15,12 +15,12 @@ export interface MediaDetail extends MediaItem {
 	size: number;
 	tags: TagCount[];
 	dates: MediaDate[];
-	vectors?: MediaVector[];
+	embeddings: MediaEmbedding[];
 }
 
-export interface MediaVector {
-	name: string;
-	value: number[];
+export interface MediaEmbedding {
+	space: string;
+	status: 'queued' | 'processing' | 'ready' | 'failed';
 }
 
 export interface TagCount {

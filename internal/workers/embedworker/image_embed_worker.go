@@ -32,17 +32,24 @@ import (
 // ImageEmbedWorker generates vision embeddings for images.
 type ImageEmbedWorker struct {
 	river.WorkerDefaults[queue.EmbedArgs]
-	Store   *storage.Store
-	DB      *pgxpool.Pool
-	Limiter processing.Limiter
+	Store     *storage.Store
+	DB        *pgxpool.Pool
+	Inference *processing.InferenceLimiter
 }
 
-func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedArgs]) error {
-	release, err := w.Limiter.Acquire(ctx)
+func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedArgs]) (retErr error) {
+	started, err := db.StartEmbedding(ctx, w.DB, job.Args.Key, job.Args.Generation, job.Args.Space)
 	if err != nil {
 		return err
 	}
-	defer release()
+	if !started {
+		return river.JobCancel(fmt.Errorf("stale embedding generation for %s", job.Args.Key))
+	}
+	defer func() {
+		if retErr != nil {
+			db.FailEmbedding(context.WithoutCancel(ctx), w.DB, job.Args.Key, job.Args.Generation, job.Args.Space, retErr)
+		}
+	}()
 	log.Printf("Generating embedding for key %s", job.Args.Key)
 
 	media, err := db.GetMedia(ctx, w.DB, job.Args.Key)
@@ -65,13 +72,21 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 			return classifyEmbeddingError(err, job.Args.Key)
 		}
 	} else {
-		data, err := os.ReadFile(w.Store.OriginalPath(job.Args.Key))
+		// Ingestion already bounded and oriented this image for its preview.
+		// Embedding the derived image avoids decoding a potentially enormous
+		// original for a second time without changing the model input size.
+		data, err := os.ReadFile(w.Store.PreviewPath(job.Args.Key))
 		if err != nil {
 			log.Printf("Failed to read original: %v", err)
 			return classifyObjectError(err, job.Args.Key)
 		}
 
+		release, acquireErr := w.Inference.Acquire(ctx, processing.BackgroundInference)
+		if acquireErr != nil {
+			return acquireErr
+		}
 		vec, err = embed.VisionEmbedding(data)
+		release()
 		if err != nil {
 			log.Printf("Failed to generate embedding: %v", err)
 			return classifyEmbeddingError(err, job.Args.Key)
@@ -79,7 +94,7 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 	}
 
 	pgv := pgvector.NewVector(vec)
-	if err := db.SetMediaVectors(ctx, w.DB, job.Args.Key, []db.VectorValue{{Name: "vision", Value: pgv}}); err != nil {
+	if err := db.CompleteEmbedding(ctx, w.DB, job.Args.Key, job.Args.Generation, job.Args.Space, pgv); err != nil {
 		log.Printf("Failed to save embedding to database: %v", err)
 		return err
 	}
@@ -168,7 +183,12 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media
 		if len(frames) == 0 {
 			return nil, fmt.Errorf("no frames extracted for video %s", key)
 		}
+		release, acquireErr := w.Inference.Acquire(ctx, processing.BackgroundInference)
+		if acquireErr != nil {
+			return nil, acquireErr
+		}
 		vectors, err := embed.VisionEmbeddingsRGB24(frames)
+		release()
 		if err != nil {
 			lastErr = err
 			if newSize, ok := embed.RetargetInputSpatialSize(err, inputSize); ok {

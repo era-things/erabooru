@@ -10,12 +10,12 @@ import (
 	pgvector "github.com/pgvector/pgvector-go"
 )
 
-func SimilarMediaByVector(ctx context.Context, pool *pgxpool.Pool, vectorName string, query []float32, limit, offset int, excludeID, filterExpr string) ([]db.Media, int, error) {
+func SimilarMediaByVector(ctx context.Context, pool *pgxpool.Pool, vectorName string, query []float32, limit int, cursor, excludeID, filterExpr string) ([]db.Media, string, error) {
 	if limit <= 0 || len(query) == 0 {
-		return []db.Media{}, 0, nil
+		return []db.Media{}, "", nil
 	}
 	args := []any{vectorName, pgvector.NewVector(query)}
-	conditions := []string{"mv.name = $1", "mv.value <#> $2 IS NOT NULL"}
+	conditions := []string{"me.space_id = $1", "me.status = 'ready'", "m.status = 'ready'", "me.value IS NOT NULL"}
 	if excludeID != "" {
 		args = append(args, excludeID)
 		conditions = append(conditions, fmt.Sprintf("m.id <> $%d", len(args)))
@@ -25,21 +25,46 @@ func SimilarMediaByVector(ctx context.Context, pool *pgxpool.Pool, vectorName st
 	if where != "" {
 		conditions = append(conditions, where)
 	}
-	conditionSQL := " WHERE " + joinConditions(conditions)
-	var total int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM media_vector mv JOIN media m ON m.id = mv.media_id`+conditionSQL, args...).Scan(&total); err != nil || total == 0 {
-		return nil, total, err
+	position, err := decodeCursor[vectorCursor](cursor)
+	if err != nil {
+		return nil, "", err
 	}
-	args = append(args, limit, offset)
+	if position.ID != "" {
+		args = append(args, position.Distance, position.ID)
+		conditions = append(conditions, fmt.Sprintf("(me.value::vector(768) <#> $2, m.id) > ($%d, $%d)", len(args)-1, len(args)))
+	}
+	args = append(args, limit+1)
+	conditionSQL := " WHERE " + joinConditions(conditions)
 	querySQL := fmt.Sprintf(`SELECT m.id, m.format, m.width, m.height, m.duration, m.size, m.uploaded_at
-FROM media_vector mv JOIN media m ON m.id = mv.media_id%s
-ORDER BY mv.value <#> $2 LIMIT $%d OFFSET $%d`, conditionSQL, len(args)-1, len(args))
+	, me.value::vector(768) <#> $2 AS distance
+FROM media_embedding me JOIN media m ON m.id = me.media_id%s
+ORDER BY distance, m.id LIMIT $%d`, conditionSQL, len(args))
 	rows, err := pool.Query(ctx, querySQL, args...)
 	if err != nil {
-		return nil, 0, err
+		return nil, "", err
 	}
-	items, err := scanMedia(rows)
-	return items, total, err
+	defer rows.Close()
+	items := []db.Media{}
+	distances := []float64{}
+	for rows.Next() {
+		var item db.Media
+		var distance float64
+		if err := rows.Scan(&item.ID, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt, &distance); err != nil {
+			return nil, "", err
+		}
+		items = append(items, item)
+		distances = append(distances, distance)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(items) > limit {
+		items = items[:limit]
+		distances = distances[:limit]
+		next = encodeCursor(vectorCursor{Distance: distances[len(distances)-1], ID: items[len(items)-1].ID})
+	}
+	return items, next, nil
 }
 
 func joinConditions(parts []string) string {

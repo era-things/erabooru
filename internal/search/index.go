@@ -10,25 +10,38 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func SearchMedia(ctx context.Context, pool *pgxpool.Pool, expr string, limit, offset int) ([]db.Media, int, error) {
+func SearchMedia(ctx context.Context, pool *pgxpool.Pool, expr string, limit int, cursor string) ([]db.Media, string, error) {
 	where, args := WhereSQL(expr, 1)
+	conditions := []string{"m.status = 'ready'"}
 	if where != "" {
-		where = " WHERE " + where
+		conditions = append(conditions, where)
 	}
-	var total int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM media m`+where, args...).Scan(&total); err != nil || total == 0 {
-		return nil, total, err
-	}
-	queryArgs := append([]any{}, args...)
-	queryArgs = append(queryArgs, limit, offset)
-	query := fmt.Sprintf(`SELECT m.id, m.format, m.width, m.height, m.duration, m.size, m.uploaded_at
-FROM media m%s ORDER BY m.uploaded_at DESC LIMIT $%d OFFSET $%d`, where, len(args)+1, len(args)+2)
-	rows, err := pool.Query(ctx, query, queryArgs...)
+	position, err := decodeCursor[mediaCursor](cursor)
 	if err != nil {
-		return nil, 0, err
+		return nil, "", err
+	}
+	if !position.UploadedAt.IsZero() {
+		args = append(args, position.UploadedAt, position.ID)
+		conditions = append(conditions, fmt.Sprintf("(m.uploaded_at, m.id) < ($%d, $%d)", len(args)-1, len(args)))
+	}
+	args = append(args, limit+1)
+	query := fmt.Sprintf(`SELECT m.id, m.format, m.width, m.height, m.duration, m.size, m.uploaded_at
+FROM media m WHERE %s ORDER BY m.uploaded_at DESC, m.id DESC LIMIT $%d`, joinConditions(conditions), len(args))
+	rows, err := pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, "", err
 	}
 	items, err := scanMedia(rows)
-	return items, total, err
+	if err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(items) > limit {
+		items = items[:limit]
+		last := items[len(items)-1]
+		next = encodeCursor(mediaCursor{UploadedAt: last.UploadedAt, ID: last.ID})
+	}
+	return items, next, nil
 }
 
 func scanMedia(rows pgx.Rows) ([]db.Media, error) {

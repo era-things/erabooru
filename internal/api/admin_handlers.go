@@ -3,6 +3,7 @@ package api
 import (
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"era/booru/internal/db"
+	embed "era/booru/internal/embeddings"
 	"era/booru/internal/queue"
 	"era/booru/internal/storage"
 
@@ -34,24 +36,6 @@ func regenerateHandler(pool *pgxpool.Pool, store *storage.Store, riverClient *ri
 		processCount := 0
 		embedCount := 0
 		err := store.WalkOriginals(func(id string) error {
-			exists, err := db.MediaExists(ctx, pool, id)
-			if err != nil {
-				return fmt.Errorf("check media %s: %w", id, err)
-			}
-			if exists {
-				hasVector, err := db.MediaVectorExists(ctx, pool, id, "vision")
-				if err != nil {
-					return fmt.Errorf("check embedding %s: %w", id, err)
-				}
-				if !hasVector {
-					if err := queue.Enqueue(ctx, riverClient, queue.EmbedArgs{Key: id}); err != nil {
-						return fmt.Errorf("enqueue embedding %s: %w", id, err)
-					}
-					embedCount++
-				}
-				return nil
-			}
-
 			file, err := os.Open(store.OriginalPath(id))
 			if err != nil {
 				return err
@@ -63,15 +47,68 @@ func regenerateHandler(pool *pgxpool.Pool, store *storage.Store, riverClient *ri
 				return readErr
 			}
 			contentType := http.DetectContentType(header[:n])
-
-			_, err = riverClient.Insert(ctx, queue.ProcessArgs{
-				Key:         id,
-				ContentType: contentType,
-			}, &river.InsertOpts{
-				Queue: "process",
-			})
+			generation, status, lifecycleErr := db.MediaLifecycle(ctx, pool, id)
+			if lifecycleErr == nil && status == "ready" {
+				if !embed.Available() {
+					return nil
+				}
+				embeddingStatus, embeddingErr := db.EmbeddingLifecycle(ctx, pool, id, db.DefaultEmbeddingSpace)
+				if embeddingErr == nil && embeddingStatus != "failed" {
+					return nil
+				}
+				if embeddingErr != nil && !errors.Is(embeddingErr, pgx.ErrNoRows) {
+					return fmt.Errorf("check embedding %s: %w", id, embeddingErr)
+				}
+				tx, err := pool.Begin(ctx)
+				if err != nil {
+					return err
+				}
+				defer tx.Rollback(ctx)
+				if err := db.QueueEmbeddingTx(ctx, tx, id, generation, db.DefaultEmbeddingSpace); err != nil {
+					return err
+				}
+				if err := queue.EnqueueTx(ctx, riverClient, tx, queue.EmbedArgs{Key: id, Generation: generation, Space: db.DefaultEmbeddingSpace}); err != nil {
+					return err
+				}
+				if err := tx.Commit(ctx); err != nil {
+					return err
+				}
+				embedCount++
+				return nil
+			}
+			if lifecycleErr != nil && !errors.Is(lifecycleErr, pgx.ErrNoRows) {
+				return fmt.Errorf("check media %s: %w", id, lifecycleErr)
+			}
+			if lifecycleErr == nil && status != "failed" {
+				return nil
+			}
+			if errors.Is(lifecycleErr, pgx.ErrNoRows) {
+				generation, err = newGeneration()
+				if err != nil {
+					return err
+				}
+			}
+			stat, err := os.Stat(store.OriginalPath(id))
 			if err != nil {
+				return err
+			}
+			tx, err := pool.Begin(ctx)
+			if err != nil {
+				return err
+			}
+			defer tx.Rollback(ctx)
+			if errors.Is(lifecycleErr, pgx.ErrNoRows) {
+				if _, err := db.InsertQueuedMedia(ctx, tx, id, generation, stat.Size(), time.Now().UTC()); err != nil {
+					return err
+				}
+			} else if err := db.RequeueIngestionTx(ctx, tx, id, generation); err != nil {
+				return err
+			}
+			if err := queue.EnqueueTx(ctx, riverClient, tx, queue.ProcessArgs{Key: id, Generation: generation, ContentType: contentType}); err != nil {
 				return fmt.Errorf("enqueue media %s: %w", id, err)
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return err
 			}
 
 			processCount++

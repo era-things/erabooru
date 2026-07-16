@@ -48,7 +48,8 @@ Erabooru will run as one Go application backed by PostgreSQL and a mounted files
 - [x] Replace dummy job registrations with real worker registrations.
 - [x] Remove the remaining inference client-type queue configuration.
 - [x] Call text embedding directly instead of inserting and polling a River job.
-- [x] Establish one explicit media/inference concurrency budget.
+- [x] Give fast ingestion and background embedding independent worker budgets.
+- [x] Bound ONNX inference separately and prioritize interactive text searches.
 - [x] Make HTTP and River shutdown context-aware; FFmpeg receives job contexts and ONNX resources terminate with the process.
 
 ### 4. Persistence simplification
@@ -57,7 +58,7 @@ Erabooru will run as one Go application backed by PostgreSQL and a mounted files
 - [x] Introduce a clean schema for media, tags, tag relations, settings, and fixed-dimension embeddings.
 - [x] Store size, upload timestamp, and duration directly; River owns durable processing state.
 - [x] Use database constraints/upserts for idempotency and invariants.
-- [x] Add a 768-dimension inner-product HNSW index for the configured SigLIP model.
+- [x] Add extensible embedding spaces with a 768-dimension partial HNSW index for the configured SigLIP model.
 - [x] Replace generic settings indirection with a singleton row and direct foreign key.
 
 ### 5. Media pipeline performance
@@ -73,6 +74,19 @@ Erabooru will run as one Go application backed by PostgreSQL and a mounted files
 
 Frontend component simplification, npm audit remediation, broad dependency upgrades, and the lower-priority edge-case list are intentionally deferred until the architecture stops moving.
 
+### 7. Lifecycle, API, and scaling pass
+
+- [x] Keep ingestion and embedding as separate durable stages so previews become visible before inference completes.
+- [x] Add explicit queued/processing/ready/failed lifecycle state and generation-safe jobs.
+- [x] Keep embeddings optional and prevent the ingestion package from depending on ONNX availability.
+- [x] Keep multiple server-side embedding spaces while removing raw vectors from browser APIs.
+- [x] Load ONNX models from file paths and select vision/text outputs independently.
+- [x] Embed images from bounded previews instead of decoding large originals twice.
+- [x] Replace exact counts and offset pagination with opaque keyset cursors and incremental loading.
+- [x] Bulk tag/date writes and replace export's per-media query pattern with bounded query sets.
+- [x] Cache Linux frontend dependencies across development starts while retaining Caddy.
+- [x] Retain Gin: replacing it would not improve the media pipeline and would not reduce application code.
+
 ## Progress log
 
 - 2026-07-16: Review completed; target architecture accepted. Phase 1 started.
@@ -84,3 +98,4 @@ Frontend component simplification, npm audit remediation, broad dependency upgra
 - 2026-07-16: Image previews, adaptive video sampling, batched frame inference, HNSW vector search, and explicit ONNX threading were added.
 - 2026-07-16: Uploads became a single server-hashed streaming operation with atomic content-addressed installation; browser-side whole-file hashing and its dependency were removed.
 - 2026-07-16: The clean-schema lifecycle passed live pgvector integration tests and the native CPU production image built and linked successfully.
+- 2026-07-16: Ingestion and embedding gained independent lifecycle state, generation-safe River jobs, prioritized inference, server-only embedding spaces, cursor pagination, and bulk metadata operations.

@@ -51,14 +51,8 @@ func Load(dir string) error {
 			_ = ort.SetEnvironmentLogLevel(ort.LoggingLevelError)
 		}
 
-		// read model bytes
-		onx, err := os.ReadFile(filepath.Join(dir, "vision_model_fp16.onnx"))
-		if err != nil {
-			loadErr = err
-			return
-		}
-
-		inputs, outputs, err := ort.GetInputOutputInfoWithONNXData(onx)
+		visionPath := filepath.Join(dir, "vision_model_fp16.onnx")
+		inputs, outputs, err := ort.GetInputOutputInfo(visionPath)
 		if err != nil {
 			loadErr = fmt.Errorf("failed to inspect ONNX model outputs: %w", err)
 			return
@@ -77,25 +71,7 @@ func Load(dir string) error {
 			availableNames = append(availableNames, out.Name)
 		}
 
-		chooseOutput := func(names ...string) string {
-			for _, name := range names {
-				for _, out := range outputs {
-					if out.Name != name {
-						continue
-					}
-					if out.OrtValueType != ort.ONNXTypeTensor {
-						continue
-					}
-					if out.DataType != ort.TensorElementDataTypeFloat {
-						continue
-					}
-					return out.Name
-				}
-			}
-			return ""
-		}
-
-		outputName = chooseOutput(
+		outputName = chooseFloatOutput(outputs,
 			"pooler_output",
 			"image_embeds",
 			"image_features",
@@ -106,7 +82,7 @@ func Load(dir string) error {
 			// Fall back to the first float tensor output if the preferred
 			// names are absent so we can support future exports without
 			// guessing the name.
-			outputName = chooseOutput(availableNames...)
+			outputName = chooseFloatOutput(outputs, availableNames...)
 		}
 
 		if outputName == "" {
@@ -117,8 +93,8 @@ func Load(dir string) error {
 		sessionOpts, releaseSessionOpts := sessionOptionsWithCUDA()
 		defer releaseSessionOpts()
 
-		dynSess, loadErr = ort.NewDynamicAdvancedSessionWithONNXData(
-			onx,
+		dynSess, loadErr = ort.NewDynamicAdvancedSession(
+			visionPath,
 			[]string{"pixel_values"}, // input
 			[]string{outputName},     // output
 			sessionOpts,
@@ -135,13 +111,8 @@ func Load(dir string) error {
 		}
 		textTokenizer = tk
 
-		textModel, err := os.ReadFile(filepath.Join(dir, "text_model_fp16.onnx"))
-		if err != nil {
-			loadErr = err
-			return
-		}
-
-		textInputs, textOutputs, err := ort.GetInputOutputInfoWithONNXData(textModel)
+		textPath := filepath.Join(dir, "text_model_fp16.onnx")
+		textInputs, textOutputs, err := ort.GetInputOutputInfo(textPath)
 		if err != nil {
 			loadErr = fmt.Errorf("failed to inspect text model outputs: %w", err)
 			return
@@ -171,25 +142,36 @@ func Load(dir string) error {
 			availableTextOutputs = append(availableTextOutputs, out.Name)
 		}
 
-		textOutputName = chooseOutput(
+		textOutputName = chooseFloatOutput(textOutputs,
 			"text_embeds", "text_features", "txt_embeds", "embeddings", "pooler_output",
 		)
 		if textOutputName == "" {
-			textOutputName = chooseOutput(availableTextOutputs...)
+			textOutputName = chooseFloatOutput(textOutputs, availableTextOutputs...)
 		}
 		if textOutputName == "" {
 			loadErr = fmt.Errorf("text model exposes no float tensor outputs (available: %s)", strings.Join(availableTextOutputs, ", "))
 			return
 		}
 
-		textSess, loadErr = ort.NewDynamicAdvancedSessionWithONNXData(
-			textModel,
+		textSess, loadErr = ort.NewDynamicAdvancedSession(
+			textPath,
 			textInputNames,
 			[]string{textOutputName},
 			sessionOpts,
 		)
 	})
 	return loadErr
+}
+
+func chooseFloatOutput(outputs []ort.InputOutputInfo, names ...string) string {
+	for _, name := range names {
+		for _, output := range outputs {
+			if output.Name == name && output.OrtValueType == ort.ONNXTypeTensor && output.DataType == ort.TensorElementDataTypeFloat {
+				return output.Name
+			}
+		}
+	}
+	return ""
 }
 
 func sessionOptionsWithCUDA() (*ort.SessionOptions, func()) {
@@ -204,7 +186,7 @@ func sessionOptionsWithCUDA() (*ort.SessionOptions, func()) {
 			log.Printf("embeddings: warning: failed to release session options: %v", destroyErr)
 		}
 	}
-	concurrency, _ := strconv.Atoi(os.Getenv("MEDIA_CONCURRENCY"))
+	concurrency, _ := strconv.Atoi(os.Getenv("INFERENCE_CONCURRENCY"))
 	if concurrency < 1 {
 		concurrency = 2
 	}

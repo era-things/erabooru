@@ -12,6 +12,7 @@ import (
 	"era/booru/internal/api"
 	"era/booru/internal/config"
 	"era/booru/internal/db"
+	embed "era/booru/internal/embeddings"
 	"era/booru/internal/processing"
 	"era/booru/internal/queue"
 	"era/booru/internal/storage"
@@ -44,11 +45,13 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 	}
 
 	workers := river.NewWorkers()
-	limiter := processing.NewLimiter(cfg.MediaConcurrency)
-	river.AddWorker(workers, &mediaworker.ProcessWorker{Store: store, DB: pool, Limiter: limiter})
-	river.AddWorker(workers, &embedworker.ImageEmbedWorker{Store: store, DB: pool, Limiter: limiter})
+	inference := processing.NewInferenceLimiter(cfg.InferenceConcurrency)
+	river.AddWorker(workers, &mediaworker.ProcessWorker{Store: store, DB: pool})
+	if embed.Available() {
+		river.AddWorker(workers, &embedworker.ImageEmbedWorker{Store: store, DB: pool, Inference: inference})
+	}
 
-	riverClient, err := queue.NewClient(ctx, pool, workers, cfg.MediaConcurrency)
+	riverClient, err := queue.NewClient(ctx, pool, workers, cfg.IngestConcurrency, cfg.EmbeddingConcurrency)
 	if err != nil {
 		pool.Close()
 		return nil, err
@@ -63,7 +66,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 	r := gin.New()
 	r.Use(api.GinLogger(), gin.Recovery(), api.CORSMiddleware())
 	r.GET("/health", func(c *gin.Context) { c.Status(http.StatusNoContent) })
-	api.RegisterMediaRoutes(r, pool, store, riverClient, limiter)
+	api.RegisterMediaRoutes(r, pool, store, riverClient, inference)
 	api.RegisterTagRoutes(r, pool)
 	api.RegisterAdminRoutes(r, pool, store, riverClient)
 	api.RegisterSettingsRoutes(r, pool)

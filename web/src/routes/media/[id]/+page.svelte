@@ -3,8 +3,6 @@
 	import { goto } from '$app/navigation';
 	import TabNav from '$lib/components/TabNav.svelte';
 	import MediaGrid from '$lib/components/MediaGrid.svelte';
-	import PaginationControls from '$lib/components/PaginationControls.svelte';
-	import { PAGE_SIZE } from '$lib/constants';
 	import { fetchMediaDetail, deleteMedia, updateMediaTags } from '$lib/api';
 	import type { MediaDetail } from '$lib/types/media';
 	import { isFormatVideo } from '$lib/utils/media_utils';
@@ -14,13 +12,6 @@
 	let tagsInput = $state('');
 	let edit = $state(false);
 	let vectorSearchQuery = $state<string | null>(null);
-	let similarPage = $state(1);
-	const similarPageSize = Number(PAGE_SIZE);
-	let similarTotal = $state(0);
-	let lastVectorQuery = $state<string | null>(null);
-	const similarTotalPages = $derived(
-		Math.max(1, Math.ceil(Math.max(similarTotal, 0) / similarPageSize))
-	);
 	const hasVectorSearch = $derived(
 		typeof vectorSearchQuery === 'string' && vectorSearchQuery.length > 0
 	);
@@ -28,8 +19,10 @@
 	function applyMediaDetail(detail: MediaDetail) {
 		media = detail;
 		tagsInput = detail.tags.map((t) => t.name.replace(/ /g, '_')).join(' ');
-		const vector = detail.vectors?.find((entry) => entry.name === 'vision') ?? detail.vectors?.[0];
-		vectorSearchQuery = vector && vector.value.length ? `media:${vector.name}:${detail.id}` : null;
+		const embedding =
+			detail.embeddings.find((entry) => entry.space === 'vision' && entry.status === 'ready') ??
+			detail.embeddings.find((entry) => entry.status === 'ready');
+		vectorSearchQuery = embedding ? `media:${embedding.space}:${detail.id}` : null;
 	}
 
 	$effect(() => {
@@ -47,14 +40,6 @@
 		}
 
 		loadMedia();
-	});
-
-	$effect(() => {
-		if (vectorSearchQuery !== lastVectorQuery) {
-			lastVectorQuery = vectorSearchQuery;
-			similarPage = 1;
-			similarTotal = 0;
-		}
 	});
 
 	async function remove() {
@@ -90,17 +75,6 @@
 			year: 'numeric'
 		});
 	}
-
-	$effect(() => {
-		if (similarPage > similarTotalPages) {
-			similarPage = similarTotalPages;
-		}
-	});
-
-	function goToSimilar(pageNumber: number) {
-		if (pageNumber === similarPage) return;
-		similarPage = pageNumber;
-	}
 </script>
 
 <TabNav active="media" />
@@ -129,7 +103,7 @@
 					{/if}
 				</div>
 				<div class="flex flex-col gap-3">
-					<button class="rounded bg-blue-500 px-4 py-2 text-white" on:click={() => (edit = !edit)}
+					<button class="rounded bg-blue-500 px-4 py-2 text-white" onclick={() => (edit = !edit)}
 						>{edit ? 'Cancel' : 'Edit'} tags</button
 					>
 					{#if edit}
@@ -142,7 +116,7 @@
 							/>
 							<button
 								class="self-start rounded bg-green-500 px-4 py-2 text-white"
-								on:click={saveTags}>Save changes</button
+								onclick={saveTags}>Save changes</button
 							>
 						</div>
 					{/if}
@@ -177,7 +151,7 @@
 						</p>
 					{/each}
 				</div>
-				<button class="rounded bg-red-500 px-4 py-2 text-white" on:click={remove}>Delete</button>
+				<button class="rounded bg-red-500 px-4 py-2 text-white" onclick={remove}>Delete</button>
 			</div>
 		</div>
 
@@ -185,21 +159,8 @@
 			<h2 class="text-lg font-semibold">Similar media</h2>
 			{#if hasVectorSearch}
 				{#key vectorSearchQuery}
-					<MediaGrid
-						query=""
-						vectorQuery={vectorSearchQuery ?? undefined}
-						page={similarPage}
-						pageSize={similarPageSize}
-						bind:total={similarTotal}
-					/>
+					<MediaGrid query="" vectorQuery={vectorSearchQuery ?? undefined} />
 				{/key}
-				<div class="flex flex-wrap items-center justify-center gap-4">
-					<PaginationControls
-						currentPage={similarPage}
-						totalPages={similarTotalPages}
-						onSelectPage={goToSimilar}
-					/>
-				</div>
 			{:else}
 				<p class="text-sm text-gray-500">No similar media yet.</p>
 			{/if}
