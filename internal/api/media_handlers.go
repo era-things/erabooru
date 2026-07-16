@@ -2,67 +2,52 @@ package api
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"era/booru/ent"
-	"era/booru/ent/media"
-	"era/booru/ent/mediadate"
-	"era/booru/ent/mediavector"
-	"era/booru/ent/tag"
-	"era/booru/internal/config"
 	"era/booru/internal/db"
-	"era/booru/internal/minio"
+	embed "era/booru/internal/embeddings"
+	"era/booru/internal/processing"
 	"era/booru/internal/queue"
 	"era/booru/internal/search"
+	"era/booru/internal/storage"
 
 	pgvector "github.com/pgvector/pgvector-go"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
-	mc "github.com/minio/minio-go/v7"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 )
 
-func RegisterMediaRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config, queueClient *river.Client[pgx.Tx]) {
-	r.GET("/api/media", listMediaHandler(cfg, db, queueClient))
-	r.GET("/api/media/previews", listPreviewsHandler(cfg, db, queueClient))
-	r.GET("/api/media/:id", getMediaHandler(db, m, cfg))
-	r.POST("/api/media/similar", similarMediaHandler(db, cfg))
-	r.POST("/api/media/upload-url", uploadURLHandler(m, cfg))
-	r.POST("/api/media/:id/tags", updateMediaTagsHandler(db))
-	r.POST("/api/media/:id/dates", updateMediaDatesHandler(db))
-	r.POST("/api/media/:id/vectors", updateMediaVectorsHandler(db))
-	r.DELETE("/api/media/:id", deleteMediaHandler(db, m))
+func RegisterMediaRoutes(r *gin.Engine, pool *pgxpool.Pool, store *storage.Store, queueClient *river.Client[pgx.Tx], limiter processing.Limiter) {
+	r.GET("/api/media", listMediaHandler(pool, limiter))
+	r.GET("/api/media/previews", listPreviewsHandler(pool, limiter))
+	r.GET("/api/media/:id", getMediaHandler(pool))
+	r.POST("/api/media/similar", similarMediaHandler(pool))
+	r.POST("/api/media", uploadMediaHandler(store, queueClient))
+	r.POST("/api/media/:id/tags", updateMediaTagsHandler(pool))
+	r.POST("/api/media/:id/dates", updateMediaDatesHandler(pool))
+	r.POST("/api/media/:id/vectors", updateMediaVectorsHandler(pool))
+	r.DELETE("/api/media/:id", deleteMediaHandler(pool, store))
+	r.StaticFS("/files/originals", http.Dir(store.OriginalsDir()))
+	r.StaticFS("/files/previews", http.Dir(store.PreviewsDir()))
 }
 
-func bucketForFormat(format, videoBucket, pictureBucket string) string {
-	switch format {
-	case "mp4", "webm", "avi", "mkv":
-		return videoBucket
-	default:
-		return pictureBucket
-	}
+func listMediaHandler(pool *pgxpool.Pool, limiter processing.Limiter) gin.HandlerFunc {
+	return listCommon(false, pool, limiter)
 }
 
-func listMediaHandler(cfg *config.Config, db *ent.Client, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
-	return listCommon(cfg.MinioPublicPrefix, cfg.MinioBucket, cfg.MinioBucket, db, queueClient)
+func listPreviewsHandler(pool *pgxpool.Pool, limiter processing.Limiter) gin.HandlerFunc {
+	return listCommon(true, pool, limiter)
 }
 
-func listPreviewsHandler(cfg *config.Config, db *ent.Client, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
-	//for now, image previews are just original full-size images
-	return listCommon(cfg.MinioPublicPrefix, cfg.PreviewBucket, cfg.MinioBucket, db, queueClient)
-}
-
-func listCommon(minioPrefix string, videoBucket string, pictureBucket string, dbClient *ent.Client, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
+func listCommon(previews bool, pool *pgxpool.Pool, limiter processing.Limiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		rawQuery := strings.TrimSpace(c.Query("q"))
-		hasTextQuery := rawQuery != ""
 		vectorQueryParamRaw, hasVectorQueryParam := c.GetQuery("vector_q")
 		vectorQueryParam := strings.TrimSpace(vectorQueryParamRaw)
 		vectorFlag := c.Query("vector") == "1"
@@ -77,8 +62,7 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 		vectorSearch := vectorFlag || vectorQuery != ""
 		vectorQuery = strings.TrimSpace(vectorQuery)
 		tagQuery = strings.TrimSpace(tagQuery)
-		var filterOnlyIDs []string
-		if filterExpr, err := db.ActiveHiddenTagFilterValue(c.Request.Context(), dbClient); err != nil {
+		if filterExpr, err := db.ActiveHiddenTagFilterValue(c.Request.Context(), pool); err != nil {
 			log.Printf("load hidden tag filter: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
@@ -87,15 +71,6 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 				tagQuery = strings.TrimSpace(tagQuery + " " + filterExpr)
 			} else {
 				tagQuery = filterExpr
-			}
-			if !hasTextQuery {
-				ids, err := search.SearchMediaIDs(filterExpr)
-				if err != nil {
-					log.Printf("filter media ids: %v", err)
-					c.AbortWithStatus(http.StatusInternalServerError)
-					return
-				}
-				filterOnlyIDs = ids
 			}
 		}
 		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -112,113 +87,64 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 		offset := (page - 1) * pageSize
 
 		var (
-			items []*ent.Media
+			items []db.Media
 			total int
 		)
 
 		if vectorSearch && vectorQuery != "" {
-			var includeIDs []string
-			if tagQuery != "" {
-				includeIDs, err = search.SearchMediaIDs(tagQuery)
+			requestCtx := c.Request.Context()
+			vectorName := "vision"
+			excludeID := ""
+			var vec []float32
+
+			if strings.HasPrefix(vectorQuery, "media:") {
+				raw := strings.TrimSpace(strings.TrimPrefix(vectorQuery, "media:"))
+				desiredName := "vision"
+				if parts := strings.SplitN(raw, ":", 2); len(parts) == 2 {
+					if parts[0] != "" {
+						desiredName = parts[0]
+					}
+					raw = parts[1]
+				}
+				excludeID = strings.TrimSpace(raw)
+				if desiredName != "" {
+					vectorName = desiredName
+				}
+				if excludeID != "" {
+					loaded, actualName, loadErr := db.GetMediaVector(requestCtx, pool, excludeID, desiredName)
+					if loadErr != nil {
+						log.Printf("load media vector %s: %v", excludeID, loadErr)
+						c.AbortWithStatus(http.StatusInternalServerError)
+						return
+					}
+					if actualName != "" {
+						vectorName = actualName
+					}
+					vec = loaded
+				}
+			} else {
+				var embedErr error
+				vec, embedErr = generateTextEmbedding(requestCtx, limiter, vectorQuery)
+				if embedErr != nil {
+					log.Printf("text embedding %q failed: %v", vectorQuery, embedErr)
+					c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": embedErr.Error()})
+					return
+				}
+			}
+
+			if len(vec) == 0 {
+				items = []db.Media{}
+				total = 0
+			} else {
+				items, total, err = search.SimilarMediaByVector(requestCtx, pool, vectorName, vec, pageSize, offset, excludeID, tagQuery)
 				if err != nil {
-					log.Printf("filter media ids: %v", err)
+					log.Printf("vector media search: %v", err)
 					c.AbortWithStatus(http.StatusInternalServerError)
 					return
 				}
-				if len(includeIDs) == 0 {
-					items = []*ent.Media{}
-					total = 0
-				}
-			}
-			if tagQuery != "" && len(includeIDs) == 0 {
-				// No candidates left after tag filtering; skip vector ordering.
-			} else {
-				requestCtx := c.Request.Context()
-				vectorName := "vision"
-				excludeID := ""
-				var vec []float32
-
-				if strings.HasPrefix(vectorQuery, "media:") {
-					raw := strings.TrimSpace(strings.TrimPrefix(vectorQuery, "media:"))
-					desiredName := "vision"
-					if parts := strings.SplitN(raw, ":", 2); len(parts) == 2 {
-						if parts[0] != "" {
-							desiredName = parts[0]
-						}
-						raw = parts[1]
-					}
-					excludeID = strings.TrimSpace(raw)
-					if desiredName != "" {
-						vectorName = desiredName
-					}
-					if excludeID != "" {
-						loaded, actualName, loadErr := loadMediaVectorForSearch(requestCtx, dbClient, excludeID, desiredName)
-						if loadErr != nil {
-							log.Printf("load media vector %s: %v", excludeID, loadErr)
-							c.AbortWithStatus(http.StatusInternalServerError)
-							return
-						}
-						if actualName != "" {
-							vectorName = actualName
-						}
-						vec = loaded
-					}
-				} else {
-					if queueClient == nil {
-						c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "text embedding unavailable"})
-						return
-					}
-					ctx, cancel := context.WithTimeout(requestCtx, 15*time.Second)
-					defer cancel()
-
-					var embedErr error
-					vec, embedErr = queue.RequestTextEmbedding(ctx, queueClient, vectorQuery)
-					if embedErr != nil {
-						log.Printf("text embedding %q failed: %v", vectorQuery, embedErr)
-						status := http.StatusServiceUnavailable
-						if errors.Is(embedErr, context.DeadlineExceeded) || errors.Is(embedErr, context.Canceled) {
-							status = http.StatusGatewayTimeout
-						}
-						c.AbortWithStatusJSON(status, gin.H{"error": embedErr.Error()})
-						return
-					}
-				}
-
-				if len(vec) == 0 {
-					items = []*ent.Media{}
-					total = 0
-				} else {
-					items, total, err = search.SimilarMediaByVector(requestCtx, dbClient, vectorName, vec, pageSize, offset, excludeID, includeIDs)
-					if err != nil {
-						log.Printf("vector media search: %v", err)
-						c.AbortWithStatus(http.StatusInternalServerError)
-						return
-					}
-				}
-			}
-		} else if !hasTextQuery {
-			if tagQuery == "" {
-				items, total, err = db.ListMediaByDate(c.Request.Context(), dbClient, "upload", pageSize, offset, nil)
-			} else {
-				includeIDs := filterOnlyIDs
-				if includeIDs == nil {
-					var searchErr error
-					includeIDs, searchErr = search.SearchMediaIDs(tagQuery)
-					if searchErr != nil {
-						log.Printf("filter media ids: %v", searchErr)
-						c.AbortWithStatus(http.StatusInternalServerError)
-						return
-					}
-				}
-				items, total, err = db.ListMediaByDate(c.Request.Context(), dbClient, "upload", pageSize, offset, includeIDs)
-			}
-			if err != nil {
-				log.Printf("list media by date: %v", err)
-				c.AbortWithStatus(http.StatusInternalServerError)
-				return
 			}
 		} else {
-			items, total, err = search.SearchMedia(tagQuery, pageSize, offset)
+			items, total, err = search.SearchMedia(c.Request.Context(), pool, tagQuery, pageSize, offset)
 			if err != nil {
 				log.Printf("search media: %v", err)
 				c.AbortWithStatus(http.StatusInternalServerError)
@@ -228,11 +154,8 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 		out := make([]gin.H, len(items))
 
 		for i, mitem := range items {
-			format := mitem.Format
 			key := mitem.ID
-			bucket := bucketForFormat(format, videoBucket, pictureBucket)
-
-			url := fmt.Sprintf("%s/%s/%s", minioPrefix, bucket, key)
+			url := mediaURL(key, previews)
 
 			out[i] = gin.H{
 				"id":     mitem.ID,
@@ -246,73 +169,16 @@ func listCommon(minioPrefix string, videoBucket string, pictureBucket string, db
 	}
 }
 
-func loadMediaVectorForSearch(
-	ctx context.Context,
-	dbClient *ent.Client,
-	mediaID string,
-	desiredName string,
-) ([]float32, string, error) {
-	if mediaID == "" {
-		return nil, "", nil
-	}
-
-	records, err := dbClient.MediaVector.Query().
-		Where(mediavector.MediaIDEQ(mediaID)).
-		WithVector().
-		All(ctx)
+func generateTextEmbedding(ctx context.Context, limiter processing.Limiter, text string) ([]float32, error) {
+	release, err := limiter.Acquire(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	if len(records) == 0 {
-		return nil, "", nil
-	}
-
-	targetName := desiredName
-	if targetName == "" {
-		targetName = "vision"
-	}
-
-	var fallback []float32
-	fallbackName := ""
-
-	for _, record := range records {
-		if record == nil {
-			continue
-		}
-		data := record.Value.Slice()
-		if len(data) == 0 {
-			continue
-		}
-		name := ""
-		if record.Edges.Vector != nil {
-			name = record.Edges.Vector.Name
-		}
-		copyVec := make([]float32, len(data))
-		copy(copyVec, data)
-		if name == targetName {
-			if name == "" {
-				name = targetName
-			}
-			return copyVec, name, nil
-		}
-		if fallback == nil {
-			fallback = copyVec
-			fallbackName = name
-		}
-	}
-
-	if fallback != nil {
-		name := fallbackName
-		if name == "" {
-			name = targetName
-		}
-		return fallback, name, nil
-	}
-
-	return nil, "", nil
+	defer release()
+	return embed.TextEmbedding(text)
 }
 
-func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.HandlerFunc {
+func getMediaHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := idParam(c)
 		if !ok {
@@ -320,74 +186,25 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 			return
 		}
 
-		item, err := db.Media.Query().Where(media.IDEQ(id)).
-			WithTags().
-			WithDates(func(q *ent.DateQuery) {
-				q.WithMediaDates(func(mdq *ent.MediaDateQuery) {
-					mdq.Where(mediadate.MediaIDEQ(id))
-				})
-			}).
-			WithVectors(func(q *ent.VectorQuery) {
-				q.WithMediaVectors(func(mvq *ent.MediaVectorQuery) {
-					mvq.Where(mediavector.MediaIDEQ(id))
-				})
-			}).
-			Only(c.Request.Context())
+		item, err := db.GetMedia(c.Request.Context(), pool, id)
 		if err != nil {
 			log.Printf("get media %s: %v", id, err)
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
 
-		stat, err := m.StatObject(c.Request.Context(), m.Bucket, string(id), mc.StatObjectOptions{})
-		if err != nil {
-			log.Printf("stat object %s: %v", string(id), err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
+		url := mediaURL(id, false)
+		tags := make([]gin.H, len(item.Tags))
+		for i, tag := range item.Tags {
+			tags[i] = gin.H{"name": tag.Name, "count": tag.Count}
 		}
-
-		url := fmt.Sprintf("%s/%s/%s", cfg.MinioPublicPrefix, cfg.MinioBucket, string(id))
-		tags := make([]gin.H, len(item.Edges.Tags))
-		for i, t := range item.Edges.Tags {
-			count, err := db.Tag.Query().Where(tag.IDEQ(t.ID)).QueryMedia().Count(c.Request.Context())
-			if err != nil {
-				log.Printf("count tag %s: %v", t.Name, err)
-				count = 0
-			}
-			tags[i] = gin.H{"name": t.Name, "count": count}
+		dates := make([]gin.H, 0, len(item.Dates))
+		for _, date := range item.Dates {
+			dates = append(dates, gin.H{"name": date.Name, "value": date.Value})
 		}
-		dates := make([]gin.H, 0)
-		for _, d := range item.Edges.Dates {
-			if len(d.Edges.MediaDates) > 0 {
-				dates = append(dates, gin.H{
-					"name":  d.Name,
-					"value": d.Edges.MediaDates[0].Value,
-				})
-			}
-		}
-		vectors := make([]gin.H, 0)
-		if item.Edges.Vectors != nil {
-			for _, vec := range item.Edges.Vectors {
-				if vec == nil || vec.Edges.MediaVectors == nil {
-					continue
-				}
-				for _, mv := range vec.Edges.MediaVectors {
-					if mv == nil || mv.MediaID != item.ID {
-						continue
-					}
-					data := mv.Value.Slice()
-					if len(data) == 0 {
-						continue
-					}
-					copyVec := make([]float32, len(data))
-					copy(copyVec, data)
-					vectors = append(vectors, gin.H{
-						"name":  vec.Name,
-						"value": copyVec,
-					})
-					break
-				}
-			}
+		vectors := make([]gin.H, 0, len(item.Vectors))
+		for _, vector := range item.Vectors {
+			vectors = append(vectors, gin.H{"name": vector.Name, "value": vector.Value.Slice()})
 		}
 
 		c.JSON(http.StatusOK, gin.H{
@@ -397,7 +214,7 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 			"height":   item.Height,
 			"format":   item.Format,
 			"duration": item.Duration,
-			"size":     stat.Size,
+			"size":     item.Size,
 			"tags":     tags,
 			"dates":    dates,
 			"vectors":  vectors,
@@ -405,7 +222,7 @@ func getMediaHandler(db *ent.Client, m *minio.Client, cfg *config.Config) gin.Ha
 	}
 }
 
-func similarMediaHandler(dbClient *ent.Client, cfg *config.Config) gin.HandlerFunc {
+func similarMediaHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
 			Vector  []float32 `json:"vector"`
@@ -432,26 +249,15 @@ func similarMediaHandler(dbClient *ent.Client, cfg *config.Config) gin.HandlerFu
 			body.Limit = 50
 		}
 
-		includeIDs := []string(nil)
-		if filterExpr, filterErr := db.ActiveHiddenTagFilterValue(c.Request.Context(), dbClient); filterErr != nil {
+		filterExpr, filterErr := db.ActiveHiddenTagFilterValue(c.Request.Context(), pool)
+		if filterErr != nil {
 			log.Printf("load hidden tag filter: %v", filterErr)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
-		} else if filterExpr != "" {
-			ids, searchErr := search.SearchMediaIDs(filterExpr)
-			if searchErr != nil {
-				log.Printf("filter similar media ids: %v", searchErr)
-				c.AbortWithStatus(http.StatusInternalServerError)
-				return
-			}
-			if len(ids) == 0 {
-				c.JSON(http.StatusOK, gin.H{"media": []gin.H{}})
-				return
-			}
-			includeIDs = ids
 		}
+		filterExpr = strings.TrimSpace(filterExpr)
 
-		results, _, err := search.SimilarMediaByVector(c.Request.Context(), dbClient, body.Name, body.Vector, body.Limit, 0, body.Exclude, includeIDs)
+		results, _, err := search.SimilarMediaByVector(c.Request.Context(), pool, body.Name, body.Vector, body.Limit, 0, body.Exclude, filterExpr)
 		if err != nil {
 			log.Printf("similar media search: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -460,8 +266,7 @@ func similarMediaHandler(dbClient *ent.Client, cfg *config.Config) gin.HandlerFu
 
 		out := make([]gin.H, 0, len(results))
 		for _, item := range results {
-			bucket := bucketForFormat(item.Format, cfg.PreviewBucket, cfg.MinioBucket)
-			url := fmt.Sprintf("%s/%s/%s", cfg.MinioPublicPrefix, bucket, item.ID)
+			url := mediaURL(item.ID, true)
 			out = append(out, gin.H{
 				"id":     item.ID,
 				"url":    url,
@@ -475,28 +280,32 @@ func similarMediaHandler(dbClient *ent.Client, cfg *config.Config) gin.HandlerFu
 	}
 }
 
-func uploadURLHandler(m *minio.Client, cfg *config.Config) gin.HandlerFunc {
+func uploadMediaHandler(store *storage.Store, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		type req struct {
-			Filename string `json:"filename"`
-		}
-		var body req
-		if err := c.BindJSON(&body); err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
-			return
-		}
-
-		url, err := m.PresignedPut(c.Request.Context(), cfg, body.Filename, time.Minute*15)
+		id, existed, err := store.PutHashedOriginal(c.Request.Context(), c.Request.Body)
 		if err != nil {
-			log.Printf("presign: %v", err)
+			log.Printf("store upload %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"url": url, "object": body.Filename})
+		args := queue.ProcessArgs{Key: id, ContentType: c.GetHeader("Content-Type")}
+		if err := queue.Enqueue(c.Request.Context(), queueClient, args); err != nil {
+			if !existed {
+				_ = store.Remove(id)
+			}
+			log.Printf("enqueue process %s: %v", id, err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		status := http.StatusCreated
+		if existed {
+			status = http.StatusOK
+		}
+		c.JSON(status, gin.H{"id": id, "existed": existed})
 	}
 }
 
-func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
+func updateMediaTagsHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
 			Tags []string `json:"tags"`
@@ -508,7 +317,7 @@ func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
 
 		clean := normalizeTags(body.Tags)
 
-		if err := db.SetMediaTags(c.Request.Context(), dbClient, id, clean); err != nil {
+		if err := db.SetMediaTags(c.Request.Context(), pool, id, clean); err != nil {
 			log.Printf("update media tags %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
@@ -517,7 +326,7 @@ func updateMediaTagsHandler(dbClient *ent.Client) gin.HandlerFunc {
 	}
 }
 
-func updateMediaDatesHandler(dbClient *ent.Client) gin.HandlerFunc {
+func updateMediaDatesHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
 			Dates []struct {
@@ -541,7 +350,7 @@ func updateMediaDatesHandler(dbClient *ent.Client) gin.HandlerFunc {
 			vals = append(vals, db.DateValue{Name: d.Name, Value: t})
 		}
 
-		if err := db.SetMediaDates(c.Request.Context(), dbClient, id, vals); err != nil {
+		if err := db.SetMediaDates(c.Request.Context(), pool, id, vals); err != nil {
 			log.Printf("update media dates %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
@@ -550,7 +359,7 @@ func updateMediaDatesHandler(dbClient *ent.Client) gin.HandlerFunc {
 	}
 }
 
-func updateMediaVectorsHandler(dbClient *ent.Client) gin.HandlerFunc {
+func updateMediaVectorsHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
 			Vectors []struct {
@@ -568,7 +377,7 @@ func updateMediaVectorsHandler(dbClient *ent.Client) gin.HandlerFunc {
 			vals = append(vals, db.VectorValue{Name: v.Name, Value: pgvector.NewVector(v.Value)})
 		}
 
-		if err := db.SetMediaVectors(c.Request.Context(), dbClient, id, vals); err != nil {
+		if err := db.SetMediaVectors(c.Request.Context(), pool, id, vals); err != nil {
 			log.Printf("update media vectors %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
@@ -577,25 +386,29 @@ func updateMediaVectorsHandler(dbClient *ent.Client) gin.HandlerFunc {
 	}
 }
 
-func deleteMediaHandler(db *ent.Client, m *minio.Client) gin.HandlerFunc {
+func deleteMediaHandler(pool *pgxpool.Pool, store *storage.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := idParam(c)
 		if !ok {
 			return
 		}
 
-		if err := m.RemoveObject(c.Request.Context(), m.Bucket, string(id), mc.RemoveObjectOptions{}); err != nil {
-			log.Printf("remove object %s: %v", string(id), err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-
-		if err := db.Media.DeleteOneID(id).Exec(c.Request.Context()); err != nil {
+		if err := db.DeleteMedia(c.Request.Context(), pool, id); err != nil {
 			log.Printf("delete media %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
+		if err := store.Remove(id); err != nil {
+			log.Printf("cleanup media files %s: %v", id, err)
+		}
 
 		c.Status(http.StatusOK)
 	}
+}
+
+func mediaURL(id string, preview bool) string {
+	if preview {
+		return "/files/previews/" + id
+	}
+	return "/files/originals/" + id
 }

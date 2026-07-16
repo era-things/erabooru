@@ -3,12 +3,9 @@
         reverse_proxy app:8080
     }
 
-    handle_path /minio/* {
+    handle /files/* {
         header Cache-Control "public, max-age=604800, immutable"
-        reverse_proxy minio:9000 {
-            header_up Host {http.reverse_proxy.upstream.hostport}
-            flush_interval -1
-        }
+        reverse_proxy app:8080
     }
 
     handle /* {

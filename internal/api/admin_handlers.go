@@ -2,120 +2,88 @@ package api
 
 import (
 	"compress/gzip"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"strings"
+	"os"
 	"time"
 
-	"era/booru/ent"
-	"era/booru/ent/date"
-	"era/booru/ent/media"
-	"era/booru/ent/mediadate"
-	"era/booru/ent/tag"
-	"era/booru/internal/config"
-	db2 "era/booru/internal/db"
-	minio "era/booru/internal/minio"
+	"era/booru/internal/db"
 	"era/booru/internal/queue"
-	"era/booru/internal/search"
+	"era/booru/internal/storage"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	mc "github.com/minio/minio-go/v7"
 	"github.com/riverqueue/river"
-	"github.com/riverqueue/river/riverdriver/riverpgxv5"
-	"github.com/riverqueue/river/rivermigrate"
 )
 
 // RegisterAdminRoutes registers admin-only endpoints.
-func RegisterAdminRoutes(r *gin.Engine, db *ent.Client, m *minio.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx]) {
-	r.POST("/api/admin/regenerate", regenerateHandler(db, m, cfg, riverClient))
-	r.GET("/api/admin/export-tags", exportTagsHandler(db))
-	r.POST("/api/admin/import-tags", importTagsHandler(db))
+func RegisterAdminRoutes(r *gin.Engine, pool *pgxpool.Pool, store *storage.Store, riverClient *river.Client[pgx.Tx]) {
+	r.POST("/api/admin/regenerate", regenerateHandler(pool, store, riverClient))
+	r.GET("/api/admin/export-tags", exportTagsHandler(pool))
+	r.POST("/api/admin/import-tags", importTagsHandler(pool))
 }
 
-func regenerateHandler(db *ent.Client, m *minio.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx]) gin.HandlerFunc {
+func regenerateHandler(pool *pgxpool.Pool, store *storage.Store, riverClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 
-		if err := db.Schema.Create(ctx); err != nil {
-			log.Printf("schema create: %v", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-
-		if err := recreateRiverTables(ctx, cfg.PostgresDSN); err != nil {
-			log.Printf("river tables recreate: %v", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-
-		if err := search.Rebuild(ctx, db, cfg.BlevePath); err != nil {
-			log.Printf("regenerate index: %v", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-
-		// Iterate over all objects in the bucket and enqueue processing jobs
 		enqueuedCount := 0
-		for obj := range m.ListObjects(ctx, m.Bucket, mc.ListObjectsOptions{Recursive: true}) {
-			if obj.Err != nil {
-				log.Printf("list object %s: %v", obj.Key, obj.Err)
-				continue
-			}
-
-			exists, err := db.Media.Query().Where(media.IDEQ(obj.Key)).Exist(ctx)
+		err := store.WalkOriginals(func(id string) error {
+			exists, err := db.MediaExists(ctx, pool, id)
 			if err != nil {
-				log.Printf("db check %s: %v", obj.Key, err)
-				continue
+				return fmt.Errorf("check media %s: %w", id, err)
 			}
 			if exists {
-				continue
+				return nil
 			}
 
-			info, err := m.StatObject(ctx, m.Bucket, obj.Key, mc.StatObjectOptions{})
+			file, err := os.Open(store.OriginalPath(id))
 			if err != nil {
-				log.Printf("stat object %s: %v", obj.Key, err)
-				continue
+				return err
 			}
+			var header [512]byte
+			n, readErr := file.Read(header[:])
+			_ = file.Close()
+			if readErr != nil && readErr != io.EOF {
+				return readErr
+			}
+			contentType := http.DetectContentType(header[:n])
 
-			// Enqueue processing job instead of processing directly
 			_, err = riverClient.Insert(ctx, queue.ProcessArgs{
-				Bucket:      m.Bucket,
-				Key:         obj.Key,
-				ContentType: info.ContentType,
+				Key:         id,
+				ContentType: contentType,
 			}, &river.InsertOpts{
-				Queue: "process", // Send to process queue for media worker
+				Queue: "process",
 			})
 			if err != nil {
-				log.Printf("enqueue process job for %s: %v", obj.Key, err)
-				continue
+				return fmt.Errorf("enqueue media %s: %w", id, err)
 			}
 
 			enqueuedCount++
-			log.Printf("enqueued processing job for %s", obj.Key)
+			return nil
+		})
+		if err != nil {
+			log.Printf("repair scan: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
 		}
 
-		log.Printf("regenerate completed, enqueued %d processing jobs", enqueuedCount)
+		log.Printf("repair scan completed, enqueued %d processing jobs", enqueuedCount)
 		c.JSON(http.StatusOK, gin.H{
-			"message":       "regenerate completed",
+			"message":       "repair scan completed",
 			"jobs_enqueued": enqueuedCount,
 		})
 	}
 }
 
-func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
+func exportTagsHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		// Remove the HasTags() filter to export all media
-		items, err := db.Media.Query().
-			WithTags().
-			WithDates(func(q *ent.DateQuery) { q.WithMediaDates() }).
-			All(ctx)
+		items, err := db.ListMedia(ctx, pool)
 		if err != nil {
 			log.Printf("export tags: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -138,23 +106,21 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 			return
 		}
 
-		for _, m := range items {
-			tags := make([]string, len(m.Edges.Tags))
-			for i, t := range m.Edges.Tags {
-				tags[i] = t.Name
+		for _, media := range items {
+			tags := make([]string, len(media.Tags))
+			for i, tag := range media.Tags {
+				tags[i] = tag.Name
 			}
 
 			dates := make([]struct {
 				Name  string `json:"name"`
 				Value string `json:"value"`
 			}, 0)
-			for _, d := range m.Edges.Dates {
-				if len(d.Edges.MediaDates) > 0 {
-					dates = append(dates, struct {
-						Name  string `json:"name"`
-						Value string `json:"value"`
-					}{Name: d.Name, Value: d.Edges.MediaDates[0].Value.Format("2006-01-02")})
-				}
+			for _, date := range media.Dates {
+				dates = append(dates, struct {
+					Name  string `json:"name"`
+					Value string `json:"value"`
+				}{Name: date.Name, Value: date.Value.Format("2006-01-02")})
 			}
 
 			if err := enc.Encode(struct {
@@ -164,15 +130,15 @@ func exportTagsHandler(db *ent.Client) gin.HandlerFunc {
 					Name  string `json:"name"`
 					Value string `json:"value"`
 				} `json:"dates"`
-			}{ID: m.ID, Tags: tags, Dates: dates}); err != nil {
-				log.Printf("encode record %s: %v", m.ID, err)
+			}{ID: media.ID, Tags: tags, Dates: dates}); err != nil {
+				log.Printf("encode record %s: %v", media.ID, err)
 				return
 			}
 		}
 	}
 }
 
-func importTagsHandler(db *ent.Client) gin.HandlerFunc {
+func importTagsHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 
@@ -214,125 +180,35 @@ func importTagsHandler(db *ent.Client) gin.HandlerFunc {
 				return
 			}
 
-			// Don't skip - process every record to potentially remove "tagme"
-			mobj, err := db.Media.Query().Where(media.IDEQ(item.ID)).
-				WithTags().
-				WithDates(func(q *ent.DateQuery) { q.WithMediaDates() }).
-				Only(ctx)
-			if ent.IsNotFound(err) {
-				continue // Skip if media doesn't exist
-			}
+			exists, err := db.MediaExists(ctx, pool, item.ID)
 			if err != nil {
-				log.Printf("query media %s: %v", item.ID, err)
+				log.Printf("check media %s: %v", item.ID, err)
 				c.AbortWithStatus(http.StatusInternalServerError)
 				return
 			}
-
-			// 1) Always look for existing "tagme" tag and remove it if it exists
-			var tagmeID *int
-			for _, t := range mobj.Edges.Tags {
-				if t.Name == "tagme" {
-					tagmeID = &t.ID
-					break
-				}
+			if !exists {
+				continue
 			}
-
-			// 2) Handle incoming dates
+			dates := make([]db.DateValue, 0, len(item.Dates))
 			for _, d := range item.Dates {
-				t, err := time.Parse("2006-01-02", d.Value)
+				value, err := time.Parse("2006-01-02", d.Value)
 				if err != nil {
 					continue
 				}
-				dt, err := db2.FindOrCreateDate(ctx, db, d.Name)
-				if err != nil {
-					log.Printf("date lookup %s: %v", d.Name, err)
-					continue
-				}
-				md, err := db.MediaDate.Query().Where(mediadate.HasMediaWith(media.IDEQ(item.ID))).
-					Where(mediadate.HasDateWith(date.IDEQ(dt.ID))).Only(ctx)
-				if ent.IsNotFound(err) {
-					_, err = db.MediaDate.Create().SetMediaID(item.ID).SetDateID(dt.ID).SetValue(t).Save(ctx)
-				} else if err == nil {
-					_, err = md.Update().SetValue(t).Save(ctx)
-				}
-				if err != nil {
-					log.Printf("update date %s for %s: %v", d.Name, item.ID, err)
-				}
+				dates = append(dates, db.DateValue{Name: d.Name, Value: value})
 			}
-
-			// 3) Parse existing tags and merge with incoming tags
-			var toAdd []int
-			if len(item.Tags) > 0 {
-				existing := make(map[string]struct{}, len(mobj.Edges.Tags))
-				for _, t := range mobj.Edges.Tags {
-					existing[t.Name] = struct{}{}
-				}
-
-				// Find new tags to add
-				for _, name := range normalizeTags(item.Tags) {
-					if _, ok := existing[name]; ok {
-						continue // Tag already exists
-					}
-					tg, err := db.Tag.Query().Where(tag.NameEQ(name)).Only(ctx)
-					if ent.IsNotFound(err) {
-						tg, err = db.Tag.Create().SetName(name).SetType(tag.TypeUserTag).Save(ctx)
-					}
-					if err != nil {
-						log.Printf("lookup tag %s: %v", name, err)
-						c.AbortWithStatus(http.StatusInternalServerError)
-						return
-					}
-					toAdd = append(toAdd, tg.ID)
-				}
+			if err := db.SetMediaTags(ctx, pool, item.ID, normalizeTags(item.Tags)); err != nil {
+				log.Printf("import tags for %s: %v", item.ID, err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
 			}
-
-			// Update media with changes
-			upd := db.Media.UpdateOneID(item.ID)
-			var changes []string
-
-			// Always remove "tagme" tag if it exists
-			if tagmeID != nil {
-				upd = upd.RemoveTagIDs(*tagmeID)
-				changes = append(changes, "removed 'tagme' tag")
-			}
-
-			// Add new tags
-			if len(toAdd) > 0 {
-				upd = upd.AddTagIDs(toAdd...)
-				changes = append(changes, fmt.Sprintf("added %d tags", len(toAdd)))
-			}
-
-			// Update date if we should (import date is earlier)
-			// Dates handled separately above
-
-			// Only save if we have something to update
-			if len(changes) > 0 {
-				if _, err := upd.Save(ctx); err != nil {
-					log.Printf("update media %s: %v", item.ID, err)
-					c.AbortWithStatus(http.StatusInternalServerError)
-					return
-				}
-
-				log.Printf("updated media %s: %s", item.ID, strings.Join(changes, ", "))
+			if err := db.SetMediaDates(ctx, pool, item.ID, dates); err != nil {
+				log.Printf("import dates for %s: %v", item.ID, err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
 			}
 		}
 
 		c.Status(http.StatusOK)
 	}
-}
-
-func recreateRiverTables(ctx context.Context, dsn string) error {
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-
-	migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
-	if err != nil {
-		return err
-	}
-
-	_, err = migrator.Migrate(ctx, rivermigrate.DirectionUp, nil)
-	return err
 }

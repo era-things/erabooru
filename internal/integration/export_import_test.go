@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/testcontainers/testcontainers-go"
-	tcminio "github.com/testcontainers/testcontainers-go/modules/minio"
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	common "era/booru/internal/integration/common"
@@ -31,7 +30,7 @@ func TestExportImportCycle(t *testing.T) {
 	ctx := context.Background()
 
 	req := testcontainers.ContainerRequest{
-		Image:        "postgres:16-alpine",
+		Image:        "pgvector/pgvector:pg16",
 		ExposedPorts: []string{"5432/tcp"},
 		Env: map[string]string{
 			"POSTGRES_DB":       "booru",
@@ -60,21 +59,8 @@ func TestExportImportCycle(t *testing.T) {
 	}
 	dsn := fmt.Sprintf("postgres://booru:booru@%s:%s/booru?sslmode=disable", host, port.Port())
 
-	mC, err := tcminio.Run(ctx, "minio/minio:RELEASE.2024-01-16T16-07-38Z",
-		tcminio.WithUsername("minioadmin"), tcminio.WithPassword("minio123"))
-	if err != nil {
-		t.Fatalf("start minio: %v", err)
-	}
-	defer mC.Terminate(ctx)
-
 	common.WaitForPostgres(t, dsn, 30*time.Second)
-
-	minioAddr, err := mC.ConnectionString(ctx)
-	if err != nil {
-		t.Fatalf("minio addr: %v", err)
-	}
-
-	cfg := common.SetupEnv(t, dsn, minioAddr)
+	cfg := common.SetupEnv(t, dsn)
 
 	srv, err := server.New(ctx, cfg)
 	if err != nil {
@@ -82,14 +68,10 @@ func TestExportImportCycle(t *testing.T) {
 	}
 	defer srv.Close()
 
-	// Start the media worker
-	mediaWorker := common.StartMediaWorker(t, ctx, cfg)
-	defer mediaWorker.Stop()
-
 	ts := httptest.NewServer(srv.Router)
 	defer ts.Close()
 	client := ts.Client()
-	ec := common.NewClient(t, srv.Minio, client, ts.URL)
+	ec := common.NewClient(t, client, ts.URL)
 
 	img1Hash := ec.UploadAndWait(ctx, filepath.Join("testdata", "img1.png"))
 	img2Hash := ec.UploadAndWait(ctx, filepath.Join("testdata", "img2.png"))
@@ -115,7 +97,6 @@ func TestExportImportCycle(t *testing.T) {
 	t.Logf("First export has %d items", len(items1))
 
 	srv.Close()
-	mediaWorker.Stop()
 	ts.Close()
 
 	// purge db via container
@@ -134,14 +115,11 @@ func TestExportImportCycle(t *testing.T) {
 	}
 	defer srv.Close()
 
-	mediaWorker = common.StartMediaWorker(t, ctx, cfg)
-	defer mediaWorker.Stop()
-
 	// Create new HTTP test server
 	ts = httptest.NewServer(srv.Router)
 	defer ts.Close()
 	client = ts.Client()
-	ec = common.NewClient(t, srv.Minio, client, ts.URL)
+	ec = common.NewClient(t, client, ts.URL)
 
 	// Now regenerate should work without River errors
 	resp, err = client.Post(ts.URL+"/api/admin/regenerate", "application/json", nil)

@@ -11,21 +11,20 @@ import (
 	"math"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
-	"era/booru/ent"
 	"era/booru/internal/config"
 	"era/booru/internal/db"
 	embed "era/booru/internal/embeddings"
-	"era/booru/internal/minio"
+	"era/booru/internal/processing"
 	"era/booru/internal/queue"
+	"era/booru/internal/storage"
 
-	mc "github.com/minio/minio-go/v7"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	pgvector "github.com/pgvector/pgvector-go"
 	"github.com/riverqueue/river"
 )
@@ -33,20 +32,21 @@ import (
 // ImageEmbedWorker generates vision embeddings for images.
 type ImageEmbedWorker struct {
 	river.WorkerDefaults[queue.EmbedArgs]
-	Minio *minio.Client
-	DB    *ent.Client
-	Cfg   *config.Config
+	Store   *storage.Store
+	DB      *pgxpool.Pool
+	Limiter processing.Limiter
 }
 
 func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedArgs]) error {
-	log.Printf("Generating embedding for bucket %s, key %s", job.Args.Bucket, job.Args.Key)
-	bucket := job.Args.Bucket
-	if bucket == "" {
-		bucket = w.Minio.Bucket
+	release, err := w.Limiter.Acquire(ctx)
+	if err != nil {
+		return err
 	}
+	defer release()
+	log.Printf("Generating embedding for key %s", job.Args.Key)
 
-	media, err := w.DB.Media.Get(ctx, job.Args.Key)
-	if ent.IsNotFound(err) {
+	media, err := db.GetMedia(ctx, w.DB, job.Args.Key)
+	if errors.Is(err, pgx.ErrNoRows) {
 		log.Printf("Media metadata missing for %s: %v", job.Args.Key, err)
 		return river.JobCancel(fmt.Errorf("media %s not found: %w", job.Args.Key, err))
 	}
@@ -59,23 +59,16 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 
 	var vec []float32
 	if config.SupportedVideoFormats[format] {
-		vec, err = w.videoEmbedding(ctx, bucket, job.Args.Key, media)
+		vec, err = w.videoEmbedding(ctx, job.Args.Key, media)
 		if err != nil {
 			log.Printf("Failed to generate video embedding: %v", err)
 			return classifyEmbeddingError(err, job.Args.Key)
 		}
 	} else {
-		obj, err := w.Minio.GetObject(ctx, bucket, job.Args.Key, mc.GetObjectOptions{})
+		data, err := os.ReadFile(w.Store.OriginalPath(job.Args.Key))
 		if err != nil {
-			log.Printf("Failed to get object from MinIO: %v", err)
+			log.Printf("Failed to read original: %v", err)
 			return classifyObjectError(err, job.Args.Key)
-		}
-		defer obj.Close()
-
-		data, err := io.ReadAll(obj)
-		if err != nil {
-			log.Printf("Failed to read image object: %v", err)
-			return err
 		}
 
 		vec, err = embed.VisionEmbedding(data)
@@ -91,11 +84,7 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 		return err
 	}
 
-	if err := queue.WorkerEnqueue(ctx, queue.IndexArgs{ID: job.Args.Key}); err != nil {
-		log.Printf("Failed to enqueue reindex for %s: %v", job.Args.Key, err)
-	}
-
-	logEmbedQueueDepth(ctx, fmt.Sprintf("Successfully generated and saved embedding for key %s (job %d)", job.Args.Key, job.ID))
+	log.Printf("Successfully generated and saved embedding for key %s (job %d)", job.Args.Key, job.ID)
 	return nil
 }
 
@@ -103,12 +92,8 @@ func classifyObjectError(err error, key string) error {
 	if err == nil {
 		return nil
 	}
-	var resp mc.ErrorResponse
-	if errors.As(err, &resp) {
-		switch resp.Code {
-		case "NoSuchKey":
-			return river.JobCancel(fmt.Errorf("object %s missing: %w", key, err))
-		}
+	if os.IsNotExist(err) {
+		return river.JobCancel(fmt.Errorf("object %s missing: %w", key, err))
 	}
 	return err
 }
@@ -146,11 +131,7 @@ func isFatalEmbeddingError(err error) bool {
 	return false
 }
 
-func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key string, media *ent.Media) (vec []float32, retErr error) {
-	if w.Cfg == nil {
-		return nil, fmt.Errorf("missing worker configuration")
-	}
-
+func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media db.Media) ([]float32, error) {
 	startTime := time.Now()
 
 	duration := 0
@@ -163,92 +144,29 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 		return nil, fmt.Errorf("invalid sample count computed for video %s", key)
 	}
 
-	src, cleanup, err := w.cachedVideoPath(ctx, bucket, key)
-	if err != nil {
+	src := w.Store.OriginalPath(key)
+	if _, err := os.Stat(src); err != nil {
 		return nil, err
 	}
-	defer cleanup()
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	vectors := make([][]float32, 0, samples)
-	var mu sync.Mutex
-	var fatalErr error
-	var fatalMu sync.Mutex
-
-	concurrency := runtime.NumCPU()
-	if concurrency <= 0 {
-		concurrency = 1
-	}
-	if concurrency > samples {
-		concurrency = samples
-	}
-	if concurrency == 0 {
-		concurrency = 1
-	}
-
+	frames := make([][]byte, 0, samples)
 	frameCh, waitStream, err := streamVideoFrames(ctx, src, duration, samples)
 	if err != nil {
 		return nil, err
 	}
 
-	defer func() {
-		if err := waitStream(); err != nil {
-			if retErr == nil {
-				retErr = err
-			}
-			vec = nil
-		}
-	}()
-
-	sem := make(chan struct{}, concurrency)
-	var wg sync.WaitGroup
-	processed := 0
-
 	for frame := range frameCh {
-		fatalMu.Lock()
-		if fatalErr != nil {
-			fatalMu.Unlock()
-			continue
-		}
-		fatalMu.Unlock()
-
-		data := frame
-		idx := processed
-		processed++
-
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(idx int, frame []byte) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			vec, err := embed.VisionEmbeddingRGB24(frame)
-			if err != nil {
-				fatalMu.Lock()
-				if fatalErr == nil {
-					fatalErr = fmt.Errorf("failed to embed frame %d: %w", idx, err)
-					cancel()
-				}
-				fatalMu.Unlock()
-				return
-			}
-
-			mu.Lock()
-			vectors = append(vectors, vec)
-			mu.Unlock()
-		}(idx, data)
+		frames = append(frames, frame)
 	}
-
-	wg.Wait()
-
-	if fatalErr != nil {
-		return nil, fatalErr
+	if err := waitStream(); err != nil {
+		return nil, err
 	}
-
-	if len(vectors) == 0 {
+	if len(frames) == 0 {
 		return nil, fmt.Errorf("no frames extracted for video %s", key)
+	}
+	vectors, err := embed.VisionEmbeddingsRGB24(frames)
+	if err != nil {
+		return nil, err
 	}
 
 	avg, err := averageVectors(vectors)
@@ -259,8 +177,7 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, bucket, key strin
 	elapsed := time.Since(startTime).Milliseconds()
 	log.Printf("Video embedding for %s: processed %d frames in %d ms", key, len(vectors), elapsed)
 
-	vec = avg
-	return vec, nil
+	return avg, nil
 }
 
 func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples int) (<-chan []byte, func() error, error) {
@@ -405,102 +322,16 @@ func readRawVideoFrames(r *bufio.Reader, frameSize, samples int, out chan<- []by
 	return nil
 }
 
-func (w *ImageEmbedWorker) cachedVideoPath(ctx context.Context, bucket, key string) (string, func(), error) {
-	obj, err := w.Minio.GetObject(ctx, bucket, key, mc.GetObjectOptions{})
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to fetch video object: %w", err)
-	}
-	defer func() {
-		if obj != nil {
-			obj.Close()
-		}
-	}()
-
-	tmp, err := os.CreateTemp("", "video-embed-*.bin")
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to create temp file: %w", err)
-	}
-
-	name := tmp.Name()
-
-	if _, err := io.Copy(tmp, obj); err != nil {
-		tmp.Close()
-		os.Remove(name)
-		return "", nil, fmt.Errorf("failed to cache video locally: %w", err)
-	}
-
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		os.Remove(name)
-		return "", nil, fmt.Errorf("failed to flush video cache: %w", err)
-	}
-
-	if err := tmp.Close(); err != nil {
-		os.Remove(name)
-		return "", nil, fmt.Errorf("failed to close cached video: %w", err)
-	}
-
-	if err := obj.Close(); err != nil {
-		os.Remove(name)
-		return "", nil, fmt.Errorf("failed to close video object: %w", err)
-	}
-	obj = nil
-
-	cleanup := func() {
-		os.Remove(name)
-	}
-
-	return name, cleanup, nil
-}
-
-func formatTimestamp(seconds float64) string {
-	if seconds < 0 {
-		seconds = 0
-	}
-	totalMillis := math.Floor(seconds * 1000)
-	if totalMillis < 0 {
-		totalMillis = 0
-	}
-	totalSeconds := int(totalMillis) / 1000
-	ms := int(totalMillis) % 1000
-	h := totalSeconds / 3600
-	m := (totalSeconds % 3600) / 60
-	s := totalSeconds % 60
-	return fmt.Sprintf("%02d:%02d:%02d.%03d", h, m, s, ms)
-}
-
-func sampleTimestamp(durationSeconds int, sampleCount, index int) float64 {
-	if durationSeconds <= 0 {
-		return 0
-	}
-	if sampleCount <= 0 {
-		return 0
-	}
-
-	span := float64(durationSeconds)
-	if sampleCount == 1 {
-		return span / 2
-	}
-
-	step := span / float64(sampleCount)
-	ts := (float64(index) + 0.5) * step
-	if ts >= span {
-		ts = math.Nextafter(span, 0)
-	}
-	if ts < 0 {
-		ts = 0
-	}
-	return ts
-}
-
 func videoSampleCount(durationSeconds int) int {
 	switch {
 	case durationSeconds < 5:
 		return 5
 	case durationSeconds < 60:
-		return durationSeconds
+		return 8
+	case durationSeconds < 300:
+		return 12
 	default:
-		return 60
+		return 16
 	}
 }
 

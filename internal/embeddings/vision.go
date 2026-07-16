@@ -93,6 +93,24 @@ func VisionEmbeddingRGB24(buf []byte) ([]float32, error) {
 	return nil, lastErr
 }
 
+// VisionEmbeddingsRGB24 embeds a batch of equally sized RGB24 frames in one
+// ONNX invocation.
+func VisionEmbeddingsRGB24(frames [][]byte) ([][]float32, error) {
+	if len(frames) == 0 {
+		return nil, fmt.Errorf("vision embedding batch is empty")
+	}
+	S := InputSpatialSize()
+	pixels := make([]float32, 0, len(frames)*3*S*S)
+	for _, frame := range frames {
+		normalized, err := normalizeRGB24(frame, S)
+		if err != nil {
+			return nil, err
+		}
+		pixels = append(pixels, normalized...)
+	}
+	return runVisionModelBatch(pixels, S, len(frames))
+}
+
 func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
 	if S <= 0 {
 		return nil, fmt.Errorf("invalid vision input size %d", S)
@@ -240,14 +258,22 @@ func normalizeRGB24(raw []byte, S int) ([]float32, error) {
 }
 
 func runVisionModel(pix []float32, S int) ([]float32, error) {
+	vectors, err := runVisionModelBatch(pix, S, 1)
+	if err != nil {
+		return nil, err
+	}
+	return vectors[0], nil
+}
+
+func runVisionModelBatch(pix []float32, S, batch int) ([][]float32, error) {
 	if S <= 0 {
 		return nil, fmt.Errorf("invalid vision input size %d", S)
 	}
-	if len(pix) != 3*S*S {
-		return nil, fmt.Errorf("unexpected tensor length %d (expected %d)", len(pix), 3*S*S)
+	if batch <= 0 || len(pix) != batch*3*S*S {
+		return nil, fmt.Errorf("unexpected tensor length %d for batch %d", len(pix), batch)
 	}
 
-	in, err := ort.NewTensor[float32](ort.NewShape(1, 3, int64(S), int64(S)), pix)
+	in, err := ort.NewTensor[float32](ort.NewShape(int64(batch), 3, int64(S), int64(S)), pix)
 	if err != nil {
 		return nil, err
 	}
@@ -278,26 +304,23 @@ func runVisionModel(pix []float32, S int) ([]float32, error) {
 	if len(shape) < 2 {
 		return nil, fmt.Errorf("unexpected embedding rank %d", len(shape))
 	}
-	if shape[0] != 1 {
+	if int(shape[0]) != batch {
 		return nil, fmt.Errorf("unexpected batch dimension %d", shape[0])
 	}
 
-	var vec []float32
-	switch len(shape) {
-	case 2:
-		dim := int(shape[1])
-		if len(data) != dim {
-			return nil, fmt.Errorf("embedding data length mismatch: got %d, expected %d", len(data), dim)
-		}
-		vec = make([]float32, dim)
-		copy(vec, data)
-	default:
+	if len(shape) != 2 {
 		return nil, fmt.Errorf("unsupported embedding rank %d", len(shape))
 	}
-
-	l2(vec)
-
-	return vec, nil
+	dim := int(shape[1])
+	if len(data) != batch*dim {
+		return nil, fmt.Errorf("embedding data length mismatch: got %d, expected %d", len(data), batch*dim)
+	}
+	vectors := make([][]float32, batch)
+	for i := range vectors {
+		vectors[i] = append([]float32(nil), data[i*dim:(i+1)*dim]...)
+		l2(vectors[i])
+	}
+	return vectors, nil
 }
 
 func retargetVisionInputSize(err error, current int) (int, bool) {

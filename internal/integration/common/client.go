@@ -10,26 +10,20 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	mc "github.com/minio/minio-go/v7"
-
-	"era/booru/internal/minio"
-	"era/booru/internal/processing"
 )
 
-// ErabooruClient provides helpers for interacting with the test server and MiniO.
+// ErabooruClient provides helpers for interacting with the test server.
 // All fatal errors are reported via the testing.TB instance.
 type ErabooruClient struct {
 	t       testing.TB
-	Minio   *minio.Client
 	client  *http.Client
 	baseURL string
 }
 
 // NewClient constructs a new helper client.
-func NewClient(t testing.TB, m *minio.Client, httpClient *http.Client, baseURL string) *ErabooruClient {
+func NewClient(t testing.TB, httpClient *http.Client, baseURL string) *ErabooruClient {
 	t.Helper()
-	return &ErabooruClient{t: t, Minio: m, client: httpClient, baseURL: strings.TrimRight(baseURL, "/")}
+	return &ErabooruClient{t: t, client: httpClient, baseURL: strings.TrimRight(baseURL, "/")}
 }
 
 // WaitForMedia polls until the media item becomes available.
@@ -51,7 +45,7 @@ func (c *ErabooruClient) WaitForMedia(id string, timeout time.Duration) {
 	c.t.Fatalf("media %s not ingested", id)
 }
 
-// UploadAndWait uploads the given file to MinIO and waits until it is processed.
+// UploadAndWait uploads the given file and waits until it is processed.
 func (c *ErabooruClient) UploadAndWait(ctx context.Context, path string) string {
 	c.t.Helper()
 	f, err := os.Open(path)
@@ -60,18 +54,29 @@ func (c *ErabooruClient) UploadAndWait(ctx context.Context, path string) string 
 	}
 	defer f.Close()
 
-	hash, err := processing.HashFile128Hex(f)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/media", f)
 	if err != nil {
-		c.t.Fatalf("hash %s: %v", path, err)
+		c.t.Fatalf("create upload request: %v", err)
 	}
-	if _, err := f.Seek(0, 0); err != nil {
-		c.t.Fatalf("seek %s: %v", path, err)
+	req.Header.Set("Content-Type", "image/png")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		c.t.Fatalf("upload %s: %v", path, err)
 	}
-	if _, err := c.Minio.PutObject(ctx, c.Minio.Bucket, hash, f, -1, mc.PutObjectOptions{ContentType: "image/png"}); err != nil {
-		c.t.Fatalf("put %s: %v", hash, err)
+	if resp.StatusCode != http.StatusCreated {
+		resp.Body.Close()
+		c.t.Fatalf("upload response %d", resp.StatusCode)
 	}
-	c.WaitForMedia(hash, 10*time.Second)
-	return hash
+	var result struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		resp.Body.Close()
+		c.t.Fatalf("decode upload response: %v", err)
+	}
+	resp.Body.Close()
+	c.WaitForMedia(result.ID, 10*time.Second)
+	return result.ID
 }
 
 // AddTags adds tags to the given media item via the API.

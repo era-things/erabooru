@@ -2,21 +2,20 @@ package server
 
 import (
 	"context"
-	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"era/booru/ent"
 	"era/booru/internal/api"
 	"era/booru/internal/config"
 	"era/booru/internal/db"
-	"era/booru/internal/minio"
+	"era/booru/internal/processing"
 	"era/booru/internal/queue"
-	"era/booru/internal/search"
-	indexworker "era/booru/internal/workers/indexworker"
+	"era/booru/internal/storage"
+	embedworker "era/booru/internal/workers/embedworker"
 	mediaworker "era/booru/internal/workers/mediaworker"
 
 	"github.com/riverqueue/river"
@@ -25,86 +24,54 @@ import (
 // Server bundles initialized services and the Gin router.
 type Server struct {
 	Router *gin.Engine
-	DB     *ent.Client
-	Minio  *minio.Client
+	Store  *storage.Store
 	Cfg    *config.Config
-	Queue  *river.Client[pgx.Tx] // Changed from *sql.Tx
-	DBPool *pgxpool.Pool         // Changed from *sql.DB
+	Queue  *river.Client[pgx.Tx]
+	DBPool *pgxpool.Pool
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
-// New constructs a Server and starts the MinIO watcher.
+// New constructs a Server and starts its background media processor.
 func New(ctx context.Context, cfg *config.Config) (*Server, error) {
-	if err := search.OpenOrCreate(cfg.BlevePath); err != nil {
+	store, err := storage.New(cfg.MediaRoot)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := db.Open(ctx, cfg)
+	if err != nil {
 		return nil, err
 	}
 
-	m, err := minio.New(cfg)
-	if err != nil {
-		search.Close()
-		return nil, err
-	}
 	workers := river.NewWorkers()
-	pool, err := pgxpool.New(ctx, cfg.PostgresDSN)
+	limiter := processing.NewLimiter(cfg.MediaConcurrency)
+	river.AddWorker(workers, &mediaworker.ProcessWorker{Store: store, DB: pool, Limiter: limiter})
+	river.AddWorker(workers, &embedworker.ImageEmbedWorker{Store: store, DB: pool, Limiter: limiter})
+
+	riverClient, err := queue.NewClient(ctx, pool, workers, cfg.MediaConcurrency)
 	if err != nil {
-		search.Close()
+		pool.Close()
 		return nil, err
 	}
-
-	riverClient, err := queue.NewClient(ctx, pool, workers, queue.ClientTypeServer)
-	if err != nil {
-		search.Close()
-		return nil, err
-	}
-
-	database, err := db.New(cfg, riverClient, true)
-	if err != nil {
-		search.Close()
-		return nil, err
-	}
-
-	river.AddWorker(workers, &indexworker.IndexWorker{DB: database})
-
-	// Register the embed_text job kind so the server can enqueue requests for
-	// the dedicated embedding worker without pulling in its runtime
-	// dependencies here. The actual processing happens in the image embed
-	// worker binary.
-	river.AddWorker(workers, river.WorkFunc(func(ctx context.Context, job *river.Job[queue.EmbedTextArgs]) error {
-		return nil
-	}))
 	if err := riverClient.Start(ctx); err != nil {
+		pool.Close()
 		return nil, err
 	}
-	river.AddWorker(workers, &mediaworker.ProcessWorker{
-		Minio: m,
-		DB:    database,
-		Cfg:   cfg,
-	})
 
 	srvCtx, cancel := context.WithCancel(ctx)
-
-	go m.Watch(srvCtx, func(ctx context.Context, object, contentType string) {
-		log.Printf("object %s uploaded with content type %s", object, contentType)
-		args := queue.ProcessArgs{Bucket: m.Bucket, Key: object, ContentType: contentType}
-		if err := queue.Enqueue(ctx, riverClient, args); err != nil {
-			log.Printf("enqueue process %s: %v", object, err)
-		}
-	})
 
 	r := gin.New()
 	r.Use(api.GinLogger(), gin.Recovery(), api.CORSMiddleware())
 	r.GET("/health", func(c *gin.Context) { c.Status(http.StatusNoContent) })
-	api.RegisterMediaRoutes(r, database, m, cfg, riverClient)
-	api.RegisterTagRoutes(r, database)
-	api.RegisterAdminRoutes(r, database, m, cfg, riverClient)
-	api.RegisterSettingsRoutes(r, database)
+	api.RegisterMediaRoutes(r, pool, store, riverClient, limiter)
+	api.RegisterTagRoutes(r, pool)
+	api.RegisterAdminRoutes(r, pool, store, riverClient)
+	api.RegisterSettingsRoutes(r, pool)
 	api.RegisterStaticRoutes(r)
 
 	s := &Server{
 		Router: r,
-		DB:     database,
-		Minio:  m,
+		Store:  store,
 		Cfg:    cfg,
 		Queue:  riverClient,
 		DBPool: pool,
@@ -115,19 +82,26 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 }
 
 // Run starts serving using Gin's Run.
-func (s *Server) Run(addr string) error {
-	return s.Router.Run(addr)
+func (s *Server) Run(ctx context.Context, addr string) error {
+	httpServer := &http.Server{Addr: addr, Handler: s.Router}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(shutdownCtx)
+	}()
+	return httpServer.ListenAndServe()
 }
 
 // Close shuts down background resources.
 func (s *Server) Close() {
 	s.cancel()
 	if s.Queue != nil {
-		s.Queue.Stop(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		s.Queue.Stop(ctx)
 	}
 	if s.DBPool != nil {
 		s.DBPool.Close()
 	}
-	s.DB.Close()
-	search.Close()
 }

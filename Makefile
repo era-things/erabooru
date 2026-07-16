@@ -23,9 +23,7 @@ prepare: setup-env
 	cd $(WEB_DIR) && npm install
 	@echo "→ Downloading Go modules..."
 	$(GO) mod download
-	@echo "→ Generating Ent schema..."
-	$(GO) generate ./ent
-	@echo "✅ All dependencies installed and schemas generated"
+	@echo "✅ All dependencies installed"
 	@echo ""
 	@echo "🟢 Ready for development! You can now run:"
 	@echo "   make dev    # Start development servers"
@@ -41,9 +39,13 @@ dev: setup-env
 
 .PHONY: prod
 prod:
-	docker-compose build app media-worker image-embed-worker
+	docker-compose build app
 	docker-compose up
 	@echo "🟢  Production services up  |  Access → http://localhost"
+
+.PHONY: prod-gpu
+prod-gpu:
+	docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 
 .PHONY: prod-pull
 prod-pull:
@@ -51,12 +53,8 @@ prod-pull:
 	docker-compose -f docker-compose.yml -f docker-compose.pull.yml up
 	@echo "🟢  Production services up  |  Access → http://localhost"
 # ──────────────────────────────────────────
-# BACK-END  (Go + Ent)
+# BACK-END  (Go + pgx)
 # ──────────────────────────────────────────
-.PHONY: generate
-generate:
-	$(GO) run -mod=mod entgo.io/ent/cmd/ent generate ./ent/schema --feature sql/execquery
-
 .PHONY: vet test
 vet:
 	$(GO) vet ./...
@@ -83,5 +81,4 @@ clean:
 .PHONY: clean-all
 clean-all: clean
 	docker-compose down -v
-	sudo rm -rf bleve-index minio-data
 	@echo "🧹  Cleaned everything including Docker volumes"
