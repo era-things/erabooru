@@ -8,7 +8,16 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
+	"github.com/riverqueue/river/rivertype"
 )
+
+var activeUniqueStates = []rivertype.JobState{
+	rivertype.JobStateAvailable,
+	rivertype.JobStatePending,
+	rivertype.JobStateRunning,
+	rivertype.JobStateRetryable,
+	rivertype.JobStateScheduled,
+}
 
 // NewClient creates a River client using the provided database pool and workers.
 func NewClient(ctx context.Context, pool *pgxpool.Pool, workers *river.Workers, concurrency int) (*river.Client[pgx.Tx], error) {
@@ -76,7 +85,10 @@ type ProcessArgs struct {
 func (ProcessArgs) Kind() string { return "process_media" }
 
 func (ProcessArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 3, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+	return river.InsertOpts{MaxAttempts: 3, UniqueOpts: river.UniqueOpts{
+		ByArgs:  true,
+		ByState: activeUniqueStates,
+	}}
 }
 
 type EmbedArgs struct {
@@ -86,5 +98,8 @@ type EmbedArgs struct {
 func (EmbedArgs) Kind() string { return "embed_media" }
 
 func (EmbedArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 3, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+	return river.InsertOpts{MaxAttempts: 3, UniqueOpts: river.UniqueOpts{
+		ByArgs:  true,
+		ByState: activeUniqueStates,
+	}}
 }
