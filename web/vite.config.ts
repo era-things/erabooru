@@ -6,10 +6,10 @@ export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
 	server: {
 		host: '0.0.0.0',
-		port: 5173
-	},
-	test: {
-		include: ['src/**/*.{test,spec}.{js,ts}'],
-		environment: 'node'
+		port: 5173,
+		proxy: {
+			'/api': 'http://app:8080',
+			'/files': 'http://app:8080'
+		}
 	}
 });

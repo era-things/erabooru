@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { xxhash128 } from 'hash-wasm';
 	import MediaGrid from '$lib/components/MediaGrid.svelte';
 	import type { MediaPreviewItem } from '$lib/types/media';
-	import { requestUploadUrl, uploadToPresignedUrl } from '$lib/api';
+	import { uploadMedia } from '$lib/api';
 
 	interface UploadedItem {
 		id: string;
@@ -46,30 +45,24 @@
 				continue;
 			}
 
-			const uploadName = await getUploadName(file);
-
 			try {
-				const url = await requestUploadUrl(uploadName);
-				const up = await uploadToPresignedUrl(url, file);
-
-				if (up.ok) {
-					const preview = await createPreview(file, uploadName);
-					uploaded = [
-						...uploaded,
-						{
-							id: uploadName,
-							name: file.name,
-							size: file.size,
-							type: file.type,
-							preview,
-							objectUrl: file.type.startsWith('image/') ? preview.url : undefined
-						}
-					];
-				} else if (up.status === 412) {
+				const { id, existed } = await uploadMedia(file);
+				if (existed) {
 					alert(`File already exists: ${file.name}`);
-				} else {
-					alert(`Upload failed for ${file.name}: ${up.status} ${up.statusText}`);
+					continue;
 				}
+				const preview = await createPreview(file, id);
+				uploaded = [
+					...uploaded,
+					{
+						id,
+						name: file.name,
+						size: file.size,
+						type: file.type,
+						preview,
+						objectUrl: file.type.startsWith('image/') ? preview.url : undefined
+					}
+				];
 			} catch (error) {
 				console.error('Upload error:', error);
 				alert(`Upload failed for ${file.name} due to network error`);
@@ -84,12 +77,6 @@
 
 	function trigger() {
 		fileInput?.click();
-	}
-
-	async function getUploadName(file: File): Promise<string> {
-		const arrayBuffer = await file.arrayBuffer();
-		const uint8 = new Uint8Array(arrayBuffer);
-		return xxhash128(uint8);
 	}
 
 	async function createPreview(file: File, id: string): Promise<MediaPreviewItem> {

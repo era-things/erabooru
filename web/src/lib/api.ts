@@ -57,25 +57,13 @@ export async function updateMediaTags(id: string, tags: string[]): Promise<void>
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
-export async function requestUploadUrl(filename: string): Promise<string> {
-	const res = await fetch(`${apiBase}/media/upload-url`, {
+export async function uploadMedia(file: File): Promise<{ id: string; existed: boolean }> {
+	const res = await fetch(`${apiBase}/media`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ filename })
-	});
-	const data = await handleJson<{ url: string }>(res);
-	return data.url;
-}
-
-export async function uploadToPresignedUrl(url: string, file: File): Promise<Response> {
-	return fetch(url, {
-		method: 'PUT',
 		body: file,
-		headers: {
-			'Content-Type': file.type || 'application/octet-stream',
-			'If-None-Match': '*'
-		}
+		headers: { 'Content-Type': file.type || 'application/octet-stream' }
 	});
+	return handleJson(res);
 }
 
 export async function regenerateReverseIndex(): Promise<void> {

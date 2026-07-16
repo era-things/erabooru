@@ -3,40 +3,31 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	PostgresDSN           string
-	MinioUser             string
-	MinioPassword         string
-	MinioBucket           string
-	PreviewBucket         string
-	MinioInternalEndpoint string // for SDK connection (e.g., "minio:9000")
-	MinioPublicHost       string // for browser-facing host (e.g., "localhost")
-	MinioPublicPrefix     string // e.g., "/minio"
-	BlevePath             string // path to Bleve index, e.g., "/data/bleve"
-	MinioSSL              bool
-	DevMode               bool // enable development features like auto migration
+	PostgresDSN      string
+	MediaRoot        string
+	MediaConcurrency int
+	DevMode          bool // enable development features like auto migration
 }
 
 func Load() (*Config, error) {
 	// Load .env file if present; ignore error if not found
 	_ = godotenv.Load()
 
+	concurrency, err := strconv.Atoi(getEnvOrDefault("MEDIA_CONCURRENCY", "2"))
+	if err != nil || concurrency < 1 {
+		return nil, fmt.Errorf("MEDIA_CONCURRENCY must be a positive integer")
+	}
 	cfg := &Config{
-		PostgresDSN:           getEnv("POSTGRES_DSN"),
-		MinioUser:             getEnv("MINIO_ROOT_USER"),
-		MinioPassword:         getEnv("MINIO_ROOT_PASSWORD"),
-		MinioBucket:           getEnv("MINIO_BUCKET"),
-		PreviewBucket:         getEnv("MINIO_PREVIEW_BUCKET"),
-		MinioInternalEndpoint: getEnv("MINIO_INTERNAL_ENDPOINT"),        // for SDK connection
-		MinioPublicHost:       getEnvOrDefault("MINIO_PUBLIC_HOST", ""), // for browser-facing host
-		MinioPublicPrefix:     getEnv("MINIO_PUBLIC_PREFIX"),            // e.g., "/minio" for Caddy reverse proxy
-		BlevePath:             getEnv("BLEVE_PATH"),
-		MinioSSL:              getEnv("MINIO_SSL") == "true",
-		DevMode:               getEnv("DEV_MODE") == "true",
+		PostgresDSN:      getEnv("POSTGRES_DSN"),
+		MediaRoot:        getEnvOrDefault("MEDIA_ROOT", "/data/media"),
+		MediaConcurrency: concurrency,
+		DevMode:          getEnv("DEV_MODE") == "true",
 	}
 	return cfg, nil
 }

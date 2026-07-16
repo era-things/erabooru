@@ -2,96 +2,53 @@ package search
 
 import (
 	"context"
-	"sort"
+	"fmt"
 
-	"era/booru/ent"
-	"era/booru/ent/media"
-	"era/booru/ent/mediavector"
-	"era/booru/ent/vector"
+	"era/booru/internal/db"
 
-	"entgo.io/ent/dialect/sql"
+	"github.com/jackc/pgx/v5/pgxpool"
 	pgvector "github.com/pgvector/pgvector-go"
 )
 
-// SimilarMediaByVector returns media ordered by similarity to the provided
-// vector. When Bleve vector search is available the build can provide a
-// specialised implementation via build tags. The default implementation uses
-// pgvector for similarity calculation.
-func SimilarMediaByVector(
-	ctx context.Context,
-	db *ent.Client,
-	vectorName string,
-	query []float32,
-	limit, offset int,
-	excludeID string,
-	includeIDs []string,
-) ([]*ent.Media, int, error) {
+func SimilarMediaByVector(ctx context.Context, pool *pgxpool.Pool, vectorName string, query []float32, limit, offset int, excludeID, filterExpr string) ([]db.Media, int, error) {
 	if limit <= 0 || len(query) == 0 {
-		return []*ent.Media{}, 0, nil
+		return []db.Media{}, 0, nil
 	}
-
-	vec := pgvector.NewVector(query)
-	baseQuery := db.MediaVector.Query().
-		Where(mediavector.HasVectorWith(vector.NameEQ(vectorName)))
-
+	args := []any{vectorName, pgvector.NewVector(query)}
+	conditions := []string{"mv.name = $1", "mv.value <#> $2 IS NOT NULL"}
 	if excludeID != "" {
-		baseQuery = baseQuery.Where(mediavector.MediaIDNEQ(excludeID))
+		args = append(args, excludeID)
+		conditions = append(conditions, fmt.Sprintf("m.id <> $%d", len(args)))
 	}
-	if len(includeIDs) > 0 {
-		baseQuery = baseQuery.Where(mediavector.MediaIDIn(includeIDs...))
+	where, filterArgs := WhereSQL(filterExpr, len(args)+1)
+	args = append(args, filterArgs...)
+	if where != "" {
+		conditions = append(conditions, where)
 	}
-
-	total, err := baseQuery.Clone().Count(ctx)
+	conditionSQL := " WHERE " + joinConditions(conditions)
+	var total int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM media_vector mv JOIN media m ON m.id = mv.media_id`+conditionSQL, args...).Scan(&total); err != nil || total == 0 {
+		return nil, total, err
+	}
+	args = append(args, limit, offset)
+	querySQL := fmt.Sprintf(`SELECT m.id, m.format, m.width, m.height, m.duration, m.size, m.uploaded_at
+FROM media_vector mv JOIN media m ON m.id = mv.media_id%s
+ORDER BY mv.value <#> $2 LIMIT $%d OFFSET $%d`, conditionSQL, len(args)-1, len(args))
+	rows, err := pool.Query(ctx, querySQL, args...)
 	if err != nil {
 		return nil, 0, err
 	}
-	if total == 0 {
-		return []*ent.Media{}, 0, nil
+	items, err := scanMedia(rows)
+	return items, total, err
+}
+
+func joinConditions(parts []string) string {
+	result := ""
+	for i, part := range parts {
+		if i > 0 {
+			result += " AND "
+		}
+		result += part
 	}
-
-	mvQuery := baseQuery.Clone()
-
-	mvQuery = mvQuery.Order(func(s *sql.Selector) {
-		s.OrderExpr(sql.ExprFunc(func(b *sql.Builder) {
-			b.WriteString(mediavector.Table)
-			b.WriteByte('.')
-			b.WriteString(mediavector.FieldValue)
-			b.WriteString(" <#> ")
-			b.Arg(vec)
-		}))
-	}).Limit(limit)
-
-	if offset > 0 {
-		mvQuery = mvQuery.Offset(offset)
-	}
-
-	ids, err := mvQuery.Select(mediavector.FieldMediaID).Strings(ctx)
-	if err != nil {
-		return nil, 0, err
-	}
-	if len(ids) == 0 {
-		return []*ent.Media{}, total, nil
-	}
-
-	medias, err := db.Media.Query().
-		Where(media.IDIn(ids...)).
-		All(ctx)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	if len(medias) <= 1 {
-		return medias, total, nil
-	}
-
-	order := make(map[string]int, len(ids))
-	for idx, id := range ids {
-		order[id] = idx
-	}
-
-	sort.SliceStable(medias, func(i, j int) bool {
-		return order[medias[i].ID] < order[medias[j].ID]
-	})
-
-	return medias, total, nil
+	return result
 }

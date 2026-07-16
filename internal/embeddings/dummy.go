@@ -16,7 +16,11 @@ func VisionEmbeddingRGB24([]byte) ([]float32, error) {
 	return nil, nil
 }
 
-func TextEmbedding(any interface{}) ([]float32, error) {
+func VisionEmbeddingsRGB24([][]byte) ([][]float32, error) {
+	return nil, nil
+}
+
+func TextEmbedding(string) ([]float32, error) {
 	return nil, nil
 }
 
@@ -36,3 +40,5 @@ func InputSpatialSize() int { return 0 }
 
 // Add any types referenced in main.go or workers
 type ModelOptions struct{}
+
+func Available() bool { return false }

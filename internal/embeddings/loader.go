@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,6 +35,8 @@ var (
 func init() {
 	inputSpatialSize.Store(384)
 }
+
+func Available() bool { return true }
 
 // Load must be called once (e.g. from main). dir contains vision_model_fp16.onnx
 func Load(dir string) error {
@@ -200,12 +204,28 @@ func sessionOptionsWithCUDA() (*ort.SessionOptions, func()) {
 			log.Printf("embeddings: warning: failed to release session options: %v", destroyErr)
 		}
 	}
+	concurrency, _ := strconv.Atoi(os.Getenv("MEDIA_CONCURRENCY"))
+	if concurrency < 1 {
+		concurrency = 2
+	}
+	threads := max(1, runtime.NumCPU()/concurrency)
+	if configured, err := strconv.Atoi(os.Getenv("ONNX_INTRA_THREADS")); err == nil && configured > 0 {
+		threads = configured
+	}
+	if err := options.SetIntraOpNumThreads(threads); err != nil {
+		log.Printf("embeddings: unable to set intra-op threads: %v", err)
+	}
+	if err := options.SetInterOpNumThreads(1); err != nil {
+		log.Printf("embeddings: unable to set inter-op threads: %v", err)
+	}
+	if err := options.SetGraphOptimizationLevel(ort.GraphOptimizationLevelEnableAll); err != nil {
+		log.Printf("embeddings: unable to enable graph optimizations: %v", err)
+	}
 
 	cudaOpts, err := ort.NewCUDAProviderOptions()
 	if err != nil {
 		log.Printf("embeddings: CUDA execution provider unavailable (creating provider options failed): %v; using CPU execution provider", err)
-		cleanup()
-		return nil, func() {}
+		return options, cleanup
 	}
 
 	if err := options.AppendExecutionProviderCUDA(cudaOpts); err != nil {
@@ -213,8 +233,7 @@ func sessionOptionsWithCUDA() (*ort.SessionOptions, func()) {
 		if destroyErr := cudaOpts.Destroy(); destroyErr != nil {
 			log.Printf("embeddings: warning: failed to release CUDA provider options: %v", destroyErr)
 		}
-		cleanup()
-		return nil, func() {}
+		return options, cleanup
 	}
 
 	if err := cudaOpts.Destroy(); err != nil {

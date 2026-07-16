@@ -7,36 +7,39 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"era/booru/ent"
 	"era/booru/internal/db"
+	"errors"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // RegisterSettingsRoutes exposes endpoints for managing global settings.
-func RegisterSettingsRoutes(r *gin.Engine, dbClient *ent.Client) {
+func RegisterSettingsRoutes(r *gin.Engine, pool *pgxpool.Pool) {
 	group := r.Group("/api/settings")
-	group.GET("/hidden-tags", listHiddenTagFiltersHandler(dbClient))
-	group.POST("/hidden-tags", createHiddenTagFilterHandler(dbClient))
-	group.POST("/hidden-tags/:id/select", selectHiddenTagFilterHandler(dbClient))
-	group.DELETE("/hidden-tags/:id", deleteHiddenTagFilterHandler(dbClient))
+	group.GET("/hidden-tags", listHiddenTagFiltersHandler(pool))
+	group.POST("/hidden-tags", createHiddenTagFilterHandler(pool))
+	group.POST("/hidden-tags/:id/select", selectHiddenTagFilterHandler(pool))
+	group.DELETE("/hidden-tags/:id", deleteHiddenTagFilterHandler(pool))
 }
 
-func listHiddenTagFiltersHandler(dbClient *ent.Client) gin.HandlerFunc {
+func listHiddenTagFiltersHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		filters, err := db.ListHiddenTagFilters(c.Request.Context(), dbClient)
+		filters, err := db.ListHiddenTagFilters(c.Request.Context(), pool)
 		if err != nil {
 			log.Printf("list hidden filters: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 
-		activeValue, err := db.ActiveHiddenTagFilterValue(c.Request.Context(), dbClient)
+		active, err := db.ActiveHiddenTagFilter(c.Request.Context(), pool)
 		if err != nil {
 			log.Printf("active hidden filter: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 
-		activeID := 0
+		activeID := active.ID
+		activeValue := active.Value
 		outFilters := make([]gin.H, 0, len(filters))
 		for _, filter := range filters {
 			outFilters = append(outFilters, gin.H{
@@ -44,16 +47,6 @@ func listHiddenTagFiltersHandler(dbClient *ent.Client) gin.HandlerFunc {
 				"value":      filter.Value,
 				"is_default": filter.Value == "",
 			})
-			if filter.Value == activeValue {
-				activeID = filter.ID
-			}
-		}
-
-		if activeID == 0 && len(filters) > 0 {
-			if active, err := db.ActiveHiddenTagFilter(c.Request.Context(), dbClient); err == nil {
-				activeID = active.ID
-				activeValue = active.Value
-			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{
@@ -66,7 +59,7 @@ func listHiddenTagFiltersHandler(dbClient *ent.Client) gin.HandlerFunc {
 	}
 }
 
-func createHiddenTagFilterHandler(dbClient *ent.Client) gin.HandlerFunc {
+func createHiddenTagFilterHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	type request struct {
 		Value string `json:"value"`
 	}
@@ -77,13 +70,13 @@ func createHiddenTagFilterHandler(dbClient *ent.Client) gin.HandlerFunc {
 			return
 		}
 
-		filter, err := db.CreateHiddenTagFilter(c.Request.Context(), dbClient, body.Value)
+		filter, err := db.CreateHiddenTagFilter(c.Request.Context(), pool, body.Value)
 		if err != nil {
 			if err.Error() == "hidden tag filter cannot be empty" {
 				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
-			if ent.IsConstraintError(err) {
+			if db.IsConflict(err) {
 				c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": "hidden tag filter already exists"})
 				return
 			}
@@ -102,15 +95,15 @@ func createHiddenTagFilterHandler(dbClient *ent.Client) gin.HandlerFunc {
 	}
 }
 
-func selectHiddenTagFilterHandler(dbClient *ent.Client) gin.HandlerFunc {
+func selectHiddenTagFilterHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, err := strconv.Atoi(c.Param("id"))
 		if err != nil || id <= 0 {
 			c.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
-		if err := db.SetActiveHiddenTagFilter(c.Request.Context(), dbClient, id); err != nil {
-			if ent.IsNotFound(err) {
+		if err := db.SetActiveHiddenTagFilter(c.Request.Context(), pool, int64(id)); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
 				c.AbortWithStatus(http.StatusNotFound)
 				return
 			}
@@ -119,7 +112,7 @@ func selectHiddenTagFilterHandler(dbClient *ent.Client) gin.HandlerFunc {
 			return
 		}
 
-		active, err := db.ActiveHiddenTagFilter(c.Request.Context(), dbClient)
+		active, err := db.ActiveHiddenTagFilter(c.Request.Context(), pool)
 		if err != nil {
 			log.Printf("read active hidden filter: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -135,15 +128,15 @@ func selectHiddenTagFilterHandler(dbClient *ent.Client) gin.HandlerFunc {
 	}
 }
 
-func deleteHiddenTagFilterHandler(dbClient *ent.Client) gin.HandlerFunc {
+func deleteHiddenTagFilterHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, err := strconv.Atoi(c.Param("id"))
 		if err != nil || id <= 0 {
 			c.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
-		if err := db.DeleteHiddenTagFilter(c.Request.Context(), dbClient, id); err != nil {
-			if err.Error() == "cannot delete the default hidden tag filter" {
+		if err := db.DeleteHiddenTagFilter(c.Request.Context(), pool, int64(id)); err != nil {
+			if errors.Is(err, db.ErrDefaultFilter) {
 				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}

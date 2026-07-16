@@ -1,26 +1,29 @@
 package processing
 
 import (
-	"bytes"
 	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"io"
+
+	_ "golang.org/x/image/webp"
 )
 
 type ImageMetadata struct {
 	Format string
-	Size   int64
 	Width  int
 	Height int
 }
 
-func GetMetadata(data []byte) (ImageMetadata, error) {
-	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+func GetMetadata(r io.Reader) (ImageMetadata, error) {
+	cfg, format, err := image.DecodeConfig(r)
 	if err != nil {
 		return ImageMetadata{}, err
 	}
 
 	metadata := ImageMetadata{
 		Format: format,
-		Size:   int64(len(data)),
 		Width:  cfg.Width,
 		Height: cfg.Height,
 	}

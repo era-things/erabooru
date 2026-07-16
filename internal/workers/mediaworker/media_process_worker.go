@@ -6,121 +6,70 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"io"
 	"log"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
-	"era/booru/ent"
 	"era/booru/internal/config"
 	"era/booru/internal/db"
-	"era/booru/internal/minio"
+	embed "era/booru/internal/embeddings"
 	"era/booru/internal/processing"
 	"era/booru/internal/queue"
+	"era/booru/internal/storage"
 
-	mc "github.com/minio/minio-go/v7"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 )
 
 // ProcessWorker processes uploaded media objects.
 type ProcessWorker struct {
 	river.WorkerDefaults[queue.ProcessArgs]
-	Minio *minio.Client
-	DB    *ent.Client
-	Cfg   *config.Config
+	Store   *storage.Store
+	DB      *pgxpool.Pool
+	Limiter processing.Limiter
 }
 
 func (w *ProcessWorker) Work(ctx context.Context, job *river.Job[queue.ProcessArgs]) error {
-	log.Printf("Processing task started for bucket %s, key %s, content type %s", job.Args.Bucket, job.Args.Key, job.Args.ContentType)
-	bucket := job.Args.Bucket
-	if bucket == "" {
-		bucket = w.Minio.Bucket
-	}
-	if strings.HasPrefix(job.Args.ContentType, "video/") {
-		_, err := w.processVideo(ctx, bucket, job.Args.Key)
+	release, err := w.Limiter.Acquire(ctx)
+	if err != nil {
 		return err
 	}
-	_, err := w.processImage(ctx, bucket, job.Args.Key)
+	defer release()
+	log.Printf("Processing task started for key %s, content type %s", job.Args.Key, job.Args.ContentType)
+	if strings.HasPrefix(job.Args.ContentType, "video/") {
+		_, err = w.processVideo(ctx, job.Args.Key)
+		return err
+	}
+	_, err = w.processImage(ctx, job.Args.Key)
 	return err
 }
 
 func (w *ProcessWorker) saveMediaToDB(ctx context.Context, key, format string, width, height, duration int) error {
-	tx, err := w.DB.Tx(ctx)
+	stat, err := os.Stat(w.Store.OriginalPath(key))
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-
-	// Find or create the tagme tag first
-	tagme, err := db.FindOrCreateTag(ctx, tx.Client(), "tagme")
-	if err != nil {
-		return err
-	}
-
-	mediaCreate := tx.Media.Create().
-		SetID(key).
-		SetFormat(format).
-		SetWidth(int16(width)).
-		SetHeight(int16(height))
-
-	// Only set duration for videos
+	var durationValue *int
 	if duration > 0 {
-		mediaCreate = mediaCreate.SetDuration(int16(duration))
+		durationValue = &duration
 	}
-
-	// Add tags during creation instead of after
-	mediaCreate = mediaCreate.AddTagIDs(tagme.ID)
-
-	mediaObj, err := mediaCreate.Save(ctx)
-	if err != nil {
-		if ent.IsConstraintError(err) {
-			// Media already exists, just return success
-			return nil
-		}
-		return err
-	}
-
-	// Create upload date record
-	dt, err := db.FindOrCreateDate(ctx, tx.Client(), "upload")
-	if err != nil {
-		return err
-	}
-	if _, err := tx.MediaDate.Create().
-		SetMediaID(mediaObj.ID).
-		SetDateID(dt.ID).
-		SetValue(time.Now().UTC()).
-		Save(ctx); err != nil {
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
-	if err := queue.WorkerEnqueue(ctx, queue.IndexArgs{ID: key}); err != nil {
-		log.Printf("Failed to enqueue index job for ID %s: %v", key, err)
-		return err
-	}
-
-	return nil
+	return db.SaveMedia(ctx, w.DB, db.Media{
+		ID: key, Format: format, Width: width, Height: height,
+		Duration: durationValue, Size: stat.Size(), UploadedAt: time.Now().UTC(),
+	})
 }
 
 // Simplified processImage function
-func (w *ProcessWorker) processImage(ctx context.Context, bucket, key string) (string, error) {
-	rc, err := w.Minio.GetObject(ctx, bucket, key, mc.GetObjectOptions{})
+func (w *ProcessWorker) processImage(ctx context.Context, key string) (string, error) {
+	rc, err := os.Open(w.Store.OriginalPath(key))
 	if err != nil {
 		return "", err
 	}
-	defer rc.Close()
-
-	data, err := io.ReadAll(rc)
-	if err != nil {
-		return "", err
-	}
-
-	meta, err := processing.GetMetadata(data)
+	meta, err := processing.GetMetadata(rc)
+	_ = rc.Close()
 	if err != nil {
 		if errors.Is(err, image.ErrFormat) {
 			log.Printf("Unsupported image format for %s: %v", key, err)
@@ -128,32 +77,33 @@ func (w *ProcessWorker) processImage(ctx context.Context, bucket, key string) (s
 		}
 		return "", err
 	}
+	if err := w.generatePreview(ctx, key, ""); err != nil {
+		return "", err
+	}
 
-	// Use common database save function
 	if err := w.saveMediaToDB(ctx, key, meta.Format, meta.Width, meta.Height, 0); err != nil {
 		log.Printf("Failed to save media to database: %v", err)
 		return "", err
 	}
 	log.Printf("Saved media %s to database with format %s, width %d, height %d", key, meta.Format, meta.Width, meta.Height)
 
-	if err := queue.WorkerEnqueue(ctx, queue.EmbedArgs{Bucket: bucket, Key: key}); err != nil {
+	enqueued, err := w.enqueueEmbedding(ctx, key)
+	if err != nil {
 		log.Printf("Failed to enqueue embed job for %s: %v", key, err)
 		return "", err
 	}
-	log.Printf("Successfully enqueued embed job for %s", key)
+	if enqueued {
+		log.Printf("Successfully enqueued embed job for %s", key)
+	}
 
 	return key, nil
 }
 
 // Simplified processVideo function
-func (w *ProcessWorker) processVideo(ctx context.Context, bucket, key string) (string, error) {
-	scheme := "http://"
-	if w.Cfg.MinioSSL {
-		scheme = "https://"
-	}
-	src := fmt.Sprintf("%s%s/%s/%s", scheme, w.Cfg.MinioInternalEndpoint, strings.TrimPrefix(bucket, "/"), strings.TrimPrefix(key, "/"))
+func (w *ProcessWorker) processVideo(ctx context.Context, key string) (string, error) {
+	src := w.Store.OriginalPath(key)
 
-	probeOut, err := exec.Command("ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", src).Output()
+	probeOut, err := exec.CommandContext(ctx, "ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", src).Output()
 	if err != nil {
 		return "", err
 	}
@@ -203,41 +153,59 @@ func (w *ProcessWorker) processVideo(ctx context.Context, bucket, key string) (s
 		}
 	}
 
-	cmd := exec.Command("ffmpeg",
-		"-ss", "00:00:02", "-i", src, "-y", "-loglevel", "error",
-		"-vframes", "1", "-vf", "scale=320:-2",
-		"-q:v", "3", "-f", "image2", "pipe:1")
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", err
+	seek := ""
+	if duration > 0 {
+		seek = strconv.FormatFloat(min(float64(duration)/2, 2), 'f', 3, 64)
 	}
-	if err := cmd.Start(); err != nil {
-		return "", err
-	}
-	previewKey := key
-	if _, err = w.Minio.PutPreviewJpeg(ctx, previewKey, stdout); err != nil {
-		return "", err
-	}
-	if err := cmd.Wait(); err != nil {
+	if err := w.generatePreview(ctx, key, seek); err != nil {
 		return "", err
 	}
 
-	obj, err := w.Minio.GetObject(ctx, bucket, key, mc.GetObjectOptions{})
-	if err != nil {
-		return "", err
-	}
-	defer obj.Close()
-
-	// Use common database save function
 	if err := w.saveMediaToDB(ctx, key, format, width, height, duration); err != nil {
 		return "", err
 	}
 
-	if err := queue.WorkerEnqueue(ctx, queue.EmbedArgs{Bucket: bucket, Key: key}); err != nil {
+	enqueued, err := w.enqueueEmbedding(ctx, key)
+	if err != nil {
 		log.Printf("Failed to enqueue embed job for %s: %v", key, err)
 		return "", err
 	}
-	log.Printf("Successfully enqueued embed job for %s", key)
+	if enqueued {
+		log.Printf("Successfully enqueued embed job for %s", key)
+	}
 
 	return key, nil
+}
+
+func (w *ProcessWorker) enqueueEmbedding(ctx context.Context, key string) (bool, error) {
+	if !embed.Available() {
+		return false, nil
+	}
+	return true, queue.WorkerEnqueue(ctx, queue.EmbedArgs{Key: key})
+}
+
+func (w *ProcessWorker) generatePreview(ctx context.Context, key, seek string) error {
+	args := []string{"-loglevel", "error"}
+	if seek != "" {
+		args = append(args, "-ss", seek)
+	}
+	args = append(args,
+		"-i", w.Store.OriginalPath(key), "-frames:v", "1",
+		"-vf", "scale=512:-2:force_original_aspect_ratio=decrease",
+		"-q:v", "4", "-f", "image2", "pipe:1",
+	)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	if err = w.Store.PutPreview(ctx, key, stdout); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return err
+	}
+	return cmd.Wait()
 }
