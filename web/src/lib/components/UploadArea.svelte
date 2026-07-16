@@ -60,7 +60,7 @@
 						size: file.size,
 						type: file.type,
 						preview,
-						objectUrl: file.type.startsWith('image/') ? preview.url : undefined
+						objectUrl: preview.url.startsWith('blob:') ? preview.url : undefined
 					}
 				];
 			} catch (error) {
@@ -123,17 +123,28 @@
 	}
 
 	async function createVideoPreview(file: File, id: string): Promise<MediaPreviewItem> {
-		const objectUrl = URL.createObjectURL(file);
-		const { width, height } = await readVideoDimensions(objectUrl);
-		URL.revokeObjectURL(objectUrl);
-
 		const format = detectFormat(file);
-		const placeholder = buildVideoPlaceholder(format);
+		const sourceUrl = URL.createObjectURL(file);
+		let width = 1280;
+		let height = 720;
+		let url = buildVideoPlaceholder(format);
+
+		try {
+			const frame = await captureVideoFrame(sourceUrl);
+			width = frame.width;
+			height = frame.height;
+			url = frame.url;
+		} catch (error) {
+			console.error('Failed to create video preview', error);
+		} finally {
+			URL.revokeObjectURL(sourceUrl);
+		}
+
 		const displayHeight = Math.min(height, width * 3);
 
 		return {
 			id,
-			url: placeholder,
+			url,
 			width,
 			height,
 			format,
@@ -143,22 +154,49 @@
 		} satisfies MediaPreviewItem;
 	}
 
-	async function readVideoDimensions(url: string): Promise<{ width: number; height: number }> {
-		return new Promise((resolve) => {
+	async function captureVideoFrame(
+		sourceUrl: string
+	): Promise<{ url: string; width: number; height: number }> {
+		const video = await new Promise<HTMLVideoElement>((resolve, reject) => {
 			const video = document.createElement('video');
-			video.preload = 'metadata';
+			video.preload = 'auto';
 			video.muted = true;
-			video.src = url;
-			video.onloadedmetadata = () => {
-				const width = video.videoWidth || 1280;
-				const height = video.videoHeight || 720;
-				resolve({ width, height });
+			video.playsInline = true;
+			video.src = sourceUrl;
+			video.onloadeddata = () => {
+				const seekTo = Math.min(Number.isFinite(video.duration) ? video.duration / 2 : 0, 2);
+				if (seekTo > 0.05) {
+					video.onseeked = () => resolve(video);
+					video.currentTime = seekTo;
+				} else {
+					resolve(video);
+				}
 			};
-			video.onerror = (error) => {
-				console.error('Failed to read video metadata', error);
-				resolve({ width: 1280, height: 720 });
-			};
+			video.onerror = () => reject(new Error('Browser could not decode the video'));
 		});
+
+		const width = video.videoWidth || 1280;
+		const height = video.videoHeight || 720;
+		const scale = Math.min(1, 640 / width);
+		const canvas = document.createElement('canvas');
+		canvas.width = Math.max(1, Math.round(width * scale));
+		canvas.height = Math.max(1, Math.round(height * scale));
+
+		const context = canvas.getContext('2d');
+		if (!context) throw new Error('Canvas is unavailable');
+		context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+		const blob = await new Promise<Blob>((resolve, reject) => {
+			canvas.toBlob(
+				(value) => (value ? resolve(value) : reject(new Error('Video frame encoding failed'))),
+				'image/jpeg',
+				0.85
+			);
+		});
+
+		video.removeAttribute('src');
+		video.load();
+		return { url: URL.createObjectURL(blob), width, height };
 	}
 
 	function createFallbackPreview(file: File, id: string): MediaPreviewItem {
