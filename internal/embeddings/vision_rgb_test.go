@@ -2,7 +2,10 @@
 
 package embed
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestNormalizeRGB24(t *testing.T) {
 	const S = 2
@@ -55,6 +58,22 @@ func TestNormalizeRGB24InvalidLength(t *testing.T) {
 	_, err := normalizeRGB24(make([]byte, 3*S*S-1), S)
 	if err == nil {
 		t.Fatalf("expected error for short buffer")
+	}
+}
+
+func TestRGB24SpatialSize(t *testing.T) {
+	if got, err := rgb24SpatialSize(make([]byte, 3*224*224)); err != nil || got != 224 {
+		t.Fatalf("got size %d, error %v", got, err)
+	}
+	if _, err := rgb24SpatialSize(make([]byte, 30)); err == nil {
+		t.Fatal("expected non-square frame error")
+	}
+}
+
+func TestRetargetVisionInputSizeFromReshapeError(t *testing.T) {
+	err := fmt.Errorf("Input shape:{8,768,24,24}, requested shape:{-1,768,196}")
+	if got, ok := retargetVisionInputSize(err, 384); !ok || got != 224 {
+		t.Fatalf("got size %d, matched %v", got, ok)
 	}
 }
 

@@ -275,6 +275,14 @@ func GetMediaVector(ctx context.Context, pool *pgxpool.Pool, mediaID, desiredNam
 	return vector.Slice(), name, nil
 }
 
+func MediaVectorExists(ctx context.Context, pool *pgxpool.Pool, mediaID, name string) (bool, error) {
+	var exists bool
+	err := pool.QueryRow(ctx, `SELECT EXISTS(
+        SELECT 1 FROM media_vector WHERE media_id = $1 AND name = $2
+    )`, mediaID, name).Scan(&exists)
+	return exists, err
+}
+
 func DeleteMedia(ctx context.Context, pool *pgxpool.Pool, id string) error {
 	result, err := pool.Exec(ctx, `DELETE FROM media WHERE id = $1`, id)
 	if err == nil && result.RowsAffected() == 0 {

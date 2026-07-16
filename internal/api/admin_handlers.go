@@ -31,13 +31,24 @@ func regenerateHandler(pool *pgxpool.Pool, store *storage.Store, riverClient *ri
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 
-		enqueuedCount := 0
+		processCount := 0
+		embedCount := 0
 		err := store.WalkOriginals(func(id string) error {
 			exists, err := db.MediaExists(ctx, pool, id)
 			if err != nil {
 				return fmt.Errorf("check media %s: %w", id, err)
 			}
 			if exists {
+				hasVector, err := db.MediaVectorExists(ctx, pool, id, "vision")
+				if err != nil {
+					return fmt.Errorf("check embedding %s: %w", id, err)
+				}
+				if !hasVector {
+					if err := queue.Enqueue(ctx, riverClient, queue.EmbedArgs{Key: id}); err != nil {
+						return fmt.Errorf("enqueue embedding %s: %w", id, err)
+					}
+					embedCount++
+				}
 				return nil
 			}
 
@@ -63,7 +74,7 @@ func regenerateHandler(pool *pgxpool.Pool, store *storage.Store, riverClient *ri
 				return fmt.Errorf("enqueue media %s: %w", id, err)
 			}
 
-			enqueuedCount++
+			processCount++
 			return nil
 		})
 		if err != nil {
@@ -72,10 +83,12 @@ func regenerateHandler(pool *pgxpool.Pool, store *storage.Store, riverClient *ri
 			return
 		}
 
-		log.Printf("repair scan completed, enqueued %d processing jobs", enqueuedCount)
+		log.Printf("repair scan completed, enqueued %d processing and %d embedding jobs", processCount, embedCount)
 		c.JSON(http.StatusOK, gin.H{
-			"message":       "repair scan completed",
-			"jobs_enqueued": enqueuedCount,
+			"message":         "repair scan completed",
+			"jobs_enqueued":   processCount + embedCount,
+			"processing_jobs": processCount,
+			"embedding_jobs":  embedCount,
 		})
 	}
 }

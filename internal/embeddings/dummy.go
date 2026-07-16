@@ -38,6 +38,8 @@ func Load(dir string) error {
 
 func InputSpatialSize() int { return 0 }
 
+func RetargetInputSpatialSize(error, int) (int, bool) { return 0, false }
+
 // Add any types referenced in main.go or workers
 type ModelOptions struct{}
 

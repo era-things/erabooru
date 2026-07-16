@@ -33,7 +33,7 @@ var (
 )
 
 func init() {
-	inputSpatialSize.Store(384)
+	inputSpatialSize.Store(224)
 }
 
 func Available() bool { return true }

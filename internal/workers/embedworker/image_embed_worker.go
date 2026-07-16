@@ -149,38 +149,48 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media
 		return nil, err
 	}
 
-	frames := make([][]byte, 0, samples)
-	frameCh, waitStream, err := streamVideoFrames(ctx, src, duration, samples)
-	if err != nil {
-		return nil, err
-	}
+	const maxAttempts = 3
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		inputSize := embed.InputSpatialSize()
+		frames := make([][]byte, 0, samples)
+		frameCh, waitStream, err := streamVideoFrames(ctx, src, duration, samples, inputSize)
+		if err != nil {
+			return nil, err
+		}
 
-	for frame := range frameCh {
-		frames = append(frames, frame)
-	}
-	if err := waitStream(); err != nil {
-		return nil, err
-	}
-	if len(frames) == 0 {
-		return nil, fmt.Errorf("no frames extracted for video %s", key)
-	}
-	vectors, err := embed.VisionEmbeddingsRGB24(frames)
-	if err != nil {
-		return nil, err
-	}
+		for frame := range frameCh {
+			frames = append(frames, frame)
+		}
+		if err := waitStream(); err != nil {
+			return nil, err
+		}
+		if len(frames) == 0 {
+			return nil, fmt.Errorf("no frames extracted for video %s", key)
+		}
+		vectors, err := embed.VisionEmbeddingsRGB24(frames)
+		if err != nil {
+			lastErr = err
+			if newSize, ok := embed.RetargetInputSpatialSize(err, inputSize); ok {
+				log.Printf("Video embedding input resized from %d to %d for %s", inputSize, newSize, key)
+				continue
+			}
+			return nil, err
+		}
 
-	avg, err := averageVectors(vectors)
-	if err != nil {
-		return nil, err
+		avg, err := averageVectors(vectors)
+		if err != nil {
+			return nil, err
+		}
+
+		elapsed := time.Since(startTime).Milliseconds()
+		log.Printf("Video embedding for %s: processed %d frames in %d ms", key, len(vectors), elapsed)
+		return avg, nil
 	}
-
-	elapsed := time.Since(startTime).Milliseconds()
-	log.Printf("Video embedding for %s: processed %d frames in %d ms", key, len(vectors), elapsed)
-
-	return avg, nil
+	return nil, lastErr
 }
 
-func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples int) (<-chan []byte, func() error, error) {
+func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples, inputSize int) (<-chan []byte, func() error, error) {
 	if samples <= 0 {
 		return nil, nil, fmt.Errorf("invalid frame sample count")
 	}
@@ -193,7 +203,7 @@ func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples
 		}
 	}
 
-	S := embed.InputSpatialSize()
+	S := inputSize
 	if S <= 0 {
 		return nil, nil, fmt.Errorf("invalid vision input size %d", S)
 	}

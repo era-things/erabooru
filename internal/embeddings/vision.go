@@ -99,7 +99,10 @@ func VisionEmbeddingsRGB24(frames [][]byte) ([][]float32, error) {
 	if len(frames) == 0 {
 		return nil, fmt.Errorf("vision embedding batch is empty")
 	}
-	S := InputSpatialSize()
+	S, err := rgb24SpatialSize(frames[0])
+	if err != nil {
+		return nil, err
+	}
 	pixels := make([]float32, 0, len(frames)*3*S*S)
 	for _, frame := range frames {
 		normalized, err := normalizeRGB24(frame, S)
@@ -109,6 +112,28 @@ func VisionEmbeddingsRGB24(frames [][]byte) ([][]float32, error) {
 		pixels = append(pixels, normalized...)
 	}
 	return runVisionModelBatch(pixels, S, len(frames))
+}
+
+func rgb24SpatialSize(frame []byte) (int, error) {
+	if len(frame) == 0 || len(frame)%3 != 0 {
+		return 0, fmt.Errorf("invalid RGB24 frame length %d", len(frame))
+	}
+	pixels := len(frame) / 3
+	size := int(math.Sqrt(float64(pixels)))
+	if size*size != pixels {
+		return 0, fmt.Errorf("RGB24 frame is not square: %d pixels", pixels)
+	}
+	return size, nil
+}
+
+// RetargetInputSpatialSize updates the input size when an exported ONNX model
+// has dynamic image dimensions but a fixed positional-embedding grid.
+func RetargetInputSpatialSize(err error, current int) (int, bool) {
+	newSize, ok := retargetVisionInputSize(err, current)
+	if ok {
+		setInputSpatialSize(newSize)
+	}
+	return newSize, ok
 }
 
 func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
