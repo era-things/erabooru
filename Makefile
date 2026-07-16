@@ -4,6 +4,7 @@
 GO        ?= go
 WEB_DIR   ?= web
 BIN_DIR   ?= bin
+POWERSHELL ?= powershell.exe
 
 
 # ──────────────────────────────────────────
@@ -11,11 +12,7 @@ BIN_DIR   ?= bin
 # ──────────────────────────────────────────
 .PHONY: setup-env
 setup-env:
-	@if [ ! -f .env ]; then \
-		echo "→ Creating .env file from .env.example..."; \
-		cp .env.example .env; \
-		echo "✅ Created .env file. You may want to edit it before continuing."; \
-	fi
+	@$(POWERSHELL) -NoProfile -NonInteractive -Command "if (-not (Test-Path -LiteralPath '.env')) { Write-Host 'Creating .env file from .env.example...'; Copy-Item -LiteralPath '.env.example' -Destination '.env'; Write-Host 'Created .env file. You may want to edit it before continuing.' }"
 
 .PHONY: prepare
 prepare: setup-env
