@@ -11,6 +11,7 @@
 	let media = $state<MediaDetail | null>(null);
 	let tagsInput = $state('');
 	let edit = $state(false);
+	let mediaLoadError = $state('');
 	let vectorSearchQuery = $state<string | null>(null);
 	const hasVectorSearch = $derived(
 		typeof vectorSearchQuery === 'string' && vectorSearchQuery.length > 0
@@ -18,7 +19,7 @@
 
 	function applyMediaDetail(detail: MediaDetail) {
 		media = detail;
-		tagsInput = detail.tags.map((t) => t.name.replace(/ /g, '_')).join(' ');
+		if (!edit) tagsInput = detail.tags.map((t) => t.name.replace(/ /g, '_')).join(' ');
 		const embedding =
 			detail.embeddings.find((entry) => entry.space === 'vision' && entry.status === 'ready') ??
 			detail.embeddings.find((entry) => entry.status === 'ready');
@@ -28,18 +29,44 @@
 	$effect(() => {
 		const id = page.params.id;
 		if (!id) return;
+		let cancelled = false;
+		let failedAttempts = 0;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		media = null;
+		mediaLoadError = '';
+		vectorSearchQuery = null;
+		edit = false;
 
 		async function loadMedia() {
 			try {
 				const detail = await fetchMediaDetail(id);
+				if (cancelled) return;
+				failedAttempts = 0;
 				applyMediaDetail(detail);
-				edit = false;
+				if (
+					detail.embeddings.length === 0 ||
+					detail.embeddings.some(
+						(entry) => entry.status === 'queued' || entry.status === 'processing'
+					)
+				) {
+					timer = setTimeout(loadMedia, 1000);
+				}
 			} catch (err) {
-				console.error('failed to load media', err);
+				if (cancelled) return;
+				if (++failedAttempts < 3) {
+					timer = setTimeout(loadMedia, 1000);
+				} else {
+					console.error('failed to load media', err);
+					mediaLoadError = 'Could not load media. Please try again.';
+				}
 			}
 		}
 
-		loadMedia();
+		void loadMedia();
+		return () => {
+			cancelled = true;
+			clearTimeout(timer);
+		};
 	});
 
 	async function remove() {
@@ -78,6 +105,12 @@
 </script>
 
 <TabNav active="media" />
+
+{#if mediaLoadError}
+	<p role="alert" class="p-4 text-sm text-red-600">{mediaLoadError}</p>
+{:else if !media}
+	<p role="status" class="p-4 text-sm text-gray-500">Loading media...</p>
+{/if}
 
 {#if media}
 	<div class="flex flex-col gap-6 p-4">
@@ -161,6 +194,10 @@
 				{#key vectorSearchQuery}
 					<MediaGrid query="" vectorQuery={vectorSearchQuery ?? undefined} />
 				{/key}
+			{:else if media.embeddings.length === 0 || media.embeddings.some((entry) => entry.status === 'queued' || entry.status === 'processing')}
+				<p role="status" class="text-sm text-gray-500">Preparing similar media...</p>
+			{:else if media.embeddings.some((entry) => entry.status === 'failed')}
+				<p role="alert" class="text-sm text-red-600">Embedding generation failed.</p>
 			{:else}
 				<p class="text-sm text-gray-500">No similar media yet.</p>
 			{/if}

@@ -22,6 +22,7 @@
 	let scrollY = $state(0);
 	let nextCursor = $state<string | null>(null);
 	let loading = $state(false);
+	let error = $state('');
 
 	let columnCount = $derived(Math.max(Math.floor(innerWidth / 300), 2));
 	let columnWidths = $derived(Array(columnCount).fill('1fr'));
@@ -40,7 +41,10 @@
 
 		if (!mounted) return;
 
-		void untrack(() => load(true, query, pageSize, normalizedVectorQuery));
+		const currentQuery = query;
+		const currentPageSize = pageSize;
+		const currentVectorQuery = normalizedVectorQuery;
+		void untrack(() => load(true, currentQuery, currentPageSize, currentVectorQuery));
 	});
 
 	async function load(
@@ -52,6 +56,11 @@
 		if (loading && !reset) return;
 		const requestId = ++requestCounter;
 		loading = true;
+		error = '';
+		if (reset) {
+			media = [];
+			nextCursor = null;
+		}
 		try {
 			const data = await fetchMediaPreviews(
 				currentQuery,
@@ -76,7 +85,9 @@
 			media = reset ? previews : [...media, ...previews];
 			nextCursor = data.next_cursor || null;
 		} catch (err) {
-			console.error('media fetch error', err);
+			if (requestId === requestCounter) {
+				error = err instanceof Error ? err.message : 'Search failed';
+			}
 		} finally {
 			if (requestId === requestCounter) loading = false;
 		}
@@ -93,6 +104,20 @@
 </script>
 
 <svelte:window bind:innerWidth bind:scrollY />
+
+{#if loading}
+	<p role="status" class="my-4 text-sm text-gray-500">Loading results...</p>
+{/if}
+{#if error}
+	<div role="alert" class="my-4 text-sm text-red-600">
+		<p>Could not load results: {error}</p>
+		<button
+			type="button"
+			class="underline"
+			onclick={() => load(true, query, pageSize, normalizedVectorQuery)}>Retry</button
+		>
+	</div>
+{/if}
 
 <Masonry items={media} {columnWidths} scrollPosition={scrollY} />
 
