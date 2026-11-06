@@ -67,6 +67,14 @@ Media processing uses separate concurrency controls:
 | `EMBEDDING_CONCURRENCY` | Concurrent embedding jobs, including preprocessing | `2` |
 | `INFERENCE_CONCURRENCY` | Concurrent ONNX model executions | `1` |
 
+Text searches take priority over background embeddings. New background inference
+waits while searches are queued or running. With inference concurrency above one,
+one slot is reserved for searches; background work can use the remaining slots.
+At concurrency one, a search waits for the current image or video frame to finish,
+then runs before the next background call. Videos release the budget after each
+sampled frame instead of holding it for the full video. Running ONNX calls are
+not interrupted.
+
 If you set `MODEL_DIR` the application skips downloading and loads models directly from the
 provided path (useful for local development with pre-downloaded weights).
 

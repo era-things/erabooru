@@ -183,12 +183,7 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media
 		if len(frames) == 0 {
 			return nil, fmt.Errorf("no frames extracted for video %s", key)
 		}
-		release, acquireErr := w.Inference.Acquire(ctx, processing.BackgroundInference)
-		if acquireErr != nil {
-			return nil, acquireErr
-		}
-		vectors, err := embed.VisionEmbeddingsRGB24(frames)
-		release()
+		vectors, err := embedVideoFrames(ctx, w.Inference, frames, embed.VisionEmbeddingsRGB24)
 		if err != nil {
 			lastErr = err
 			if newSize, ok := embed.RetargetInputSpatialSize(err, inputSize); ok {
@@ -208,6 +203,34 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media
 		return avg, nil
 	}
 	return nil, lastErr
+}
+
+// Embed one frame per admission so a video cannot hold the inference budget
+// across every sampled frame while a search is waiting.
+func embedVideoFrames(ctx context.Context, limiter *processing.InferenceLimiter, frames [][]byte, infer func([][]byte) ([][]float32, error)) ([][]float32, error) {
+	vectors := make([][]float32, 0, len(frames))
+	for i := range frames {
+		vector, err := func() ([]float32, error) {
+			release, err := limiter.Acquire(ctx, processing.BackgroundInference)
+			if err != nil {
+				return nil, err
+			}
+			defer release()
+			batch, err := infer(frames[i : i+1])
+			if err != nil {
+				return nil, err
+			}
+			if len(batch) != 1 {
+				return nil, fmt.Errorf("expected one frame embedding, got %d", len(batch))
+			}
+			return batch[0], nil
+		}()
+		if err != nil {
+			return nil, err
+		}
+		vectors = append(vectors, vector)
+	}
+	return vectors, nil
 }
 
 func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples, inputSize int) (<-chan []byte, func() error, error) {
