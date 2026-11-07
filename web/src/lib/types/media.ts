@@ -11,7 +11,12 @@ export interface MediaItem {
 	format: string;
 }
 
+export type ProcessingStatus = 'queued' | 'processing' | 'retrying' | 'ready' | 'failed';
+
 export interface MediaDetail extends MediaItem {
+	status: ProcessingStatus;
+	error: string | null;
+	embedding_availability: 'available' | 'pending' | 'unavailable' | 'missing';
 	size: number;
 	tags: TagCount[];
 	dates: MediaDate[];
@@ -20,7 +25,8 @@ export interface MediaDetail extends MediaItem {
 
 export interface MediaEmbedding {
 	space: string;
-	status: 'queued' | 'processing' | 'ready' | 'failed';
+	status: ProcessingStatus;
+	error: string | null;
 }
 
 export interface TagCount {

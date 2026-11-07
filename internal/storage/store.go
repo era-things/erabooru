@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/zeebo/xxh3"
 )
@@ -16,14 +17,16 @@ var ErrExists = errors.New("media already exists")
 type Store struct {
 	originals string
 	previews  string
+	incoming  string
 }
 
 func New(root string) (*Store, error) {
 	s := &Store{
 		originals: filepath.Join(root, "originals"),
 		previews:  filepath.Join(root, "previews"),
+		incoming:  filepath.Join(root, ".incoming"),
 	}
-	for _, dir := range []string{s.originals, s.previews} {
+	for _, dir := range []string{s.originals, s.previews, s.incoming} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, err
 		}
@@ -42,56 +45,74 @@ func (s *Store) PutOriginal(ctx context.Context, id string, src io.Reader) error
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	return s.writeAtomic(ctx, s.originals, s.OriginalPath(id), src)
+	return s.writeAtomic(ctx, s.incoming, s.OriginalPath(id), src)
 }
 
-// PutHashedOriginal streams src to disk while deriving its content ID. The
-// temporary file and final object live in the same directory, so installation
-// is atomic. Existing content is left untouched.
-func (s *Store) PutHashedOriginal(ctx context.Context, src io.Reader) (id string, existed bool, retErr error) {
-	tmp, err := os.CreateTemp(s.originals, ".incoming-*")
+// StagedOriginal keeps incoming bytes private until the database publication
+// lock is held. Close must be called even after Install.
+type StagedOriginal struct {
+	ID    string
+	Size  int64
+	path  string
+	store *Store
+}
+
+func (s *Store) StageOriginal(ctx context.Context, src io.Reader) (_ *StagedOriginal, retErr error) {
+	tmp, err := os.CreateTemp(s.incoming, "upload-*")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = tmp.Close()
+		if retErr != nil {
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+	h := xxh3.New()
+	size, err := io.Copy(io.MultiWriter(tmp, h), &contextReader{ctx: ctx, reader: src})
+	if err != nil {
+		return nil, err
+	}
+	if err := tmp.Sync(); err != nil {
+		return nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, err
+	}
+	sum := h.Sum128().Bytes()
+	return &StagedOriginal{ID: hex.EncodeToString(sum[:]), Size: size, path: tmp.Name(), store: s}, nil
+}
+func (o *StagedOriginal) Close() { _ = os.Remove(o.path) }
+func (o *StagedOriginal) Install() (bool, error) {
+	target := o.store.OriginalPath(o.ID)
+	if _, err := os.Stat(target); err == nil {
+		return true, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	if err := os.Rename(o.path, target); err != nil {
+		if _, statErr := os.Stat(target); statErr == nil {
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
+}
+func (s *Store) PutHashedOriginal(ctx context.Context, src io.Reader) (string, bool, error) {
+	staged, err := s.StageOriginal(ctx, src)
 	if err != nil {
 		return "", false, err
 	}
-	name := tmp.Name()
-	defer func() {
-		_ = tmp.Close()
-		_ = os.Remove(name)
-	}()
-
-	h := xxh3.New()
-	if _, err := io.Copy(io.MultiWriter(tmp, h), &contextReader{ctx: ctx, reader: src}); err != nil {
-		return "", false, err
-	}
-	if err := tmp.Sync(); err != nil {
-		return "", false, err
-	}
-	if err := tmp.Close(); err != nil {
-		return "", false, err
-	}
-
-	sum := h.Sum128().Bytes()
-	id = hex.EncodeToString(sum[:])
-	target := s.OriginalPath(id)
-	if _, err := os.Stat(target); err == nil {
-		return id, true, nil
-	} else if !os.IsNotExist(err) {
-		return "", false, err
-	}
-	if err := os.Rename(name, target); err != nil {
-		if _, statErr := os.Stat(target); statErr == nil {
-			return id, true, nil
-		}
-		return "", false, err
-	}
-	return id, false, nil
+	defer staged.Close()
+	existed, err := staged.Install()
+	return staged.ID, existed, err
 }
 
 func (s *Store) PutPreview(ctx context.Context, id string, src io.Reader) error {
 	if err := os.Remove(s.PreviewPath(id)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	return s.writeAtomic(ctx, s.previews, s.PreviewPath(id), src)
+	return s.writeAtomic(ctx, s.incoming, s.PreviewPath(id), src)
 }
 
 func (s *Store) writeAtomic(ctx context.Context, tempDir, target string, src io.Reader) (retErr error) {
@@ -134,7 +155,7 @@ func (s *Store) WalkOriginals(fn func(id string) error) error {
 		return err
 	}
 	for _, entry := range entries {
-		if entry.Type().IsRegular() {
+		if entry.Type().IsRegular() && !strings.HasPrefix(entry.Name(), ".incoming-") {
 			if err := fn(entry.Name()); err != nil {
 				return err
 			}

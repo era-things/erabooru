@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"era/booru/internal/processing"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -53,7 +54,7 @@ func EnqueueTx(ctx context.Context, c *river.Client[pgx.Tx], tx pgx.Tx, args riv
 	)
 
 	switch args.(type) {
-	case ProcessArgs:
+	case ProcessArgs, CleanupArgs:
 		queueName = "process" // Goes to media worker
 	case EmbedArgs:
 		queueName = "embed" // Goes to image embed worker
@@ -116,4 +117,23 @@ func (EmbedArgs) InsertOpts() river.InsertOpts {
 		ByArgs:  true,
 		ByState: activeUniqueStates,
 	}}
+}
+
+// FailureStatus describes the durable job's next action, not just this attempt.
+func FailureStatus(job *rivertype.JobRow, err error) string {
+	var cancelled *river.JobCancelError
+	if errors.As(err, &cancelled) || job.Attempt >= job.MaxAttempts {
+		return "failed"
+	}
+	return "retrying"
+}
+
+type CleanupArgs struct {
+	Key        string `json:"key"`
+	Generation string `json:"generation"`
+}
+
+func (CleanupArgs) Kind() string { return "cleanup_media" }
+func (CleanupArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 25, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: activeUniqueStates}}
 }

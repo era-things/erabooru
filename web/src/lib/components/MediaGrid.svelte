@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import Masonry from './media_grid/Masonry.svelte'; // Masonry component
 	import type { MediaPreviewItem, MediaItem } from '$lib/types/media';
 	import { PAGE_SIZE } from '$lib/constants';
@@ -31,9 +31,18 @@
 	const usingProvidedItems = $derived(items !== undefined);
 
 	let requestCounter = 0;
+	let controller: AbortController | undefined;
+	onDestroy(() => {
+		requestCounter++;
+		controller?.abort();
+	});
 
 	$effect(() => {
 		if (usingProvidedItems) {
+			requestCounter++;
+			controller?.abort();
+			loading = false;
+			error = '';
 			media = items ?? [];
 			nextCursor = null;
 			return;
@@ -53,8 +62,10 @@
 		currentPageSize: number,
 		currentVectorQuery: string
 	) {
-		if (loading && !reset) return;
+		if (usingProvidedItems || (loading && !reset)) return;
 		const requestId = ++requestCounter;
+		controller?.abort();
+		controller = new AbortController();
 		loading = true;
 		error = '';
 		if (reset) {
@@ -66,7 +77,8 @@
 				currentQuery,
 				currentPageSize,
 				currentVectorQuery,
-				reset ? null : nextCursor
+				reset ? null : nextCursor,
+				controller.signal
 			);
 			if (requestId !== requestCounter) {
 				return;

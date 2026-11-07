@@ -51,15 +51,26 @@ func (w *ProcessWorker) Work(ctx context.Context, job *river.Job[queue.ProcessAr
 	}
 	defer func() {
 		if retErr != nil {
-			db.FailIngestion(context.WithoutCancel(ctx), w.DB, job.Args.Key, job.Args.Generation, retErr)
+			failureCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			if err := db.RecordIngestionError(failureCtx, w.DB, job.Args.Key, job.Args.Generation, queue.FailureStatus(job.JobRow, retErr), retErr); err != nil {
+				log.Printf("record job failure: %v", err)
+			}
+		}
+	}()
+
+	// Keep application status aligned with River even when processing panics.
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			retErr = fmt.Errorf("media processing panic: %v", recovered)
 		}
 	}()
 
 	var item db.Media
 	if strings.HasPrefix(job.Args.ContentType, "video/") {
-		item, err = w.processVideo(ctx, job.Args.Key)
+		item, err = w.processVideo(ctx, job.Args.Key, job.Args.Generation)
 	} else {
-		item, err = w.processImage(ctx, job.Args.Key)
+		item, err = w.processImage(ctx, job.Args.Key, job.Args.Generation)
 	}
 	if err != nil {
 		return err
@@ -69,7 +80,7 @@ func (w *ProcessWorker) Work(ctx context.Context, job *river.Job[queue.ProcessAr
 	return err
 }
 
-func (w *ProcessWorker) processImage(ctx context.Context, key string) (db.Media, error) {
+func (w *ProcessWorker) processImage(ctx context.Context, key, generation string) (db.Media, error) {
 	rc, err := os.Open(w.Store.OriginalPath(key))
 	if err != nil {
 		return db.Media{}, err
@@ -83,7 +94,7 @@ func (w *ProcessWorker) processImage(ctx context.Context, key string) (db.Media,
 		}
 		return db.Media{}, err
 	}
-	if err := w.generatePreview(ctx, key, ""); err != nil {
+	if err := w.generatePreview(ctx, key, generation, ""); err != nil {
 		return db.Media{}, err
 	}
 	stat, err := os.Stat(w.Store.OriginalPath(key))
@@ -94,7 +105,7 @@ func (w *ProcessWorker) processImage(ctx context.Context, key string) (db.Media,
 }
 
 // Simplified processVideo function
-func (w *ProcessWorker) processVideo(ctx context.Context, key string) (db.Media, error) {
+func (w *ProcessWorker) processVideo(ctx context.Context, key, generation string) (db.Media, error) {
 	src := w.Store.OriginalPath(key)
 
 	probeOut, err := exec.CommandContext(ctx, "ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", src).Output()
@@ -151,7 +162,7 @@ func (w *ProcessWorker) processVideo(ctx context.Context, key string) (db.Media,
 	if duration > 0 {
 		seek = strconv.FormatFloat(min(float64(duration)/2, 2), 'f', 3, 64)
 	}
-	if err := w.generatePreview(ctx, key, seek); err != nil {
+	if err := w.generatePreview(ctx, key, generation, seek); err != nil {
 		return db.Media{}, err
 	}
 	stat, err := os.Stat(src)
@@ -171,6 +182,9 @@ func (w *ProcessWorker) completeIngestion(ctx context.Context, item db.Media) (b
 		return false, err
 	}
 	defer tx.Rollback(ctx)
+	if err := db.LockMediaTx(ctx, tx, item.ID); err != nil {
+		return false, err
+	}
 	if err := db.CompleteIngestionTx(ctx, tx, item); err != nil {
 		return false, err
 	}
@@ -196,7 +210,22 @@ func (w *ProcessWorker) completeIngestion(ctx context.Context, item db.Media) (b
 	return false, tx.Commit(ctx)
 }
 
-func (w *ProcessWorker) generatePreview(ctx context.Context, key, seek string) error {
+func (w *ProcessWorker) generatePreview(ctx context.Context, key, generation, seek string) error {
+	tx, err := w.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.WithoutCancel(ctx))
+	if err := db.LockMediaTx(ctx, tx, key); err != nil {
+		return err
+	}
+	current, status, err := db.MediaLifecycle(ctx, tx, key)
+	if err != nil || current != generation || status != "processing" {
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		return river.JobCancel(fmt.Errorf("stale preview generation for %s", key))
+	}
 	started := time.Now()
 	release, err := w.Decode.Acquire(ctx)
 	if err != nil {

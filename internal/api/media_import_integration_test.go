@@ -95,6 +95,13 @@ func TestMediaImportLifecycle(t *testing.T) {
 	if mediaStatus != "queued" || embeddingStatus != "ready" || stored.Slice()[0] != 1 {
 		t.Fatal("import was not atomic / normalized")
 	}
+	// Rejecting a malformed duplicate must leave the accepted original untouched.
+	if response := upload(metadata, true); response.Code != 400 {
+		t.Fatalf("malformed duplicate accepted: %d", response.Code)
+	}
+	if original, err := os.ReadFile(store.OriginalPath(result.ID)); err != nil || !bytes.Equal(original, file) {
+		t.Fatalf("malformed duplicate damaged original: %v", err)
+	}
 	// Metadata ingestion must preserve the vector and never schedule inference.
 	if err := worker.Work(ctx, &river.Job[queue.ProcessArgs]{JobRow: &rivertype.JobRow{ID: 1}, Args: queue.ProcessArgs{Key: result.ID, Generation: generation, ContentType: "image/png"}}); err != nil {
 		t.Fatal(err)

@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 	singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
 	version integer NOT NULL
 );
-INSERT INTO schema_version (singleton, version) VALUES (true, 2)
+INSERT INTO schema_version (singleton, version) VALUES (true, 3)
 ON CONFLICT (singleton) DO UPDATE SET version = EXCLUDED.version;
 
 CREATE TABLE IF NOT EXISTS media (
@@ -115,6 +115,18 @@ CREATE TABLE IF NOT EXISTS media (
     duration integer CHECK (duration >= 0),
     size bigint NOT NULL CHECK (size >= 0),
     uploaded_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Upgrade existing installations without resetting their media.
+ALTER TABLE media DROP CONSTRAINT IF EXISTS media_status_check;
+ALTER TABLE media ADD CONSTRAINT media_status_check
+    CHECK (status IN ('queued', 'processing', 'retrying', 'ready', 'failed'));
+
+-- Retained after cleanup so repair cannot resurrect intentionally deleted files.
+CREATE TABLE IF NOT EXISTS deleted_media (
+    id text PRIMARY KEY,
+    generation text NOT NULL,
+    cleaned_at timestamptz
 );
 
 CREATE TABLE IF NOT EXISTS tag (
@@ -155,6 +167,9 @@ CREATE TABLE IF NOT EXISTS media_embedding (
     value vector,
     PRIMARY KEY (media_id, space_id)
 );
+ALTER TABLE media_embedding DROP CONSTRAINT IF EXISTS media_embedding_status_check;
+ALTER TABLE media_embedding ADD CONSTRAINT media_embedding_status_check
+    CHECK (status IN ('queued', 'processing', 'retrying', 'ready', 'failed'));
 CREATE INDEX IF NOT EXISTS media_embedding_vision_hnsw_idx
     ON media_embedding USING hnsw ((value::vector(768)) vector_ip_ops)
 	WHERE space_id = 'vision' AND status = 'ready';
@@ -189,19 +204,20 @@ VALUES ($1, $2, 'queued', $3, $4) ON CONFLICT (id) DO NOTHING`, id, generation, 
 
 func StartIngestion(ctx context.Context, pool *pgxpool.Pool, id, generation string) (bool, error) {
 	result, err := pool.Exec(ctx, `UPDATE media SET status = 'processing', error = NULL
-WHERE id = $1 AND generation = $2 AND status <> 'ready'`, id, generation)
+WHERE id = $1 AND generation = $2 AND status IN ('queued', 'processing', 'retrying')`, id, generation)
 	return err == nil && result.RowsAffected() == 1, err
 }
 
-func FailIngestion(ctx context.Context, pool *pgxpool.Pool, id, generation string, cause error) {
-	_, _ = pool.Exec(ctx, `UPDATE media SET status = 'failed', error = $3
-WHERE id = $1 AND generation = $2 AND status <> 'ready'`, id, generation, cause.Error())
+func RecordIngestionError(ctx context.Context, pool *pgxpool.Pool, id, generation, status string, cause error) error {
+	_, err := pool.Exec(ctx, `UPDATE media SET status = $3, error = $4
+WHERE id = $1 AND generation = $2 AND status IN ('queued', 'processing', 'retrying')`, id, generation, status, cause.Error())
+	return err
 }
 
 func CompleteIngestionTx(ctx context.Context, tx pgx.Tx, item Media) error {
 	result, err := tx.Exec(ctx, `UPDATE media SET status = 'ready', error = NULL,
 format = $3, width = $4, height = $5, duration = $6, size = $7
-WHERE id = $1 AND generation = $2`, item.ID, item.Generation, item.Format, item.Width, item.Height, item.Duration, item.Size)
+WHERE id = $1 AND generation = $2 AND status IN ('queued', 'processing', 'retrying')`, item.ID, item.Generation, item.Format, item.Width, item.Height, item.Duration, item.Size)
 	if err != nil {
 		return err
 	}
@@ -247,19 +263,21 @@ SELECT id, $3, generation, 'ready', $4 FROM media WHERE id=$1 AND generation=$2`
 func StartEmbedding(ctx context.Context, pool *pgxpool.Pool, mediaID, generation, space string) (bool, error) {
 	result, err := pool.Exec(ctx, `UPDATE media_embedding e SET status = 'processing', error = NULL
 FROM media m WHERE e.media_id = m.id AND e.media_id = $1 AND e.space_id = $2
-AND e.generation = $3 AND m.generation = $3 AND m.status = 'ready' AND e.status <> 'ready'`, mediaID, space, generation)
+AND e.generation = $3 AND m.generation = $3 AND m.status = 'ready' AND e.status IN ('queued', 'processing', 'retrying')`, mediaID, space, generation)
 	return err == nil && result.RowsAffected() == 1, err
 }
 
-func FailEmbedding(ctx context.Context, pool *pgxpool.Pool, mediaID, generation, space string, cause error) {
-	_, _ = pool.Exec(ctx, `UPDATE media_embedding SET status = 'failed', error = $4
-WHERE media_id = $1 AND space_id = $2 AND generation = $3`, mediaID, space, generation, cause.Error())
+func RecordEmbeddingError(ctx context.Context, pool *pgxpool.Pool, mediaID, generation, space, status string, cause error) error {
+	_, err := pool.Exec(ctx, `UPDATE media_embedding SET status = $4, error = $5
+WHERE media_id = $1 AND space_id = $2 AND generation = $3
+AND status IN ('queued', 'processing', 'retrying')`, mediaID, space, generation, status, cause.Error())
+	return err
 }
 
 func CompleteEmbedding(ctx context.Context, pool *pgxpool.Pool, mediaID, generation, space string, value pgvector.Vector) error {
 	result, err := pool.Exec(ctx, `UPDATE media_embedding e SET status = 'ready', error = NULL, value = $4
 FROM media m WHERE e.media_id = m.id AND e.media_id = $1 AND e.space_id = $2
-AND e.generation = $3 AND m.generation = $3 AND m.status = 'ready'`, mediaID, space, generation, value)
+AND e.generation = $3 AND m.generation = $3 AND m.status = 'ready' AND e.status IN ('queued', 'processing', 'retrying')`, mediaID, space, generation, value)
 	if err == nil && result.RowsAffected() != 1 {
 		return pgx.ErrNoRows
 	}
@@ -272,7 +290,9 @@ func MediaExists(ctx context.Context, pool *pgxpool.Pool, id string) (bool, erro
 	return exists, err
 }
 
-func MediaLifecycle(ctx context.Context, pool *pgxpool.Pool, id string) (generation, status string, err error) {
+func MediaLifecycle(ctx context.Context, pool interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, id string) (generation, status string, err error) {
 	err = pool.QueryRow(ctx, `SELECT generation, status FROM media WHERE id = $1`, id).Scan(&generation, &status)
 	return
 }
@@ -282,15 +302,25 @@ func RequeueIngestionTx(ctx context.Context, tx pgx.Tx, id, generation string) e
 	return err
 }
 
-func EmbeddingLifecycle(ctx context.Context, pool *pgxpool.Pool, mediaID, space string) (status string, err error) {
+func EmbeddingLifecycle(ctx context.Context, pool interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, mediaID, space string) (status string, err error) {
 	err = pool.QueryRow(ctx, `SELECT status FROM media_embedding WHERE media_id = $1 AND space_id = $2`, mediaID, space).Scan(&status)
 	return
 }
 
 func GetMedia(ctx context.Context, pool *pgxpool.Pool, id string) (Media, error) {
+	return getMedia(ctx, pool, id, true)
+}
+
+func GetMediaDetail(ctx context.Context, pool *pgxpool.Pool, id string) (Media, error) {
+	return getMedia(ctx, pool, id, false)
+}
+
+func getMedia(ctx context.Context, pool *pgxpool.Pool, id string, readyOnly bool) (Media, error) {
 	var item Media
-	err := pool.QueryRow(ctx, `SELECT id, generation, status, error, format, width, height, duration, size, uploaded_at
-FROM media WHERE id = $1 AND status = 'ready'`, id).
+	err := pool.QueryRow(ctx, `SELECT id, generation, status, error, COALESCE(format, ''), COALESCE(width, 0), COALESCE(height, 0), duration, size, uploaded_at
+FROM media WHERE id = $1 AND (NOT $2 OR status = 'ready')`, id, readyOnly).
 		Scan(&item.ID, &item.Generation, &item.Status, &item.Error, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt)
 	if err != nil {
 		return Media{}, err
@@ -434,14 +464,6 @@ func MediaVectorExists(ctx context.Context, pool *pgxpool.Pool, mediaID, name st
         SELECT 1 FROM media_embedding WHERE media_id = $1 AND space_id = $2 AND status = 'ready'
     )`, mediaID, name).Scan(&exists)
 	return exists, err
-}
-
-func DeleteMedia(ctx context.Context, pool *pgxpool.Pool, id string) error {
-	result, err := pool.Exec(ctx, `DELETE FROM media WHERE id = $1`, id)
-	if err == nil && result.RowsAffected() == 0 {
-		return pgx.ErrNoRows
-	}
-	return err
 }
 
 func SetMediaTags(ctx context.Context, pool *pgxpool.Pool, mediaID string, names []string) error {

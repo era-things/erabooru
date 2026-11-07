@@ -53,6 +53,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		}
 	}()
 	workers := river.NewWorkers()
+	river.AddWorker(workers, &mediaworker.CleanupWorker{Store: store, DB: pool})
 	inference := processing.NewInferenceLimiter(cfg.InferenceConcurrency)
 	decode := processing.NewLimiter(cfg.DecodeConcurrency)
 	river.AddWorker(workers, &mediaworker.ProcessWorker{Store: store, DB: pool, Decode: decode})

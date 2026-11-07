@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +35,7 @@ func RegisterMediaRoutes(r *gin.Engine, pool *pgxpool.Pool, store *storage.Store
 	r.GET("/api/embeddings/profile", embeddingProfileHandler(embed.ActiveProfile()))
 	r.POST("/api/media/:id/tags", updateMediaTagsHandler(pool))
 	r.POST("/api/media/:id/dates", updateMediaDatesHandler(pool))
-	r.DELETE("/api/media/:id", deleteMediaHandler(pool, store))
+	r.DELETE("/api/media/:id", deleteMediaHandler(pool, queueClient))
 	r.StaticFS("/files/originals", http.Dir(store.OriginalsDir()))
 	r.StaticFS("/files/previews", http.Dir(store.PreviewsDir()))
 }
@@ -189,10 +189,14 @@ func getMediaHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
-		item, err := db.GetMedia(c.Request.Context(), pool, id)
+		item, err := db.GetMediaDetail(c.Request.Context(), pool, id)
 		if err != nil {
 			log.Printf("get media %s: %v", id, err)
-			c.AbortWithStatus(http.StatusNotFound)
+			if errors.Is(err, pgx.ErrNoRows) {
+				c.AbortWithStatus(http.StatusNotFound)
+			} else {
+				c.AbortWithStatus(http.StatusInternalServerError)
+			}
 			return
 		}
 
@@ -207,20 +211,23 @@ func getMediaHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		}
 		embeddings := make([]gin.H, 0, len(item.Embeddings))
 		for _, embedding := range item.Embeddings {
-			embeddings = append(embeddings, gin.H{"space": embedding.Space, "status": embedding.Status})
+			embeddings = append(embeddings, gin.H{"space": embedding.Space, "status": embedding.Status, "error": embedding.Error})
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"id":         item.ID,
-			"url":        url,
-			"width":      item.Width,
-			"height":     item.Height,
-			"format":     item.Format,
-			"duration":   item.Duration,
-			"size":       item.Size,
-			"tags":       tags,
-			"dates":      dates,
-			"embeddings": embeddings,
+			"status":                 item.Status,
+			"error":                  item.Error,
+			"embedding_availability": embeddingAvailability(item),
+			"id":                     item.ID,
+			"url":                    url,
+			"width":                  item.Width,
+			"height":                 item.Height,
+			"format":                 item.Format,
+			"duration":               item.Duration,
+			"size":                   item.Size,
+			"tags":                   tags,
+			"dates":                  dates,
+			"embeddings":             embeddings,
 		})
 	}
 }
@@ -283,51 +290,63 @@ func similarMediaByIDHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 func uploadMediaHandler(pool *pgxpool.Pool, store *storage.Store, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id, fileExisted, err := store.PutHashedOriginal(c.Request.Context(), c.Request.Body)
+		staged, err := store.StageOriginal(c.Request.Context(), c.Request.Body)
 		if err != nil {
-			log.Printf("store upload %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
-		completeMediaUpload(c, pool, store, queueClient, id, fileExisted, c.GetHeader("Content-Type"), nil)
+		defer staged.Close()
+		completeMediaUpload(c, pool, store, queueClient, staged, c.GetHeader("Content-Type"), nil)
 	}
 }
 
-func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Store, queueClient *river.Client[pgx.Tx], id string, fileExisted bool, contentType string, vector []float32) {
-	committed := false
-	defer func() {
-		if !committed && !fileExisted {
-			_ = store.Remove(id)
-		}
-	}()
-
-	stat, err := os.Stat(store.OriginalPath(id))
+// File installation and rollback cleanup share the per-ID transaction lock with
+// deletion and repair. Streaming and multipart validation happen before locking.
+func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Store, queueClient *river.Client[pgx.Tx], staged *storage.StagedOriginal, contentType string, vector []float32) {
+	ctx := c.Request.Context()
+	id := staged.ID
+	tx, err := pool.Begin(ctx)
 	if err != nil {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
+	defer tx.Rollback(context.WithoutCancel(ctx))
+	if err := db.LockMediaTx(ctx, tx, id); err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	fileExisted, err := staged.Install()
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	committed := false
+	commitAttempted := false
+	defer func() {
+		if !committed && !commitAttempted && !fileExisted {
+			_ = store.Remove(id)
+		}
+	}()
 	generation, err := newGeneration()
 	if err != nil {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	tx, err := pool.Begin(c.Request.Context())
-	if err != nil {
+	// An explicit upload starts a new generation after a prior deletion.
+	if _, err := tx.Exec(ctx, `DELETE FROM deleted_media WHERE id=$1`, id); err != nil {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	defer tx.Rollback(c.Request.Context())
-	created, err := db.InsertQueuedMedia(c.Request.Context(), tx, id, generation, stat.Size(), time.Now().UTC())
+	created, err := db.InsertQueuedMedia(ctx, tx, id, generation, staged.Size, time.Now().UTC())
 	if err == nil && created && vector != nil {
-		err = db.ImportEmbeddingTx(c.Request.Context(), tx, id, generation, pgvector.NewVector(vector))
+		err = db.ImportEmbeddingTx(ctx, tx, id, generation, pgvector.NewVector(vector))
 	}
 	if err == nil && created {
-		err = queue.EnqueueTx(c.Request.Context(), queueClient, tx, queue.ProcessArgs{
-			Key: id, Generation: generation, ContentType: contentType,
-		})
+		err = queue.EnqueueTx(ctx, queueClient, tx, queue.ProcessArgs{Key: id, Generation: generation, ContentType: contentType})
 	}
 	if err == nil {
-		err = tx.Commit(c.Request.Context())
+		commitAttempted = true
+		err = tx.Commit(ctx)
 	}
 	if err != nil {
 		log.Printf("enqueue process %s: %v", id, err)
@@ -340,6 +359,24 @@ func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Stor
 		status = http.StatusOK
 	}
 	c.JSON(status, gin.H{"id": id, "existed": !created})
+}
+
+func embeddingAvailability(item db.Media) string {
+	for _, embedding := range item.Embeddings {
+		if embedding.Status == "ready" {
+			return "available"
+		}
+	}
+	if !embed.Available() {
+		return "unavailable"
+	}
+	if len(item.Embeddings) > 0 {
+		return "available"
+	}
+	if item.Status == "queued" || item.Status == "processing" || item.Status == "retrying" {
+		return "pending"
+	}
+	return "missing" // Settled media with no job; repair can schedule it.
 }
 
 func newGeneration() (string, error) {
@@ -404,23 +441,40 @@ func updateMediaDatesHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
-func deleteMediaHandler(pool *pgxpool.Pool, store *storage.Store) gin.HandlerFunc {
+func deleteMediaHandler(pool *pgxpool.Pool, client *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := idParam(c)
 		if !ok {
 			return
 		}
-
-		if err := db.DeleteMedia(c.Request.Context(), pool, id); err != nil {
+		ctx := c.Request.Context()
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		defer tx.Rollback(context.WithoutCancel(ctx))
+		if err := db.LockMediaTx(ctx, tx, id); err != nil {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		generation, err := db.MarkDeletedTx(ctx, tx, id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.Status(http.StatusNoContent)
+			return
+		}
+		if err == nil {
+			err = queue.EnqueueTx(ctx, client, tx, queue.CleanupArgs{Key: id, Generation: generation})
+		}
+		if err == nil {
+			err = tx.Commit(ctx)
+		}
+		if err != nil {
 			log.Printf("delete media %s: %v", id, err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
-		if err := store.Remove(id); err != nil {
-			log.Printf("cleanup media files %s: %v", id, err)
-		}
-
-		c.Status(http.StatusOK)
+		c.Status(http.StatusNoContent)
 	}
 }
 

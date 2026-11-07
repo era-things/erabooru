@@ -22,8 +22,17 @@ export interface HiddenTagFiltersResponse {
 	};
 }
 
+export class ApiError extends Error {
+	constructor(
+		public status: number,
+		message: string
+	) {
+		super(message);
+	}
+}
+
 async function handleJson<T>(res: Response): Promise<T> {
-	if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+	if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status} ${res.statusText}`);
 	return res.json() as Promise<T>;
 }
 
@@ -31,15 +40,16 @@ export async function fetchMediaPreviews(
 	query: string,
 	pageSize: number,
 	vectorQuery?: string | null,
-	cursor?: string | null
+	cursor?: string | null,
+	signal?: AbortSignal
 ): Promise<MediaPreviewsResponse> {
 	const params = buildSearchParams({ pageSize, query, vectorQuery, cursor });
-	const res = await fetch(`${apiBase}/media/previews?${params.toString()}`);
+	const res = await fetch(`${apiBase}/media/previews?${params.toString()}`, { signal });
 	return handleJson(res);
 }
 
-export async function fetchMediaDetail(id: string): Promise<MediaDetail> {
-	const res = await fetch(`${apiBase}/media/${id}`);
+export async function fetchMediaDetail(id: string, signal?: AbortSignal): Promise<MediaDetail> {
+	const res = await fetch(`${apiBase}/media/${id}`, { signal });
 	return handleJson(res);
 }
 

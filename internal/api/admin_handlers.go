@@ -2,6 +2,7 @@ package api
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,89 +36,113 @@ func regenerateHandler(pool *pgxpool.Pool, store *storage.Store, riverClient *ri
 
 		processCount := 0
 		embedCount := 0
-		err := store.WalkOriginals(func(id string) error {
-			file, err := os.Open(store.OriginalPath(id))
-			if err != nil {
-				return err
-			}
-			var header [512]byte
-			n, readErr := file.Read(header[:])
-			_ = file.Close()
-			if readErr != nil && readErr != io.EOF {
-				return readErr
-			}
-			contentType := http.DetectContentType(header[:n])
-			generation, status, lifecycleErr := db.MediaLifecycle(ctx, pool, id)
-			if lifecycleErr == nil && status == "ready" {
-				if !embed.Available() {
-					return nil
-				}
-				embeddingStatus, embeddingErr := db.EmbeddingLifecycle(ctx, pool, id, db.DefaultEmbeddingSpace)
-				if embeddingErr == nil && embeddingStatus != "failed" {
-					return nil
-				}
-				if embeddingErr != nil && !errors.Is(embeddingErr, pgx.ErrNoRows) {
-					return fmt.Errorf("check embedding %s: %w", id, embeddingErr)
-				}
+		err := requeueCleanup(ctx, pool, riverClient)
+		if err == nil {
+			err = store.WalkOriginals(func(id string) error {
 				tx, err := pool.Begin(ctx)
 				if err != nil {
 					return err
 				}
-				defer tx.Rollback(ctx)
-				queued, err := db.QueueEmbeddingTx(ctx, tx, id, generation, db.DefaultEmbeddingSpace)
+				defer tx.Rollback(context.WithoutCancel(ctx))
+				if err := db.LockMediaTx(ctx, tx, id); err != nil {
+					return err
+				}
+				deleted, err := db.IsDeletedTx(ctx, tx, id)
 				if err != nil {
 					return err
 				}
-				if !queued {
-					return tx.Commit(ctx)
+				if deleted {
+					return nil
 				}
-				if err := queue.EnqueueTx(ctx, riverClient, tx, queue.EmbedArgs{Key: id, Generation: generation, Space: db.DefaultEmbeddingSpace}); err != nil {
+				file, err := os.Open(store.OriginalPath(id))
+				if os.IsNotExist(err) {
+					return nil
+				}
+				if err != nil {
 					return err
+				}
+				var header [512]byte
+				n, readErr := file.Read(header[:])
+				_ = file.Close()
+				if readErr != nil && readErr != io.EOF {
+					return readErr
+				}
+				contentType := http.DetectContentType(header[:n])
+				generation, status, lifecycleErr := db.MediaLifecycle(ctx, tx, id)
+				if lifecycleErr == nil && status == "ready" {
+					if !embed.Available() {
+						return nil
+					}
+					embeddingStatus, embeddingErr := db.EmbeddingLifecycle(ctx, tx, id, db.DefaultEmbeddingSpace)
+					if embeddingErr == nil && embeddingStatus == "ready" {
+						return nil
+					}
+					active, err := queue.HasActiveJobTx(ctx, tx, queue.EmbedArgs{Key: id, Generation: generation, Space: db.DefaultEmbeddingSpace})
+					if err != nil {
+						return err
+					}
+					if active {
+						return nil
+					}
+					if embeddingErr != nil && !errors.Is(embeddingErr, pgx.ErrNoRows) {
+						return fmt.Errorf("check embedding %s: %w", id, embeddingErr)
+					}
+					queued, err := db.QueueEmbeddingTx(ctx, tx, id, generation, db.DefaultEmbeddingSpace)
+					if err != nil {
+						return err
+					}
+					if !queued {
+						return tx.Commit(ctx)
+					}
+					if err := queue.EnqueueTx(ctx, riverClient, tx, queue.EmbedArgs{Key: id, Generation: generation, Space: db.DefaultEmbeddingSpace}); err != nil {
+						return err
+					}
+					if err := tx.Commit(ctx); err != nil {
+						return err
+					}
+					embedCount++
+					return nil
+				}
+				if lifecycleErr != nil && !errors.Is(lifecycleErr, pgx.ErrNoRows) {
+					return fmt.Errorf("check media %s: %w", id, lifecycleErr)
+				}
+				if lifecycleErr == nil {
+					active, err := queue.HasActiveJobTx(ctx, tx, queue.ProcessArgs{Key: id, Generation: generation})
+					if err != nil {
+						return err
+					}
+					if active {
+						return nil
+					}
+				}
+				if errors.Is(lifecycleErr, pgx.ErrNoRows) {
+					generation, err = newGeneration()
+					if err != nil {
+						return err
+					}
+				}
+				stat, err := os.Stat(store.OriginalPath(id))
+				if err != nil {
+					return err
+				}
+				if errors.Is(lifecycleErr, pgx.ErrNoRows) {
+					if _, err := db.InsertQueuedMedia(ctx, tx, id, generation, stat.Size(), time.Now().UTC()); err != nil {
+						return err
+					}
+				} else if err := db.RequeueIngestionTx(ctx, tx, id, generation); err != nil {
+					return err
+				}
+				if err := queue.EnqueueTx(ctx, riverClient, tx, queue.ProcessArgs{Key: id, Generation: generation, ContentType: contentType}); err != nil {
+					return fmt.Errorf("enqueue media %s: %w", id, err)
 				}
 				if err := tx.Commit(ctx); err != nil {
 					return err
 				}
-				embedCount++
-				return nil
-			}
-			if lifecycleErr != nil && !errors.Is(lifecycleErr, pgx.ErrNoRows) {
-				return fmt.Errorf("check media %s: %w", id, lifecycleErr)
-			}
-			if lifecycleErr == nil && status != "failed" {
-				return nil
-			}
-			if errors.Is(lifecycleErr, pgx.ErrNoRows) {
-				generation, err = newGeneration()
-				if err != nil {
-					return err
-				}
-			}
-			stat, err := os.Stat(store.OriginalPath(id))
-			if err != nil {
-				return err
-			}
-			tx, err := pool.Begin(ctx)
-			if err != nil {
-				return err
-			}
-			defer tx.Rollback(ctx)
-			if errors.Is(lifecycleErr, pgx.ErrNoRows) {
-				if _, err := db.InsertQueuedMedia(ctx, tx, id, generation, stat.Size(), time.Now().UTC()); err != nil {
-					return err
-				}
-			} else if err := db.RequeueIngestionTx(ctx, tx, id, generation); err != nil {
-				return err
-			}
-			if err := queue.EnqueueTx(ctx, riverClient, tx, queue.ProcessArgs{Key: id, Generation: generation, ContentType: contentType}); err != nil {
-				return fmt.Errorf("enqueue media %s: %w", id, err)
-			}
-			if err := tx.Commit(ctx); err != nil {
-				return err
-			}
 
-			processCount++
-			return nil
-		})
+				processCount++
+				return nil
+			})
+		}
 		if err != nil {
 			log.Printf("repair scan: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -265,4 +290,31 @@ func importTagsHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		c.Status(http.StatusOK)
 	}
+}
+
+// Exhausted cleanup jobs can be retried by the repair action as well.
+func requeueCleanup(ctx context.Context, pool *pgxpool.Pool, client *river.Client[pgx.Tx]) error {
+	rows, err := pool.Query(ctx, `SELECT id, generation FROM deleted_media WHERE cleaned_at IS NULL`)
+	if err != nil {
+		return err
+	}
+	var jobs []queue.CleanupArgs
+	for rows.Next() {
+		var job queue.CleanupArgs
+		if err := rows.Scan(&job.Key, &job.Generation); err != nil {
+			rows.Close()
+			return err
+		}
+		jobs = append(jobs, job)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, job := range jobs {
+		if err := queue.Enqueue(ctx, client, job); err != nil {
+			return err
+		}
+	}
+	return nil
 }

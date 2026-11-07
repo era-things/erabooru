@@ -130,18 +130,16 @@ func importMediaHandler(pool *pgxpool.Pool, store *storage.Store, client *river.
 			c.JSON(status, gin.H{"error": err.Error()})
 			return
 		}
-		id, existed, err := store.PutHashedOriginal(c.Request.Context(), file)
+		staged, err := store.StageOriginal(c.Request.Context(), file)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store media"})
 			return
 		}
+		defer staged.Close()
 		if _, err := reader.NextPart(); err != io.EOF {
-			if !existed {
-				_ = store.Remove(id)
-			}
 			c.JSON(http.StatusBadRequest, gin.H{"error": "expected exactly embedding and file parts"})
 			return
 		}
-		completeMediaUpload(c, pool, store, client, id, existed, contentType, vector)
+		completeMediaUpload(c, pool, store, client, staged, contentType, vector)
 	}
 }

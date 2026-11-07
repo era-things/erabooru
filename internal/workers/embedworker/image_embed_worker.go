@@ -51,7 +51,18 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 	}
 	defer func() {
 		if retErr != nil {
-			db.FailEmbedding(context.WithoutCancel(ctx), w.DB, job.Args.Key, job.Args.Generation, job.Args.Space, retErr)
+			failureCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			if err := db.RecordEmbeddingError(failureCtx, w.DB, job.Args.Key, job.Args.Generation, job.Args.Space, queue.FailureStatus(job.JobRow, retErr), retErr); err != nil {
+				log.Printf("record job failure: %v", err)
+			}
+		}
+	}()
+
+	// Keep application status aligned with River even when processing panics.
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			retErr = fmt.Errorf("media processing panic: %v", recovered)
 		}
 	}()
 
