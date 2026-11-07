@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"era/booru/internal/config"
 	"era/booru/internal/db"
@@ -27,12 +28,20 @@ import (
 // ProcessWorker processes uploaded media objects.
 type ProcessWorker struct {
 	river.WorkerDefaults[queue.ProcessArgs]
-	Store *storage.Store
-	DB    *pgxpool.Pool
+	Store  *storage.Store
+	DB     *pgxpool.Pool
+	Decode processing.Limiter
 }
 
 func (w *ProcessWorker) Work(ctx context.Context, job *river.Job[queue.ProcessArgs]) (retErr error) {
-	log.Printf("Processing task started for key %s, content type %s", job.Args.Key, job.Args.ContentType)
+	timings := &processing.MediaTimings{Started: time.Now()}
+	ctx = processing.WithTimings(ctx, timings)
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			timings.Log(job.Args.Key, "ingestion", retErr)
+		}
+	}()
 	started, err := db.StartIngestion(ctx, w.DB, job.Args.Key, job.Args.Generation)
 	if err != nil {
 		return err
@@ -56,7 +65,8 @@ func (w *ProcessWorker) Work(ctx context.Context, job *river.Job[queue.ProcessAr
 		return err
 	}
 	item.Generation = job.Args.Generation
-	return w.completeIngestion(ctx, item)
+	handedOff, err = w.completeIngestion(ctx, item)
+	return err
 }
 
 func (w *ProcessWorker) processImage(ctx context.Context, key string) (db.Media, error) {
@@ -155,40 +165,60 @@ func (w *ProcessWorker) processVideo(ctx context.Context, key string) (db.Media,
 	return db.Media{ID: key, Format: format, Width: width, Height: height, Duration: durationValue, Size: stat.Size()}, nil
 }
 
-func (w *ProcessWorker) completeIngestion(ctx context.Context, item db.Media) error {
+func (w *ProcessWorker) completeIngestion(ctx context.Context, item db.Media) (bool, error) {
 	tx, err := w.DB.Begin(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback(ctx)
 	if err := db.CompleteIngestionTx(ctx, tx, item); err != nil {
-		return err
+		return false, err
 	}
 	if embed.Available() {
 		space := db.DefaultEmbeddingSpace
-		if err := db.QueueEmbeddingTx(ctx, tx, item.ID, item.Generation, space); err != nil {
-			return err
+		queued, err := db.QueueEmbeddingTx(ctx, tx, item.ID, item.Generation, space)
+		if err != nil {
+			return false, err
+		}
+		if !queued {
+			return false, tx.Commit(ctx)
 		}
 		client := river.ClientFromContext[pgx.Tx](ctx)
 		if client == nil {
-			return river.ErrNotFound
+			return false, river.ErrNotFound
 		}
-		if err := queue.EnqueueTx(ctx, client, tx, queue.EmbedArgs{Key: item.ID, Generation: item.Generation, Space: space}); err != nil {
-			return err
+		if err := queue.EnqueueTx(ctx, client, tx, queue.EmbedArgs{Key: item.ID, Generation: item.Generation, Space: space, Timings: *processing.Timings(ctx)}); err != nil {
+			return false, err
 		}
+		err = tx.Commit(ctx)
+		return err == nil, err
 	}
-	return tx.Commit(ctx)
+	return false, tx.Commit(ctx)
 }
 
 func (w *ProcessWorker) generatePreview(ctx context.Context, key, seek string) error {
-	args := []string{"-loglevel", "error"}
+	started := time.Now()
+	release, err := w.Decode.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+	waited := time.Since(started)
+	started = time.Now()
+	defer func() {
+		if timings := processing.Timings(ctx); timings != nil {
+			timings.DecodeWait += waited
+			timings.Preview += time.Since(started)
+		}
+	}()
+	args := []string{"-loglevel", "error", "-nostdin", "-threads", processing.FFmpegThreads()}
 	if seek != "" {
 		args = append(args, "-ss", seek)
 	}
 	args = append(args,
-		"-i", w.Store.OriginalPath(key), "-frames:v", "1",
+		"-i", w.Store.OriginalPath(key), "-frames:v", "1", "-filter_threads", "1",
 		"-vf", "scale=512:512:force_original_aspect_ratio=decrease",
-		"-q:v", "4", "-f", "image2", "pipe:1",
+		"-q:v", "4", "-threads", processing.FFmpegThreads(), "-f", "image2", "pipe:1",
 	)
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	stdout, err := cmd.StdoutPipe()

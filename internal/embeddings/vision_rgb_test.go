@@ -3,7 +3,11 @@
 package embed
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"testing"
 )
 
@@ -86,4 +90,29 @@ func almostEqual(a, b float32) bool {
 		diff = -diff
 	}
 	return diff < 1e-4
+}
+
+func TestPrepareImageProducesModelSizedRGB(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 32, 16))
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 32; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: 255, A: 255})
+		}
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := PrepareImage(encoded.Bytes(), 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 3*8*8 {
+		t.Fatalf("unexpected RGB length: %d", len(raw))
+	}
+	for i := 0; i < len(raw); i += 3 {
+		if raw[i] < 250 || raw[i+1] > 5 || raw[i+2] > 5 {
+			t.Fatal("preprocessing changed color")
+		}
+	}
 }

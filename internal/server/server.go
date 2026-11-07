@@ -24,13 +24,14 @@ import (
 
 // Server bundles initialized services and the Gin router.
 type Server struct {
-	Router *gin.Engine
-	Store  *storage.Store
-	Cfg    *config.Config
-	Queue  *river.Client[pgx.Tx]
-	DBPool *pgxpool.Pool
-	ctx    context.Context
-	cancel context.CancelFunc
+	Router  *gin.Engine
+	Store   *storage.Store
+	Cfg     *config.Config
+	Queue   *river.Client[pgx.Tx]
+	DBPool  *pgxpool.Pool
+	ctx     context.Context
+	cancel  context.CancelFunc
+	batcher *processing.FrameBatcher
 }
 
 // New constructs a Server and starts its background media processor.
@@ -44,11 +45,21 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
+	srvCtx, cancel := context.WithCancel(ctx)
+	success := false
+	defer func() {
+		if !success {
+			cancel()
+		}
+	}()
 	workers := river.NewWorkers()
 	inference := processing.NewInferenceLimiter(cfg.InferenceConcurrency)
-	river.AddWorker(workers, &mediaworker.ProcessWorker{Store: store, DB: pool})
+	decode := processing.NewLimiter(cfg.DecodeConcurrency)
+	river.AddWorker(workers, &mediaworker.ProcessWorker{Store: store, DB: pool, Decode: decode})
+	var batcher *processing.FrameBatcher
 	if embed.Available() {
-		river.AddWorker(workers, &embedworker.ImageEmbedWorker{Store: store, DB: pool, Inference: inference})
+		batcher = processing.NewFrameBatcher(srvCtx, inference, cfg.EmbeddingBatchSize, time.Duration(cfg.EmbeddingBatchTargetMS)*time.Millisecond, embed.VisionEmbeddingsRGB24)
+		river.AddWorker(workers, &embedworker.ImageEmbedWorker{Store: store, DB: pool, Batcher: batcher, Decode: decode})
 	}
 
 	riverClient, err := queue.NewClient(ctx, pool, workers, cfg.IngestConcurrency, cfg.EmbeddingConcurrency)
@@ -61,8 +72,6 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
-	srvCtx, cancel := context.WithCancel(ctx)
-
 	r := gin.New()
 	r.Use(api.GinLogger(), gin.Recovery(), api.CORSMiddleware())
 	r.GET("/health", func(c *gin.Context) { c.Status(http.StatusNoContent) })
@@ -73,14 +82,16 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 	api.RegisterStaticRoutes(r)
 
 	s := &Server{
-		Router: r,
-		Store:  store,
-		Cfg:    cfg,
-		Queue:  riverClient,
-		DBPool: pool,
-		ctx:    srvCtx,
-		cancel: cancel,
+		Router:  r,
+		Store:   store,
+		Cfg:     cfg,
+		Queue:   riverClient,
+		DBPool:  pool,
+		ctx:     srvCtx,
+		cancel:  cancel,
+		batcher: batcher,
 	}
+	success = true
 	return s, nil
 }
 
@@ -103,6 +114,9 @@ func (s *Server) Close() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		s.Queue.Stop(ctx)
+	}
+	if s.batcher != nil {
+		s.batcher.Wait()
 	}
 	if s.DBPool != nil {
 		s.DBPool.Close()

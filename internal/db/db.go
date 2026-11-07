@@ -224,18 +224,30 @@ SELECT id, 'upload', uploaded_at FROM media WHERE id = $1 ON CONFLICT DO NOTHING
 	return nil
 }
 
-func QueueEmbeddingTx(ctx context.Context, tx pgx.Tx, mediaID, generation, space string) error {
-	_, err := tx.Exec(ctx, `INSERT INTO media_embedding (media_id, space_id, generation, status)
+// QueueEmbeddingTx preserves an already-ready vector for this media generation.
+func QueueEmbeddingTx(ctx context.Context, tx pgx.Tx, mediaID, generation, space string) (bool, error) {
+	result, err := tx.Exec(ctx, `INSERT INTO media_embedding (media_id, space_id, generation, status)
 VALUES ($1, $2, $3, 'queued')
 ON CONFLICT (media_id, space_id) DO UPDATE
-SET generation = EXCLUDED.generation, status = 'queued', error = NULL, value = NULL`, mediaID, space, generation)
+SET generation = EXCLUDED.generation, status = 'queued', error = NULL, value = NULL
+WHERE media_embedding.generation <> EXCLUDED.generation OR media_embedding.status <> 'ready'`, mediaID, space, generation)
+	return err == nil && result.RowsAffected() == 1, err
+}
+
+// ImportEmbeddingTx records a supplied vector before metadata ingestion completes.
+func ImportEmbeddingTx(ctx context.Context, tx pgx.Tx, mediaID, generation string, value pgvector.Vector) error {
+	result, err := tx.Exec(ctx, `INSERT INTO media_embedding (media_id, space_id, generation, status, value)
+SELECT id, $3, generation, 'ready', $4 FROM media WHERE id=$1 AND generation=$2`, mediaID, generation, DefaultEmbeddingSpace, value)
+	if err == nil && result.RowsAffected() != 1 {
+		return pgx.ErrNoRows
+	}
 	return err
 }
 
 func StartEmbedding(ctx context.Context, pool *pgxpool.Pool, mediaID, generation, space string) (bool, error) {
 	result, err := pool.Exec(ctx, `UPDATE media_embedding e SET status = 'processing', error = NULL
 FROM media m WHERE e.media_id = m.id AND e.media_id = $1 AND e.space_id = $2
-AND e.generation = $3 AND m.generation = $3 AND m.status = 'ready'`, mediaID, space, generation)
+AND e.generation = $3 AND m.generation = $3 AND m.status = 'ready' AND e.status <> 'ready'`, mediaID, space, generation)
 	return err == nil && result.RowsAffected() == 1, err
 }
 

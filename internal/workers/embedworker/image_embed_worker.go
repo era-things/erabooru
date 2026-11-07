@@ -1,19 +1,16 @@
 package embedworker
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"era/booru/internal/config"
@@ -32,12 +29,19 @@ import (
 // ImageEmbedWorker generates vision embeddings for images.
 type ImageEmbedWorker struct {
 	river.WorkerDefaults[queue.EmbedArgs]
-	Store     *storage.Store
-	DB        *pgxpool.Pool
-	Inference *processing.InferenceLimiter
+	Store   *storage.Store
+	DB      *pgxpool.Pool
+	Batcher *processing.FrameBatcher
+	Decode  processing.Limiter
 }
 
 func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedArgs]) (retErr error) {
+	timings := job.Args.Timings
+	if timings.Started.IsZero() {
+		timings.Started = time.Now()
+	}
+	ctx = processing.WithTimings(ctx, &timings)
+	defer func() { timings.Log(job.Args.Key, "embedding", retErr) }()
 	started, err := db.StartEmbedding(ctx, w.DB, job.Args.Key, job.Args.Generation, job.Args.Space)
 	if err != nil {
 		return err
@@ -50,7 +54,6 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 			db.FailEmbedding(context.WithoutCancel(ctx), w.DB, job.Args.Key, job.Args.Generation, job.Args.Space, retErr)
 		}
 	}()
-	log.Printf("Generating embedding for key %s", job.Args.Key)
 
 	media, err := db.GetMedia(ctx, w.DB, job.Args.Key)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -77,20 +80,22 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 		// original for a second time without changing the model input size.
 		data, err := os.ReadFile(w.Store.PreviewPath(job.Args.Key))
 		if err != nil {
-			log.Printf("Failed to read original: %v", err)
+			log.Printf("Failed to read preview: %v", err)
 			return classifyObjectError(err, job.Args.Key)
 		}
 
-		release, acquireErr := w.Inference.Acquire(ctx, processing.BackgroundInference)
-		if acquireErr != nil {
-			return acquireErr
+		preparedAt := time.Now()
+		inputSize := embed.InputSpatialSize()
+		raw, prepareErr := embed.PrepareImage(data, inputSize)
+		timings.Prepare += time.Since(preparedAt)
+		if prepareErr != nil {
+			return classifyEmbeddingError(prepareErr, job.Args.Key)
 		}
-		vec, err = embed.VisionEmbedding(data)
-		release()
-		if err != nil {
-			log.Printf("Failed to generate embedding: %v", err)
-			return classifyEmbeddingError(err, job.Args.Key)
+		vectors, inferErr := w.Batcher.Embed(ctx, [][]byte{raw})
+		if inferErr != nil {
+			return classifyEmbeddingError(inferErr, job.Args.Key)
 		}
+		vec = vectors[0]
 	}
 
 	pgv := pgvector.NewVector(vec)
@@ -99,7 +104,6 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 		return err
 	}
 
-	log.Printf("Successfully generated and saved embedding for key %s (job %d)", job.Args.Key, job.ID)
 	return nil
 }
 
@@ -147,7 +151,6 @@ func isFatalEmbeddingError(err error) bool {
 }
 
 func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media db.Media) ([]float32, error) {
-	startTime := time.Now()
 
 	duration := 0
 	if media.Duration != nil && *media.Duration > 0 {
@@ -168,22 +171,26 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media
 	var lastErr error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		inputSize := embed.InputSpatialSize()
-		frames := make([][]byte, 0, samples)
-		frameCh, waitStream, err := streamVideoFrames(ctx, src, duration, samples, inputSize)
+		waitAt := time.Now()
+		release, err := w.Decode.Acquire(ctx)
 		if err != nil {
 			return nil, err
 		}
-
-		for frame := range frameCh {
-			frames = append(frames, frame)
+		decodeWait := time.Since(waitAt)
+		decodeAt := time.Now()
+		frames, err := extractVideoFrames(ctx, src, duration, samples, inputSize)
+		release()
+		if timings := processing.Timings(ctx); timings != nil {
+			timings.DecodeWait += decodeWait
+			timings.Decode += time.Since(decodeAt)
 		}
-		if err := waitStream(); err != nil {
+		if err != nil {
 			return nil, err
 		}
 		if len(frames) == 0 {
 			return nil, fmt.Errorf("no frames extracted for video %s", key)
 		}
-		vectors, err := embedVideoFrames(ctx, w.Inference, frames, embed.VisionEmbeddingsRGB24)
+		vectors, err := w.Batcher.Embed(ctx, frames)
 		if err != nil {
 			lastErr = err
 			if newSize, ok := embed.RetargetInputSpatialSize(err, inputSize); ok {
@@ -198,181 +205,74 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media
 			return nil, err
 		}
 
-		elapsed := time.Since(startTime).Milliseconds()
-		log.Printf("Video embedding for %s: processed %d frames in %d ms", key, len(vectors), elapsed)
 		return avg, nil
 	}
 	return nil, lastErr
 }
 
-// Embed one frame per admission so a video cannot hold the inference budget
-// across every sampled frame while a search is waiting.
-func embedVideoFrames(ctx context.Context, limiter *processing.InferenceLimiter, frames [][]byte, infer func([][]byte) ([][]float32, error)) ([][]float32, error) {
-	vectors := make([][]float32, 0, len(frames))
-	for i := range frames {
-		vector, err := func() ([]float32, error) {
-			release, err := limiter.Acquire(ctx, processing.BackgroundInference)
-			if err != nil {
-				return nil, err
-			}
-			defer release()
-			batch, err := infer(frames[i : i+1])
-			if err != nil {
-				return nil, err
-			}
-			if len(batch) != 1 {
-				return nil, fmt.Errorf("expected one frame embedding, got %d", len(batch))
-			}
-			return batch[0], nil
-		}()
-		if err != nil {
-			return nil, err
-		}
-		vectors = append(vectors, vector)
+// Long clips use sparse input-side seeks. Short/unknown clips retain a single
+// sequential decode to avoid paying process startup and GOP decoding per sample.
+func videoSamplingMode(duration int) string {
+	if duration >= 60 {
+		return "seek"
 	}
-	return vectors, nil
+	return "sequential"
 }
 
-func streamVideoFrames(ctx context.Context, src string, durationSeconds, samples, inputSize int) (<-chan []byte, func() error, error) {
-	if samples <= 0 {
-		return nil, nil, fmt.Errorf("invalid frame sample count")
+func samplingDenominator(duration, samples int) int {
+	if duration > 0 {
+		return duration
 	}
-
-	denom := durationSeconds
-	if denom <= 0 {
-		denom = samples
-		if denom <= 0 {
-			denom = 1
-		}
-	}
-
-	S := inputSize
-	if S <= 0 {
-		return nil, nil, fmt.Errorf("invalid vision input size %d", S)
-	}
-
-	frameSize := 3 * S * S
-	if frameSize <= 0 {
-		return nil, nil, fmt.Errorf("invalid frame size computed for %d", S)
-	}
-
-	vf := fmt.Sprintf(
-		"fps=%d/%d,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(%d-iw)/2:(%d-ih)/2:color=black",
-		samples,
-		denom,
-		S,
-		S,
-		S,
-		S,
-		S,
-		S,
-	)
-
-	args := []string{
-		"-i", src,
-		"-vf", vf,
-		"-vframes", strconv.Itoa(samples),
-		"-pix_fmt", "rgb24",
-		"-f", "rawvideo",
-		"-loglevel", "error",
-		"-",
-	}
-
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create ffmpeg stdout pipe: %w", err)
-	}
-
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Start(); err != nil {
-		return nil, nil, fmt.Errorf("failed to start ffmpeg: %w", err)
-	}
-
-	frameCh := make(chan []byte)
-	errCh := make(chan error, 2)
-	doneCh := make(chan struct{})
-
-	go func() {
-		reader := bufio.NewReader(stdout)
-		err := readRawVideoFrames(reader, frameSize, samples, frameCh)
-		if err != nil {
-			errCh <- err
-		} else {
-			errCh <- nil
-		}
-		close(frameCh)
-	}()
-
-	go func() {
-		err := cmd.Wait()
-		if err != nil {
-			if stderr.Len() > 0 {
-				err = fmt.Errorf("ffmpeg error: %w: %s", err, strings.TrimSpace(stderr.String()))
-			} else {
-				err = fmt.Errorf("ffmpeg error: %w", err)
-			}
-		}
-		errCh <- err
-		close(doneCh)
-	}()
-
-	go func() {
-		select {
-		case <-ctx.Done():
-			if cmd.Process != nil {
-				_ = cmd.Process.Signal(syscall.SIGTERM)
-				select {
-				case <-doneCh:
-				case <-time.After(2 * time.Second):
-					_ = cmd.Process.Kill()
-				}
-			}
-		case <-doneCh:
-		}
-	}()
-
-	wait := func() error {
-		var firstErr error
-		for i := 0; i < 2; i++ {
-			err := <-errCh
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					continue
-				}
-				if firstErr == nil {
-					firstErr = err
-				}
-			}
-		}
-		return firstErr
-	}
-
-	return frameCh, wait, nil
+	return samples
 }
 
-func readRawVideoFrames(r *bufio.Reader, frameSize, samples int, out chan<- []byte) error {
-	if frameSize <= 0 {
-		return fmt.Errorf("invalid frame size %d", frameSize)
+func videoFrameArgs(src string, duration, samples, size int, seek *float64) []string {
+	args := []string{"-loglevel", "error", "-nostdin", "-threads", processing.FFmpegThreads()}
+	if seek != nil {
+		args = append(args, "-ss", strconv.FormatFloat(*seek, 'f', 6, 64))
 	}
-	if samples <= 0 {
-		return fmt.Errorf("invalid sample count %d", samples)
+	args = append(args, "-i", src, "-an", "-sn", "-dn", "-filter_threads", "1")
+	vf := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(%d-iw)/2:(%d-ih)/2:color=black", size, size, size, size, size, size)
+	count := samples
+	if seek != nil {
+		count = 1
+	} else {
+		vf = fmt.Sprintf("fps=%d/%d,", samples, samplingDenominator(duration, samples)) + vf
 	}
+	return append(args, "-vf", vf, "-frames:v", strconv.Itoa(count), "-pix_fmt", "rgb24", "-threads", processing.FFmpegThreads(), "-f", "rawvideo", "pipe:1")
+}
 
-	for i := 0; i < samples; i++ {
-		frame := make([]byte, frameSize)
-		if _, err := io.ReadFull(r, frame); err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				return nil
-			}
-			return err
+func extractVideoFrames(ctx context.Context, src string, duration, samples, size int) ([][]byte, error) {
+	if samples < 1 || size < 1 {
+		return nil, fmt.Errorf("invalid video sampling dimensions")
+	}
+	frames := make([][]byte, 0, samples)
+	calls := 1
+	if videoSamplingMode(duration) == "seek" {
+		calls = samples
+	}
+	for i := 0; i < calls; i++ {
+		var seek *float64
+		if calls > 1 {
+			timestamp := (float64(i) + 0.5) * float64(duration) / float64(samples)
+			seek = &timestamp
 		}
-		out <- frame
+		cmd := exec.CommandContext(ctx, "ffmpeg", videoFrameArgs(src, duration, samples, size, seek)...)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		output, err := cmd.Output()
+		if err != nil {
+			return nil, fmt.Errorf("ffmpeg frame extraction: %w: %s", err, strings.TrimSpace(stderr.String()))
+		}
+		frameBytes := 3 * size * size
+		if len(output)%frameBytes != 0 {
+			return nil, fmt.Errorf("unexpected raw buffer length %d", len(output))
+		}
+		for offset := 0; offset < len(output); offset += frameBytes {
+			frames = append(frames, output[offset:offset+frameBytes])
+		}
 	}
-
-	return nil
+	return frames, nil
 }
 
 func videoSampleCount(durationSeconds int) int {

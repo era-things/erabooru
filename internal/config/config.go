@@ -10,12 +10,15 @@ import (
 )
 
 type Config struct {
-	PostgresDSN          string
-	MediaRoot            string
-	IngestConcurrency    int
-	EmbeddingConcurrency int
-	InferenceConcurrency int
-	DevMode              bool // enable development features like auto migration
+	PostgresDSN            string
+	MediaRoot              string
+	IngestConcurrency      int
+	EmbeddingConcurrency   int
+	InferenceConcurrency   int
+	DecodeConcurrency      int
+	EmbeddingBatchSize     int
+	EmbeddingBatchTargetMS int
+	DevMode                bool // enable development features like auto migration
 }
 
 func Load() (*Config, error) {
@@ -34,17 +37,39 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	decodeConcurrency, err := positiveIntEnv("DECODE_CONCURRENCY", 1)
+	if err != nil {
+		return nil, err
+	}
+	batchSize, err := positiveIntEnv("EMBEDDING_BATCH_SIZE", 4)
+	if err != nil {
+		return nil, err
+	}
+	batchTarget, err := positiveIntEnv("EMBEDDING_BATCH_TARGET_MS", 150)
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range []string{"ONNX_INTRA_THREADS", "VIPS_CONCURRENCY", "FFMPEG_THREADS"} {
+		if os.Getenv(name) != "" {
+			if _, err := positiveIntEnv(name, 1); err != nil {
+				return nil, err
+			}
+		}
+	}
 	postgresDSN := os.Getenv("POSTGRES_DSN")
 	if postgresDSN == "" {
 		return nil, errors.New("POSTGRES_DSN is required")
 	}
 	cfg := &Config{
-		PostgresDSN:          postgresDSN,
-		MediaRoot:            getEnvOrDefault("MEDIA_ROOT", "/data/media"),
-		IngestConcurrency:    ingestConcurrency,
-		EmbeddingConcurrency: embeddingConcurrency,
-		InferenceConcurrency: inferenceConcurrency,
-		DevMode:              getEnvOrDefault("DEV_MODE", "false") == "true",
+		PostgresDSN:            postgresDSN,
+		MediaRoot:              getEnvOrDefault("MEDIA_ROOT", "/data/media"),
+		IngestConcurrency:      ingestConcurrency,
+		EmbeddingConcurrency:   embeddingConcurrency,
+		InferenceConcurrency:   inferenceConcurrency,
+		DecodeConcurrency:      decodeConcurrency,
+		EmbeddingBatchSize:     batchSize,
+		EmbeddingBatchTargetMS: batchTarget,
+		DevMode:                getEnvOrDefault("DEV_MODE", "false") == "true",
 	}
 	return cfg, nil
 }

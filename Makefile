@@ -34,6 +34,11 @@ dev: setup-env
 	docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build --remove-orphans
 	@echo "🟢  Dev services up  |  API → http://localhost:8080  UI (vite) → http://localhost:5173"
 
+.PHONY: gpudev
+gpudev: setup-env
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.gpu.yml up --build --remove-orphans
+	@echo "🟢  GPU dev services up  |  API → http://localhost:8080  UI (vite) → http://localhost:5173"
+
 .PHONY: prod
 prod:
 	docker-compose build app

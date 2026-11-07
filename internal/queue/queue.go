@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"era/booru/internal/processing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -102,9 +103,10 @@ func (ProcessArgs) InsertOpts() river.InsertOpts {
 }
 
 type EmbedArgs struct {
-	Key        string `json:"key"`
-	Generation string `json:"generation"`
-	Space      string `json:"space"`
+	Key        string                  `json:"key" river:"unique"`
+	Generation string                  `json:"generation" river:"unique"`
+	Space      string                  `json:"space" river:"unique"`
+	Timings    processing.MediaTimings `json:"timings"`
 }
 
 func (EmbedArgs) Kind() string { return "embed_media" }

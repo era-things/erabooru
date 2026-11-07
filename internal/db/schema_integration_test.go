@@ -35,7 +35,7 @@ func TestCleanSchemaLifecycle(t *testing.T) {
 	if err := CompleteIngestionTx(ctx, tx, Media{ID: "media", Generation: "generation", Format: "png", Width: 10, Height: 20, Size: 123}); err != nil {
 		t.Fatal(err)
 	}
-	if err := QueueEmbeddingTx(ctx, tx, "media", "generation", DefaultEmbeddingSpace); err != nil {
+	if _, err := QueueEmbeddingTx(ctx, tx, "media", "generation", DefaultEmbeddingSpace); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(ctx); err != nil {

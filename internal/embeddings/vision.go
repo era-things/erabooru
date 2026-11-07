@@ -3,9 +3,9 @@
 package embed
 
 import (
+	"era/booru/internal/processing"
 	"fmt"
 	"math"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,7 +18,7 @@ var vipsOnce sync.Once
 
 func ensureVips() {
 	vipsOnce.Do(func() {
-		vips.Startup(&vips.Config{ConcurrencyLevel: runtime.NumCPU()})
+		vips.Startup(&vips.Config{ConcurrencyLevel: processing.ResourceThreads("VIPS_CONCURRENCY", 1)})
 	})
 }
 
@@ -137,6 +137,16 @@ func RetargetInputSpatialSize(err error, current int) (int, bool) {
 }
 
 func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
+	raw, err := PrepareImage(buf, S)
+	if err != nil {
+		return nil, err
+	}
+	return visionEmbeddingRGB24WithSize(raw, S)
+}
+
+// PrepareImage performs the existing model preprocessing outside inference admission.
+func PrepareImage(buf []byte, S int) ([]byte, error) {
+	ensureVips()
 	if S <= 0 {
 		return nil, fmt.Errorf("invalid vision input size %d", S)
 	}
@@ -243,7 +253,7 @@ func visionEmbeddingWithSize(buf []byte, S int) ([]float32, error) {
 		return nil, fmt.Errorf("vips rawsave: %w", err)
 	}
 
-	return visionEmbeddingRGB24WithSize(raw, S)
+	return raw, nil
 }
 
 func visionEmbeddingRGB24WithSize(raw []byte, S int) ([]float32, error) {

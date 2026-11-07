@@ -6,6 +6,8 @@ import (
 	"context"
 )
 
+func PrepareImage([]byte, int) ([]byte, error) { return nil, nil }
+
 // Dummy stubs for vet/test without embeddings tag.
 
 func VisionEmbedding([]byte) ([]float32, error) {

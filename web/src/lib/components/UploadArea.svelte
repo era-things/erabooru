@@ -33,46 +33,99 @@
 	const totalMegabytes = $derived(totalBytes / (1024 * 1024));
 	const previews = $derived(uploaded.map((item) => item.preview));
 
+	let destroyed = false;
+
+	const previewQueue: { file: File; id: string }[] = [];
+	let previewWorker: Promise<void> | undefined;
+	function startPreviews() {
+		if (previewWorker) return;
+		previewWorker = (async () => {
+			while (previewQueue.length && !destroyed) {
+				const item = previewQueue.shift()!;
+				try {
+					const preview = await createPreview(item.file, item.id);
+					if (destroyed) {
+						if (preview.url.startsWith('blob:')) URL.revokeObjectURL(preview.url);
+						break;
+					}
+					uploaded = uploaded.map((entry) =>
+						entry.id === item.id
+							? {
+									...entry,
+									preview,
+									objectUrl: preview.url.startsWith('blob:') ? preview.url : undefined
+								}
+							: entry
+					);
+				} catch (error) {
+					console.error('Preview failed', error);
+				}
+			}
+		})().finally(() => {
+			previewWorker = undefined;
+			if (previewQueue.length && !destroyed) startPreviews();
+		});
+	}
+
 	async function upload() {
+		if (uploading) return;
 		const files = Array.from(fileInput?.files ?? []);
 		if (!files.length) return;
-
 		uploading = true;
-
-		for (const file of files) {
-			if (!supportedTypes.includes(file.type)) {
-				alert(`Unsupported file type: ${file.type || file.name}`);
-				continue;
-			}
-
-			try {
-				const { id, existed } = await uploadMedia(file);
-				if (existed) {
-					alert(`File already exists: ${file.name}`);
+		if (fileInput) fileInput.value = '';
+		const failures: string[] = [];
+		const skipped: string[] = [];
+		let next = 0;
+		async function uploadNext() {
+			while (next < files.length && !destroyed) {
+				const file = files[next++];
+				if (!supportedTypes.includes(file.type)) {
+					failures.push(`${file.name}: unsupported file type`);
 					continue;
 				}
-				const preview = await createPreview(file, id);
-				uploaded = [
-					...uploaded,
-					{
-						id,
-						name: file.name,
-						size: file.size,
-						type: file.type,
-						preview,
-						objectUrl: preview.url.startsWith('blob:') ? preview.url : undefined
+				try {
+					const { id, existed } = await uploadMedia(file);
+					if (destroyed) return;
+					if (existed) {
+						skipped.push(file.name);
+						continue;
 					}
-				];
-			} catch (error) {
-				console.error('Upload error:', error);
-				alert(`Upload failed for ${file.name} due to network error`);
+					uploaded = [
+						...uploaded,
+						{
+							id,
+							name: file.name,
+							size: file.size,
+							type: file.type,
+							preview: createFallbackPreview(file, id)
+						}
+					];
+					previewQueue.push({ file, id });
+					startPreviews();
+				} catch (error) {
+					console.error('Upload failed', error);
+					failures.push(file.name);
+				}
 			}
 		}
-
-		if (fileInput) {
-			fileInput.value = '';
+		try {
+			await Promise.all(Array.from({ length: Math.min(3, files.length) }, uploadNext));
+			// Uploads finish independently of local preview decoding.
+			if (!destroyed && (failures.length || skipped.length)) {
+				alert(
+					[
+						failures.length
+							? `Failed (${failures.length}): ${failures.slice(0, 10).join(', ')}`
+							: '',
+						skipped.length ? `Skipped ${skipped.length} existing files.` : ''
+					]
+						.filter(Boolean)
+						.join('\n')
+				);
+			}
+		} finally {
+			uploading = false;
 		}
-		uploading = false;
 	}
 
 	function trigger() {
@@ -111,10 +164,16 @@
 	async function readImageDimensions(url: string): Promise<{ width: number; height: number }> {
 		return new Promise((resolve) => {
 			const image = new Image();
+			const timeout = window.setTimeout(() => {
+				image.src = '';
+				resolve({ width: 512, height: 512 });
+			}, 10000);
 			image.onload = () => {
+				clearTimeout(timeout);
 				resolve({ width: image.naturalWidth || 1, height: image.naturalHeight || 1 });
 			};
 			image.onerror = (error) => {
+				clearTimeout(timeout);
 				console.error('Failed to read image dimensions', error);
 				resolve({ width: 512, height: 512 });
 			};
@@ -158,6 +217,15 @@
 		sourceUrl: string
 	): Promise<{ url: string; width: number; height: number }> {
 		const video = await new Promise<HTMLVideoElement>((resolve, reject) => {
+			const timeout = window.setTimeout(() => {
+				video.removeAttribute('src');
+				video.load();
+				reject(new Error('Video preview timed out'));
+			}, 10000);
+			const finish = (value: HTMLVideoElement) => {
+				clearTimeout(timeout);
+				resolve(value);
+			};
 			const video = document.createElement('video');
 			video.preload = 'auto';
 			video.muted = true;
@@ -166,13 +234,16 @@
 			video.onloadeddata = () => {
 				const seekTo = Math.min(Number.isFinite(video.duration) ? video.duration / 2 : 0, 2);
 				if (seekTo > 0.05) {
-					video.onseeked = () => resolve(video);
+					video.onseeked = () => finish(video);
 					video.currentTime = seekTo;
 				} else {
-					resolve(video);
+					finish(video);
 				}
 			};
-			video.onerror = () => reject(new Error('Browser could not decode the video'));
+			video.onerror = () => {
+				clearTimeout(timeout);
+				reject(new Error('Browser could not decode the video'));
+			};
 		});
 
 		const width = video.videoWidth || 1280;
@@ -246,6 +317,7 @@
 	}
 
 	onDestroy(() => {
+		destroyed = true;
 		for (const item of uploaded) {
 			if (item.objectUrl) {
 				URL.revokeObjectURL(item.objectUrl);

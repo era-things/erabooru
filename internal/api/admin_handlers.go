@@ -64,8 +64,12 @@ func regenerateHandler(pool *pgxpool.Pool, store *storage.Store, riverClient *ri
 					return err
 				}
 				defer tx.Rollback(ctx)
-				if err := db.QueueEmbeddingTx(ctx, tx, id, generation, db.DefaultEmbeddingSpace); err != nil {
+				queued, err := db.QueueEmbeddingTx(ctx, tx, id, generation, db.DefaultEmbeddingSpace)
+				if err != nil {
 					return err
+				}
+				if !queued {
+					return tx.Commit(ctx)
 				}
 				if err := queue.EnqueueTx(ctx, riverClient, tx, queue.EmbedArgs{Key: id, Generation: generation, Space: db.DefaultEmbeddingSpace}); err != nil {
 					return err

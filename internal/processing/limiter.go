@@ -23,7 +23,7 @@ const (
 // InferenceLimiter gives interactive searches priority over background work.
 // Background work pauses while searches are queued or active. When capacity is
 // greater than one, one slot is reserved for an arriving search. Running ONNX
-// calls cannot be preempted; callers must release between video frames.
+// calls cannot be preempted; callers must release between bounded inference batches.
 type InferenceLimiter struct {
 	mu                sync.Mutex
 	capacity          int

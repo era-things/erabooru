@@ -3,12 +3,10 @@
 package embed
 
 import (
+	"era/booru/internal/processing"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
-	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -159,6 +157,9 @@ func Load(dir string) error {
 			[]string{textOutputName},
 			sessionOpts,
 		)
+		if loadErr == nil {
+			loadErr = loadProfile(dir, InputSpatialSize())
+		}
 	})
 	return loadErr
 }
@@ -186,14 +187,8 @@ func sessionOptionsWithCUDA() (*ort.SessionOptions, func()) {
 			log.Printf("embeddings: warning: failed to release session options: %v", destroyErr)
 		}
 	}
-	concurrency, _ := strconv.Atoi(os.Getenv("INFERENCE_CONCURRENCY"))
-	if concurrency < 1 {
-		concurrency = 2
-	}
-	threads := max(1, runtime.NumCPU()/concurrency)
-	if configured, err := strconv.Atoi(os.Getenv("ONNX_INTRA_THREADS")); err == nil && configured > 0 {
-		threads = configured
-	}
+	threads := processing.ResourceThreads("ONNX_INTRA_THREADS", processing.DefaultInferenceThreads())
+	log.Printf("embeddings: ONNX intra-op threads=%d", threads)
 	if err := options.SetIntraOpNumThreads(threads); err != nil {
 		log.Printf("embeddings: unable to set intra-op threads: %v", err)
 	}

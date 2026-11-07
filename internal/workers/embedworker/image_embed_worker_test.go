@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -64,7 +67,8 @@ func TestVideoFramesYieldToSearch(t *testing.T) {
 		return [][]float32{{float32(frames[0][0]), 1}}, nil
 	}
 	go func() {
-		vectors, err := embedVideoFrames(ctx, limiter, [][]byte{{1}, {2}}, infer)
+		batcher := processing.NewFrameBatcher(ctx, limiter, 2, time.Second, infer)
+		vectors, err := batcher.Embed(ctx, [][]byte{{1}, {2}})
 		if err == nil && !reflect.DeepEqual(vectors, [][]float32{{1, 1}, {2, 1}}) {
 			err = fmt.Errorf("frame vectors changed: %v", vectors)
 		}
@@ -96,9 +100,10 @@ func TestVideoFrameFailureReleasesInference(t *testing.T) {
 	defer cancel()
 	limiter := processing.NewInferenceLimiter(1)
 	want := errors.New("inference failed")
-	_, err := embedVideoFrames(ctx, limiter, [][]byte{{1}}, func([][]byte) ([][]float32, error) {
+	batcher := processing.NewFrameBatcher(ctx, limiter, 2, time.Second, func([][]byte) ([][]float32, error) {
 		return nil, want
 	})
+	_, err := batcher.Embed(ctx, [][]byte{{1}})
 	if !errors.Is(err, want) {
 		t.Fatalf("expected inference error, got %v", err)
 	}
@@ -107,4 +112,44 @@ func TestVideoFrameFailureReleasesInference(t *testing.T) {
 		t.Fatal("failed frame retained the inference slot:", err)
 	}
 	release()
+}
+
+func TestVideoSamplingCommands(t *testing.T) {
+	timestamp := 30.0
+	args := videoFrameArgs("input.mp4", 120, 12, 224, &timestamp)
+	if slices.Index(args, "-ss") >= slices.Index(args, "-i") {
+		t.Fatal("seek must precede input")
+	}
+	if args[slices.Index(args, "-frames:v")+1] != "1" {
+		t.Fatal("seek must extract one frame")
+	}
+	if videoSamplingMode(59) != "sequential" || videoSamplingMode(60) != "seek" {
+		t.Fatal("unexpected strategy")
+	}
+}
+
+func TestExtractVideoFramesWithFFmpeg(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg unavailable")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	src := filepath.Join(t.TempDir(), "sample.mp4")
+	if out, err := exec.CommandContext(ctx, "ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=32x32:r=2:d=61", "-c:v", "mpeg4", "-g", "2", src).CombinedOutput(); err != nil {
+		t.Fatalf("generate clip: %v: %s", err, out)
+	}
+	for _, duration := range []int{4, 60} {
+		frames, err := extractVideoFrames(ctx, src, duration, 5, 16)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(frames) != 5 {
+			t.Fatalf("duration %d: got %d frames", duration, len(frames))
+		}
+		for _, frame := range frames {
+			if len(frame) != 3*16*16 || frame[0] < 200 || frame[1] > 30 {
+				t.Fatal("unexpected frame dimensions/color")
+			}
+		}
+	}
 }

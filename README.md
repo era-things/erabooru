@@ -65,18 +65,103 @@ Media processing uses separate concurrency controls:
 | --- | --- | --- |
 | `INGEST_CONCURRENCY` | Concurrent metadata and preview jobs | `2` |
 | `EMBEDDING_CONCURRENCY` | Concurrent embedding jobs, including preprocessing | `2` |
-| `INFERENCE_CONCURRENCY` | Concurrent ONNX model executions | `1` |
+| `INFERENCE_CONCURRENCY` | Inference admission capacity; vision batches run serially | `1` |
+| `DECODE_CONCURRENCY` | Shared FFmpeg preview / video extraction jobs | `1` |
+| `FFMPEG_THREADS` | Decoder threads per FFmpeg process (filter threads remain 1) | `1` |
+| `VIPS_CONCURRENCY` | libvips threads per image preparation operation | `1` |
+| `ONNX_INTRA_THREADS` | Threads per ONNX session | `(available CPUs - 1) / inference concurrency`, clamped to 1–3 |
+| `EMBEDDING_BATCH_SIZE` | Maximum shared image/video inference batch | `4` |
+| `EMBEDDING_BATCH_TARGET_MS` | Adaptive batch execution target, not a hard deadline | `150` |
 
 Text searches take priority over background embeddings. New background inference
 waits while searches are queued or running. With inference concurrency above one,
 one slot is reserved for searches; background work can use the remaining slots.
-At concurrency one, a search waits for the current image or video frame to finish,
-then runs before the next background call. Videos release the budget after each
-sampled frame instead of holding it for the full video. Running ONNX calls are
-not interrupted.
+At concurrency one, a search waits for the current bounded batch to finish,
+then runs before the next background call. Images and video frames share a bounded
+batcher with a maximum 5 ms collection window. It starts at one frame, grows after
+fast calls, and shrinks after calls exceed the target. Running ONNX calls are not
+interrupted, so a slow single frame can still exceed the target. Image preparation
+runs outside inference admission, bounded by embedding worker concurrency.
 
-If you set `MODEL_DIR` the application skips downloading and loads models directly from the
-provided path (useful for local development with pre-downloaded weights).
+Videos shorter than 60 seconds (or with unknown duration) use sequential sampling.
+Longer videos seek to individual sample timestamps instead of decoding through the
+whole clip. The number of sampled frames and normalized averaging stay unchanged;
+sampled timestamps differ slightly between the two strategies. Seeking performance
+depends on codec, keyframe spacing and storage. All FFmpeg frame extraction and
+preview jobs share the decode limit. Browser uploads use three concurrent requests
+and an independent sequential preview queue.
+
+Start conservatively on an N100: the defaults use one decoder thread per process,
+one libvips thread per operation, and at most three ONNX threads per session,
+leaving at least one CPU out of the budget on a four-core server.
+For CUDA, try increasing `EMBEDDING_CONCURRENCY` and `EMBEDDING_BATCH_SIZE` to 8;
+measure before increasing decoding or inference concurrency. These are tuning
+candidates, not measured optimal settings.
+
+Each successfully processed media item emits one `benchmark` summary, after
+embedding completes (or after ingestion when embeddings were supplied / disabled).
+It includes preview, preparation, video decoding, inference and admission-wait
+timings in milliseconds, plus frame count, batch count and maximum batch size.
+`total_ms` measures wall time from the ingestion attempt's start, including the
+wait for its embedding job. Failed attempts emit their summary at the failing
+stage with the error. Embedding jobs queued directly, such as admin retries,
+measure total time from their embedding attempt's start.
+
+Inference timing counts each batch once per item, even when several frames from
+one video share that batch. When a batch contains frames from multiple items,
+its execution duration appears in each item's summary; these durations should
+not be summed across items. Text searches retain their separate timing line.
+
+### Importing media with locally computed embeddings (API only)
+
+`GET /api/embeddings/profile` returns the active embedding profile: `id`,
+`dimensions` (768), `image_size`, SHA-256 hashes of the vision/text models and
+tokenizer, and preprocessing / aggregation identifiers. The ID fingerprints the
+actual loaded files and the processing contract, rather than a mutable model
+repository name. Both endpoints return 503 if no embedding model is loaded.
+
+`POST /api/media/import` accepts a streaming `multipart/form-data` body with
+**exactly two parts in this order**:
+
+1. `embedding`: one JSON document, at most 64 KiB:
+   `{"profile":"<id from the profile endpoint>","vector":[<768 numbers>]}`.
+2. `file`: the original image or video, with an `image/*` or `video/*` part
+   Content-Type. Its filename is not used as a storage path.
+
+For example, after saving the metadata as `embedding.json`:
+
+```sh
+curl http://localhost/api/embeddings/profile
+curl --fail-with-body http://localhost/api/media/import \
+  -F 'embedding=@embedding.json;type=application/json' \
+  -F 'file=@image.png;type=image/png'
+# For a video, use: -F 'file=@video.mp4;type=video/mp4'
+```
+
+The vector must contain 768 finite numbers with a nonzero norm; the server L2
+normalizes it before storing it. Profile mismatches return 409. Invalid metadata
+returns 422; malformed multipart requests / extra parts return 400. The server
+checks metadata before streaming the media to disk, without buffering the whole
+image/video in memory.
+
+Use the same model weights and preprocessing on the GPU machine. For images,
+match preview generation and `PrepareImage` in `internal/embeddings/vision.go`:
+center-cropped RGB input at the advertised size, black alpha flattening and
+normalization to [-1, 1]. For video, supply **one final vector**, obtained by L2
+normalizing each sampled frame embedding, averaging those vectors, then L2
+normalizing the mean. Match frame selection / letterboxing in
+`internal/workers/embedworker/image_embed_worker.go`. The uploader is responsible
+for calculating the supplied vector for the supplied file; the server does not
+rerun inference to verify it.
+
+A successful new import returns 201 with `{"id":"...","existed":false}`. The
+original, ready vector and durable metadata/preview job are recorded together.
+Media becomes browsable/searchable after background metadata and preview
+processing; that processing preserves the imported vector and skips embedding
+inference. Import retries for the same content return 200 with `existed:true`
+and preserve the existing item/vector. This endpoint does not replace embeddings
+on existing items. Ordinary `POST /api/media` uploads continue to generate
+embeddings on the server. The frontend does not expose the import endpoint.
 
 ### Runtime variants
 

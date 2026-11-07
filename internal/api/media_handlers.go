@@ -17,6 +17,7 @@ import (
 	"era/booru/internal/queue"
 	"era/booru/internal/search"
 	"era/booru/internal/storage"
+	pgvector "github.com/pgvector/pgvector-go"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -30,6 +31,8 @@ func RegisterMediaRoutes(r *gin.Engine, pool *pgxpool.Pool, store *storage.Store
 	r.GET("/api/media/:id", getMediaHandler(pool))
 	r.GET("/api/media/:id/similar", similarMediaByIDHandler(pool))
 	r.POST("/api/media", uploadMediaHandler(pool, store, queueClient))
+	r.POST("/api/media/import", importMediaHandler(pool, store, queueClient, embed.ActiveProfile()))
+	r.GET("/api/embeddings/profile", embeddingProfileHandler(embed.ActiveProfile()))
 	r.POST("/api/media/:id/tags", updateMediaTagsHandler(pool))
 	r.POST("/api/media/:id/dates", updateMediaDatesHandler(pool))
 	r.DELETE("/api/media/:id", deleteMediaHandler(pool, store))
@@ -165,12 +168,17 @@ func listCommon(previews bool, pool *pgxpool.Pool, limiter *processing.Inference
 }
 
 func generateTextEmbedding(ctx context.Context, limiter *processing.InferenceLimiter, text string) ([]float32, error) {
+	started := time.Now()
 	release, err := limiter.Acquire(ctx, processing.InteractiveInference)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	return embed.TextEmbedding(text)
+	waited := time.Since(started)
+	started = time.Now()
+	vector, err := embed.TextEmbedding(text)
+	log.Printf("benchmark stage=text_search wait_ms=%.2f inference_ms=%.2f error=%t", float64(waited)/float64(time.Millisecond), float64(time.Since(started))/float64(time.Millisecond), err != nil)
+	return vector, err
 }
 
 func getMediaHandler(pool *pgxpool.Pool) gin.HandlerFunc {
@@ -281,45 +289,57 @@ func uploadMediaHandler(pool *pgxpool.Pool, store *storage.Store, queueClient *r
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
-		stat, err := os.Stat(store.OriginalPath(id))
-		if err != nil {
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		generation, err := newGeneration()
-		if err != nil {
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		tx, err := pool.Begin(c.Request.Context())
-		if err != nil {
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		defer tx.Rollback(c.Request.Context())
-		created, err := db.InsertQueuedMedia(c.Request.Context(), tx, id, generation, stat.Size(), time.Now().UTC())
-		if err == nil && created {
-			err = queue.EnqueueTx(c.Request.Context(), queueClient, tx, queue.ProcessArgs{
-				Key: id, Generation: generation, ContentType: c.GetHeader("Content-Type"),
-			})
-		}
-		if err == nil {
-			err = tx.Commit(c.Request.Context())
-		}
-		if err != nil {
-			if !fileExisted {
-				_ = store.Remove(id)
-			}
-			log.Printf("enqueue process %s: %v", id, err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		status := http.StatusCreated
-		if !created {
-			status = http.StatusOK
-		}
-		c.JSON(status, gin.H{"id": id, "existed": !created})
+		completeMediaUpload(c, pool, store, queueClient, id, fileExisted, c.GetHeader("Content-Type"), nil)
 	}
+}
+
+func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Store, queueClient *river.Client[pgx.Tx], id string, fileExisted bool, contentType string, vector []float32) {
+	committed := false
+	defer func() {
+		if !committed && !fileExisted {
+			_ = store.Remove(id)
+		}
+	}()
+
+	stat, err := os.Stat(store.OriginalPath(id))
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	generation, err := newGeneration()
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	tx, err := pool.Begin(c.Request.Context())
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback(c.Request.Context())
+	created, err := db.InsertQueuedMedia(c.Request.Context(), tx, id, generation, stat.Size(), time.Now().UTC())
+	if err == nil && created && vector != nil {
+		err = db.ImportEmbeddingTx(c.Request.Context(), tx, id, generation, pgvector.NewVector(vector))
+	}
+	if err == nil && created {
+		err = queue.EnqueueTx(c.Request.Context(), queueClient, tx, queue.ProcessArgs{
+			Key: id, Generation: generation, ContentType: contentType,
+		})
+	}
+	if err == nil {
+		err = tx.Commit(c.Request.Context())
+	}
+	if err != nil {
+		log.Printf("enqueue process %s: %v", id, err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	committed = true
+	status := http.StatusCreated
+	if !created {
+		status = http.StatusOK
+	}
+	c.JSON(status, gin.H{"id": id, "existed": !created})
 }
 
 func newGeneration() (string, error) {
