@@ -1,9 +1,5 @@
-version: '3'
-
 volumes:
-  minio-data:
-    driver: local
-  bleve-index:
+  media-data:
     driver: local
   postgres-data:
     driver: local
@@ -18,79 +14,56 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - minio
+      - app
 
   db:
-    image: pgvector/pgvector:pg15
+    image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-booru}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-booru}
+      POSTGRES_DB: ${POSTGRES_DB:-booru}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+      - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-booru} -d ${POSTGRES_DB:-booru}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  minio:
-    image: quay.io/minio/minio
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    volumes:
-      - minio-data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-
-  minio-init:
-    image: minio/mc:latest
-    depends_on: [minio]
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    entrypoint: >
-      /bin/sh -c "
-        set -e
-        until mc alias set local http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD; do sleep 2; done
-        mc mb --ignore-existing local/boorubucket
-        mc anonymous set download local/boorubucket
-        mc mb --ignore-existing local/previews
-        mc anonymous set download local/previews
-      "
-  
-  bleve-init:
-    image: alpine:3.20
-    volumes:
-      - bleve-index:/data/bleve
-    command: ["sh", "-c", "mkdir -p /data/bleve && chown -R 65532:65532 /data/bleve && chmod -R 755 /data/bleve"]
-    user: root
-
   app:
-    image: booru:prod
+    image: booru:cpu
     build:
       context: .
-      target: prod
-    env_file:
-      - .env
+      dockerfile: Dockerfile.prod
+      target: cpu
     environment:
-      - POSTGRES_DSN=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+      - POSTGRES_DSN=postgresql://${POSTGRES_USER:-booru}:${POSTGRES_PASSWORD:-booru}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-booru}?sslmode=disable
+      - MEDIA_ROOT=/data/media
+      - INGEST_CONCURRENCY=${INGEST_CONCURRENCY:-2}
+      - EMBEDDING_CONCURRENCY=${EMBEDDING_CONCURRENCY:-2}
+      - INFERENCE_CONCURRENCY=${INFERENCE_CONCURRENCY:-1}
+      - DECODE_CONCURRENCY=${DECODE_CONCURRENCY:-1}
+      - EMBEDDING_BATCH_SIZE=${EMBEDDING_BATCH_SIZE:-4}
+      - EMBEDDING_BATCH_TARGET_MS=${EMBEDDING_BATCH_TARGET_MS:-150}
+      - VIPS_CONCURRENCY=${VIPS_CONCURRENCY:-1}
+      - FFMPEG_THREADS=${FFMPEG_THREADS:-1}
+      - ONNX_INTRA_THREADS=${ONNX_INTRA_THREADS:-}
+      - DEV_MODE=${DEV_MODE:-false}
+      - MODEL_CACHE_DIR=/cache/models
+      - MODEL_NAME=${MODEL_NAME:-Siglip2_FP16}
+      - MODEL_REPOSITORY=${MODEL_REPOSITORY:-onnx-community/siglip2-base-patch16-224-ONNX}
+      - MODEL_REVISION=${MODEL_REVISION:-main}
+      - MODEL_FILES=${MODEL_FILES:-}
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
     volumes:
-      - bleve-index:/data/bleve
+      - media-data:/data/media
+      - model-cache:/cache
     depends_on:
       db:
         condition: service_healthy
-      minio:
-        condition: service_started
-      caddy:
-        condition: service_started
-      bleve-init:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/healthcheck"]
       interval: 30s
@@ -99,50 +72,3 @@ services:
       start_period: 40s
     ports:
       - "8080:8080"
-      
-  media-worker:
-    image: booru:media-worker
-    build:
-      context: .
-      dockerfile: cmd/media_worker/Dockerfile
-    env_file:
-      - .env
-    environment:
-      - POSTGRES_DSN=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
-    depends_on:
-      db:
-        condition: service_healthy
-      minio:
-        condition: service_started
-      app:
-        condition: service_healthy
-
-  image-embed-worker:
-    image: booru/image-embed-worker:${EMBED_WORKER_VARIANT:-cpu}
-    build:
-      context: .
-      dockerfile: cmd/image_embed_worker/Dockerfile
-      target: ${EMBED_WORKER_VARIANT:-cpu}
-    env_file:
-      - .env
-    environment:
-      - POSTGRES_DSN=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
-      - MODEL_CACHE_DIR=/cache/models
-      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
-      - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
-    volumes:
-      - model-cache:/cache
-    depends_on:
-      db:
-        condition: service_healthy
-      minio:
-        condition: service_started
-      app:
-        condition: service_healthy
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]

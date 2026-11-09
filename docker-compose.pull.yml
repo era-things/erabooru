@@ -3,23 +3,3 @@ services:
   app:
     image: ghcr.io/era-things/erabooru-api:latest
     build: null
-    volumes:
-      - bleve-index:/data/bleve
-
-  media-worker:
-    image: ghcr.io/era-things/erabooru-media-worker:latest
-    build: null
-
-  image-embed-worker:
-    image: ghcr.io/era-things/erabooru-embed-worker:${EMBED_WORKER_VARIANT:-cpu}
-    build: null
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
-      - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]

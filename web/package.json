@@ -10,7 +10,7 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"test": "vitest run",
+		"test": "vitest run --passWithNoTests",
 		"format": "prettier --write .",
 		"lint": "prettier --check . && eslint ."
 	},
@@ -38,7 +38,6 @@
 		"vitest": "^2.1.4"
 	},
 	"dependencies": {
-		"hash-wasm": "^4.12.0",
 		"runed": "^0.29.0"
 	}
 }

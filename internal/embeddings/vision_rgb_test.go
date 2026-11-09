@@ -2,7 +2,14 @@
 
 package embed
 
-import "testing"
+import (
+	"bytes"
+	"fmt"
+	"image"
+	"image/color"
+	"image/png"
+	"testing"
+)
 
 func TestNormalizeRGB24(t *testing.T) {
 	const S = 2
@@ -58,6 +65,22 @@ func TestNormalizeRGB24InvalidLength(t *testing.T) {
 	}
 }
 
+func TestRGB24SpatialSize(t *testing.T) {
+	if got, err := rgb24SpatialSize(make([]byte, 3*224*224)); err != nil || got != 224 {
+		t.Fatalf("got size %d, error %v", got, err)
+	}
+	if _, err := rgb24SpatialSize(make([]byte, 30)); err == nil {
+		t.Fatal("expected non-square frame error")
+	}
+}
+
+func TestRetargetVisionInputSizeFromReshapeError(t *testing.T) {
+	err := fmt.Errorf("Input shape:{8,768,24,24}, requested shape:{-1,768,196}")
+	if got, ok := retargetVisionInputSize(err, 384); !ok || got != 224 {
+		t.Fatalf("got size %d, matched %v", got, ok)
+	}
+}
+
 func almostEqual(a, b float32) bool {
 	if a == b {
 		return true
@@ -67,4 +90,29 @@ func almostEqual(a, b float32) bool {
 		diff = -diff
 	}
 	return diff < 1e-4
+}
+
+func TestPrepareImageProducesModelSizedRGB(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 32, 16))
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 32; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: 255, A: 255})
+		}
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := PrepareImage(encoded.Bytes(), 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 3*8*8 {
+		t.Fatalf("unexpected RGB length: %d", len(raw))
+	}
+	for i := 0; i < len(raw); i += 3 {
+		if raw[i] < 250 || raw[i+1] > 5 || raw[i+2] > 5 {
+			t.Fatal("preprocessing changed color")
+		}
+	}
 }

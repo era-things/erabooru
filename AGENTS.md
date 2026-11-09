@@ -8,12 +8,10 @@ From a user perspective, Erabooru works like a personal "booru" site. You upload
 ### Backend stack
 - **Go 1.25**
 - **Gin** HTTP framework
-- **Ent** ORM
 - **PGX** PostgreSQL driver
 - **pgvector** extension for vector data
-- **Bleve** search engine
-- **MinIO** for object storage
-- **River** queue system – tasks like media processing and index updates run via workers in `cmd/media_worker`
+- Local filesystem storage for originals and previews
+- **River** queue system – durable media processing and image embedding jobs run in the server
 - **Testcontainers** for integration tests
 
 ### Frontend stack
@@ -26,13 +24,12 @@ From a user perspective, Erabooru works like a personal "booru" site. You upload
 Related instructions for the `web/` directory (including the rune cheatsheet) live in [`web/AGENTS.md`](web/AGENTS.md).
 
 ## Repository layout
-- `cmd/` – main binaries (`server`, `media_worker`, etc.)
+- `cmd/` – application and health-check binaries
 - `internal/` – application packages
-- `ent/` – generated Ent ORM code
 - `web/` – SvelteKit frontend
 
 ## Common tasks
-- `make prepare` – install Node packages, download Go modules and generate Ent schema
+- `make prepare` – install Node packages and download Go modules
 - `make dev` – start backend and frontend with hot reload
 - `make prod` – build and run the full stack
 - `go vet ./...` – run static analysis on Go code

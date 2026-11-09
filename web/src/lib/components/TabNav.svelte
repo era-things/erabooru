@@ -39,7 +39,6 @@
 		const trimmedTag = tagQuery.trim();
 		const trimmedVector = vectorQuery.trim();
 		const url = buildSearchUrl({
-			page: 1,
 			pageSize: PAGE_SIZE,
 			query: trimmedTag,
 			vectorQuery: trimmedVector

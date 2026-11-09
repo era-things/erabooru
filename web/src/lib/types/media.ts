@@ -5,22 +5,29 @@ export interface MediaDate {
 
 export interface MediaItem {
 	id: string;
+	original_name: string;
 	url: string;
 	width: number;
 	height: number;
 	format: string;
 }
 
+export type ProcessingStatus = 'queued' | 'processing' | 'retrying' | 'ready' | 'failed';
+
 export interface MediaDetail extends MediaItem {
+	status: ProcessingStatus;
+	error: string | null;
+	embedding_availability: 'available' | 'pending' | 'unavailable' | 'missing';
 	size: number;
 	tags: TagCount[];
 	dates: MediaDate[];
-	vectors?: MediaVector[];
+	embeddings: MediaEmbedding[];
 }
 
-export interface MediaVector {
-	name: string;
-	value: number[];
+export interface MediaEmbedding {
+	space: string;
+	status: ProcessingStatus;
+	error: string | null;
 }
 
 export interface TagCount {
