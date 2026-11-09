@@ -18,16 +18,21 @@
 	let activeFilterId = $state<number | null>(null);
 	let filtersLoading = $state(false);
 	let newFilterValue = $state('');
+	let repairing = $state(false);
 
 	async function regenerate() {
-		if (!confirm('Are you sure you want to regenerate the reverse index?')) {
+		if (repairing) return;
+		if (!confirm('Scan the collection and retry incomplete processing?')) {
 			return;
 		}
+		repairing = true;
 		try {
 			await regenerateReverseIndex();
-			alert('Regeneration complete');
+			alert('Repair scan complete. Queued work will continue in the background.');
 		} catch (err) {
-			alert(`Failed to regenerate: ${err}`);
+			alert(`Failed to repair media: ${err}`);
+		} finally {
+			repairing = false;
 		}
 	}
 
@@ -137,8 +142,8 @@
 <TabNav active="settings" />
 <div class="space-y-6 p-4">
 	<div class="flex flex-wrap gap-2">
-		<button class="rounded border px-3 py-1" onclick={regenerate}>
-			Regenerate reverse index
+		<button class="rounded border px-3 py-1" onclick={regenerate} disabled={repairing}>
+			{repairing ? 'Scanning collection...' : 'Repair media processing'}
 		</button>
 		<button class="rounded border px-3 py-1" onclick={exportTags}> Export tags </button>
 		<button class="rounded border px-3 py-1" onclick={() => fileInput.click()}>

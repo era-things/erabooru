@@ -1,0 +1,6 @@
+services:
+  app:
+    image: booru:gpu-cuda12
+    build:
+      target: gpu-cuda12
+    gpus: all

@@ -4,6 +4,7 @@
 GO        ?= go
 WEB_DIR   ?= web
 BIN_DIR   ?= bin
+POWERSHELL ?= powershell.exe
 
 
 # ──────────────────────────────────────────
@@ -11,11 +12,7 @@ BIN_DIR   ?= bin
 # ──────────────────────────────────────────
 .PHONY: setup-env
 setup-env:
-	@if [ ! -f .env ]; then \
-		echo "→ Creating .env file from .env.example..."; \
-		cp .env.example .env; \
-		echo "✅ Created .env file. You may want to edit it before continuing."; \
-	fi
+	@$(POWERSHELL) -NoProfile -NonInteractive -Command "if (-not (Test-Path -LiteralPath '.env')) { Write-Host 'Creating .env file from .env.example...'; Copy-Item -LiteralPath '.env.example' -Destination '.env'; Write-Host 'Created .env file. You may want to edit it before continuing.' }"
 
 .PHONY: prepare
 prepare: setup-env
@@ -23,9 +20,7 @@ prepare: setup-env
 	cd $(WEB_DIR) && npm install
 	@echo "→ Downloading Go modules..."
 	$(GO) mod download
-	@echo "→ Generating Ent schema..."
-	$(GO) generate ./ent
-	@echo "✅ All dependencies installed and schemas generated"
+	@echo "✅ All dependencies installed"
 	@echo ""
 	@echo "🟢 Ready for development! You can now run:"
 	@echo "   make dev    # Start development servers"
@@ -39,11 +34,20 @@ dev: setup-env
 	docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build --remove-orphans
 	@echo "🟢  Dev services up  |  API → http://localhost:8080  UI (vite) → http://localhost:5173"
 
+.PHONY: gpudev
+gpudev: setup-env
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.gpu.yml up --build --remove-orphans
+	@echo "🟢  GPU dev services up  |  API → http://localhost:8080  UI (vite) → http://localhost:5173"
+
 .PHONY: prod
 prod:
-	docker-compose build app media-worker image-embed-worker
+	docker-compose build app
 	docker-compose up
 	@echo "🟢  Production services up  |  Access → http://localhost"
+
+.PHONY: prod-gpu
+prod-gpu:
+	docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 
 .PHONY: prod-pull
 prod-pull:
@@ -51,12 +55,8 @@ prod-pull:
 	docker-compose -f docker-compose.yml -f docker-compose.pull.yml up
 	@echo "🟢  Production services up  |  Access → http://localhost"
 # ──────────────────────────────────────────
-# BACK-END  (Go + Ent)
+# BACK-END  (Go + pgx)
 # ──────────────────────────────────────────
-.PHONY: generate
-generate:
-	$(GO) run -mod=mod entgo.io/ent/cmd/ent generate ./ent/schema --feature sql/execquery
-
 .PHONY: vet test
 vet:
 	$(GO) vet ./...
@@ -83,5 +83,4 @@ clean:
 .PHONY: clean-all
 clean-all: clean
 	docker-compose down -v
-	sudo rm -rf bleve-index minio-data
 	@echo "🧹  Cleaned everything including Docker volumes"

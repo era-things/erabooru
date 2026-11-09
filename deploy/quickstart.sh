@@ -6,26 +6,6 @@
 #
 set -euo pipefail
 
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        -h|--help)
-            cat <<'USAGE'
-Usage: quickstart.sh [--help]
-
-Options:
-  -h, --help                Show this message.
-
-The script automatically uses the CPU-only embed worker for compatibility.
-USAGE
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1" >&2
-            exit 1
-            ;;
-    esac
-done
-
 DEST=${BOORU_HOME:-"$HOME/erabooru"}
 
 echo "erabooru quick start"
@@ -86,41 +66,6 @@ download_file() {
     fi
 }
 
-validate_variant() {
-    case "$1" in
-        cpu)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
-
-set_env_value() {
-    local key="$1"
-    local value="$2"
-    local tmp
-
-    if [[ -f .env ]] && grep -q "^${key}=" .env; then
-        tmp=$(mktemp 2>/dev/null || echo ".env.tmp.$$")
-        awk -v key="$key" -v value="$value" '
-            BEGIN { replaced = 0 }
-            $0 ~ "^" key "=" { print key "=" value; replaced = 1; next }
-            { print }
-            END { if (!replaced) print key "=" value }
-        ' .env > "$tmp"
-        mv "$tmp" .env
-    else
-        echo "${key}=${value}" >> .env
-    fi
-}
-
-select_embed_variant() {
-    echo "→ Using CPU-only embed worker (GPU variant not available in published images)"
-    echo "cpu"
-}
-
 # ────────────────────────────────────────────────────────────────
 # 1. Create .env on first run
 # ────────────────────────────────────────────────────────────────
@@ -140,11 +85,6 @@ fi
 
 echo "→ Verifying .env file contents..."
 echo "POSTGRES_HOST from .env: $(grep POSTGRES_HOST .env || echo 'NOT FOUND')"
-echo "MINIO_ROOT_USER from .env: $(grep MINIO_ROOT_USER .env || echo 'NOT FOUND')"
-
-variant=$(select_embed_variant)
-set_env_value "EMBED_WORKER_VARIANT" "$variant"
-echo "EMBED_WORKER_VARIANT resolved to: $variant"
 
 
 # ────────────────────────────────────────────────────────────────

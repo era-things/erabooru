@@ -68,8 +68,8 @@ jobs:
       uses: docker/build-push-action@v6
       with:
         context: .
-        file: ./Dockerfile
-        target: prod
+        file: ./Dockerfile.prod
+        target: cpu
         platforms: linux/amd64,linux/arm64
         push: ${{ github.event_name != 'pull_request' }}
         tags: |
@@ -79,34 +79,3 @@ jobs:
           type=gha,scope=api
           type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-api:latest
         cache-to: type=gha,mode=max,scope=api
-
-    - name: Build + push media-worker
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        file: cmd/media_worker/Dockerfile
-        platforms: linux/amd64,linux/arm64
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: |
-          ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-media-worker:${{ steps.sha.outputs.short-sha }}
-          ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-media-worker:${{ github.ref == 'refs/heads/main' && 'latest' || 'edge' }}
-        cache-from: |
-          type=gha,scope=media-worker
-          type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-media-worker:latest
-        cache-to: type=gha,mode=max,scope=media-worker
-
-    - name: Build + push embed-worker (CPU-only)
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        file: cmd/image_embed_worker/Dockerfile
-        target: cpu
-        platforms: linux/amd64,linux/arm64
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: |
-          ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-embed-worker:${{ steps.sha.outputs.short-sha }}
-          ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-embed-worker:${{ github.ref == 'refs/heads/main' && 'latest' || 'edge' }}
-        cache-from: |
-          type=gha,scope=embed-worker
-          type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-embed-worker:latest
-        cache-to: type=gha,mode=max,scope=embed-worker

@@ -5,7 +5,7 @@ const apiBase = '/api';
 
 export interface MediaPreviewsResponse {
 	media: MediaItem[];
-	total: number;
+	next_cursor: string;
 }
 
 export interface HiddenTagFilter {
@@ -22,24 +22,34 @@ export interface HiddenTagFiltersResponse {
 	};
 }
 
+export class ApiError extends Error {
+	constructor(
+		public status: number,
+		message: string
+	) {
+		super(message);
+	}
+}
+
 async function handleJson<T>(res: Response): Promise<T> {
-	if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+	if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status} ${res.statusText}`);
 	return res.json() as Promise<T>;
 }
 
 export async function fetchMediaPreviews(
 	query: string,
-	page: number,
 	pageSize: number,
-	vectorQuery?: string | null
+	vectorQuery?: string | null,
+	cursor?: string | null,
+	signal?: AbortSignal
 ): Promise<MediaPreviewsResponse> {
-	const params = buildSearchParams({ page, pageSize, query, vectorQuery });
-	const res = await fetch(`${apiBase}/media/previews?${params.toString()}`);
+	const params = buildSearchParams({ pageSize, query, vectorQuery, cursor });
+	const res = await fetch(`${apiBase}/media/previews?${params.toString()}`, { signal });
 	return handleJson(res);
 }
 
-export async function fetchMediaDetail(id: string): Promise<MediaDetail> {
-	const res = await fetch(`${apiBase}/media/${id}`);
+export async function fetchMediaDetail(id: string, signal?: AbortSignal): Promise<MediaDetail> {
+	const res = await fetch(`${apiBase}/media/${id}`, { signal });
 	return handleJson(res);
 }
 
@@ -57,25 +67,11 @@ export async function updateMediaTags(id: string, tags: string[]): Promise<void>
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
-export async function requestUploadUrl(filename: string): Promise<string> {
-	const res = await fetch(`${apiBase}/media/upload-url`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ filename })
-	});
-	const data = await handleJson<{ url: string }>(res);
-	return data.url;
-}
-
-export async function uploadToPresignedUrl(url: string, file: File): Promise<Response> {
-	return fetch(url, {
-		method: 'PUT',
-		body: file,
-		headers: {
-			'Content-Type': file.type || 'application/octet-stream',
-			'If-None-Match': '*'
-		}
-	});
+export async function uploadMedia(file: File): Promise<{ id: string; existed: boolean }> {
+	const body = new FormData();
+	body.append('file', file, file.name);
+	const res = await fetch(`${apiBase}/media`, { method: 'POST', body });
+	return handleJson(res);
 }
 
 export async function regenerateReverseIndex(): Promise<void> {
@@ -112,21 +108,6 @@ export async function fetchTagSuggestions(prefix: string): Promise<TagCount[]> {
 	const res = await fetch(`${apiBase}/tags/suggest?${params.toString()}`);
 	const data = await handleJson<{ tags: TagCount[] }>(res);
 	return data.tags;
-}
-
-export async function fetchSimilarMedia(
-	vector: number[],
-	limit: number,
-	exclude?: string,
-	name = 'vision'
-): Promise<MediaItem[]> {
-	const res = await fetch(`${apiBase}/media/similar`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ vector, limit, exclude, name })
-	});
-	const data = await handleJson<{ media: MediaItem[] }>(res);
-	return data.media;
 }
 
 export async function fetchHiddenTagFilters(): Promise<HiddenTagFiltersResponse> {

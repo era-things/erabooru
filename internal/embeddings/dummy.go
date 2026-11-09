@@ -6,6 +6,8 @@ import (
 	"context"
 )
 
+func PrepareImage([]byte, int) ([]byte, error) { return nil, nil }
+
 // Dummy stubs for vet/test without embeddings tag.
 
 func VisionEmbedding([]byte) ([]float32, error) {
@@ -16,7 +18,11 @@ func VisionEmbeddingRGB24([]byte) ([]float32, error) {
 	return nil, nil
 }
 
-func TextEmbedding(any interface{}) ([]float32, error) {
+func VisionEmbeddingsRGB24([][]byte) ([][]float32, error) {
+	return nil, nil
+}
+
+func TextEmbedding(string) ([]float32, error) {
 	return nil, nil
 }
 
@@ -34,5 +40,9 @@ func Load(dir string) error {
 
 func InputSpatialSize() int { return 0 }
 
+func RetargetInputSpatialSize(error, int) (int, bool) { return 0, false }
+
 // Add any types referenced in main.go or workers
 type ModelOptions struct{}
+
+func Available() bool { return false }
