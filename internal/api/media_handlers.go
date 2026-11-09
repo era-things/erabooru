@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -156,11 +157,12 @@ func listCommon(previews bool, pool *pgxpool.Pool, limiter *processing.Inference
 			url := mediaURL(key, previews)
 
 			out[i] = gin.H{
-				"id":     mitem.ID,
-				"url":    url,
-				"width":  mitem.Width,
-				"height": mitem.Height,
-				"format": mitem.Format,
+				"id":            mitem.ID,
+				"original_name": mitem.OriginalName,
+				"url":           url,
+				"width":         mitem.Width,
+				"height":        mitem.Height,
+				"format":        mitem.Format,
 			}
 		}
 		c.JSON(http.StatusOK, gin.H{"media": out, "next_cursor": nextCursor})
@@ -219,6 +221,7 @@ func getMediaHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			"error":                  item.Error,
 			"embedding_availability": embeddingAvailability(item),
 			"id":                     item.ID,
+			"original_name":          item.OriginalName,
 			"url":                    url,
 			"width":                  item.Width,
 			"height":                 item.Height,
@@ -276,11 +279,12 @@ func similarMediaByIDHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		for _, item := range results {
 			url := mediaURL(item.ID, true)
 			out = append(out, gin.H{
-				"id":     item.ID,
-				"url":    url,
-				"width":  item.Width,
-				"height": item.Height,
-				"format": item.Format,
+				"id":            item.ID,
+				"original_name": item.OriginalName,
+				"url":           url,
+				"width":         item.Width,
+				"height":        item.Height,
+				"format":        item.Format,
 			})
 		}
 
@@ -290,19 +294,38 @@ func similarMediaByIDHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 func uploadMediaHandler(pool *pgxpool.Pool, store *storage.Store, queueClient *river.Client[pgx.Tx]) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		staged, err := store.StageOriginal(c.Request.Context(), c.Request.Body)
+		reader, err := c.Request.MultipartReader()
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "expected multipart/form-data"})
+			return
+		}
+		file, err := reader.NextPart()
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "missing file part"})
+			return
+		}
+		contentType, originalName, err := readMediaFile(file)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		staged, err := store.StageOriginal(c.Request.Context(), file)
 		if err != nil {
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 		defer staged.Close()
-		completeMediaUpload(c, pool, store, queueClient, staged, c.GetHeader("Content-Type"), nil)
+		if _, err := reader.NextPart(); err != io.EOF {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "expected exactly one file part"})
+			return
+		}
+		completeMediaUpload(c, pool, store, queueClient, staged, contentType, originalName, nil)
 	}
 }
 
 // File installation and rollback cleanup share the per-ID transaction lock with
 // deletion and repair. Streaming and multipart validation happen before locking.
-func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Store, queueClient *river.Client[pgx.Tx], staged *storage.StagedOriginal, contentType string, vector []float32) {
+func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Store, queueClient *river.Client[pgx.Tx], staged *storage.StagedOriginal, contentType, originalName string, vector []float32) {
 	ctx := c.Request.Context()
 	id := staged.ID
 	tx, err := pool.Begin(ctx)
@@ -337,7 +360,7 @@ func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Stor
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	created, err := db.InsertQueuedMedia(ctx, tx, id, generation, staged.Size, time.Now().UTC())
+	created, err := db.InsertQueuedMedia(ctx, tx, id, generation, originalName, staged.Size, time.Now().UTC())
 	if err == nil && created && vector != nil {
 		err = db.ImportEmbeddingTx(ctx, tx, id, generation, pgvector.NewVector(vector))
 	}

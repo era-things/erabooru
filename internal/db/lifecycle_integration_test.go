@@ -31,7 +31,7 @@ func TestEmbeddingRetriesAndTerminalGuards(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
-	if _, err := InsertQueuedMedia(ctx, tx, id, "generation", 10, time.Now()); err != nil {
+	if _, err := InsertQueuedMedia(ctx, tx, id, "generation", "lifecycle.png", 10, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if err := CompleteIngestionTx(ctx, tx, Media{ID: id, Generation: "generation", Format: "png", Width: 10, Height: 10, Size: 10}); err != nil {

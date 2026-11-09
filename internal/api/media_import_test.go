@@ -130,8 +130,8 @@ func TestImportMetadataStreamsVideoPart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, part, contentType, err := readImportMetadata(reader, embed.Profile{ID: "test", Dimensions: 3})
-	if err != nil || contentType != "video/mp4" {
+	_, part, contentType, originalName, err := readImportMetadata(reader, embed.Profile{ID: "test", Dimensions: 3})
+	if err != nil || contentType != "video/mp4" || originalName != "sample.mp4" {
 		t.Fatalf("metadata: %s %v", contentType, err)
 	}
 	var actual bytes.Buffer

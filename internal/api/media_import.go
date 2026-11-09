@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"mime"
 	"mime/multipart"
 	"net/http"
 	"strings"
@@ -84,30 +83,27 @@ func readImportedEmbedding(reader io.Reader, profile embed.Profile) ([]float32, 
 	return vector, nil
 }
 
-func readImportMetadata(reader *multipart.Reader, profile embed.Profile) ([]float32, *multipart.Part, string, error) {
+func readImportMetadata(reader *multipart.Reader, profile embed.Profile) ([]float32, *multipart.Part, string, string, error) {
 	part, err := reader.NextPart()
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("missing embedding part")
+		return nil, nil, "", "", fmt.Errorf("missing embedding part")
 	}
 	if part.FormName() != "embedding" {
-		return nil, nil, "", fmt.Errorf("first part must be embedding JSON")
+		return nil, nil, "", "", fmt.Errorf("first part must be embedding JSON")
 	}
 	vector, err := readImportedEmbedding(part, profile)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, "", "", err
 	}
 	part, err = reader.NextPart()
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("missing file part")
+		return nil, nil, "", "", fmt.Errorf("missing file part")
 	}
-	if part.FormName() != "file" {
-		return nil, nil, "", fmt.Errorf("second part must be file")
+	contentType, originalName, err := readMediaFile(part)
+	if err != nil {
+		return nil, nil, "", "", err
 	}
-	contentType, _, err := mime.ParseMediaType(part.Header.Get("Content-Type"))
-	if err != nil || (!strings.HasPrefix(contentType, "image/") && !strings.HasPrefix(contentType, "video/")) {
-		return nil, nil, "", fmt.Errorf("file part requires an image/* or video/* Content-Type")
-	}
-	return vector, part, contentType, nil
+	return vector, part, contentType, originalName, nil
 }
 
 func importMediaHandler(pool *pgxpool.Pool, store *storage.Store, client *river.Client[pgx.Tx], profile embed.Profile) gin.HandlerFunc {
@@ -121,7 +117,7 @@ func importMediaHandler(pool *pgxpool.Pool, store *storage.Store, client *river.
 			c.JSON(http.StatusBadRequest, gin.H{"error": "expected multipart/form-data"})
 			return
 		}
-		vector, file, contentType, err := readImportMetadata(reader, profile)
+		vector, file, contentType, originalName, err := readImportMetadata(reader, profile)
 		if err != nil {
 			status := http.StatusUnprocessableEntity
 			if errors.Is(err, errEmbeddingProfile) {
@@ -140,6 +136,6 @@ func importMediaHandler(pool *pgxpool.Pool, store *storage.Store, client *river.
 			c.JSON(http.StatusBadRequest, gin.H{"error": "expected exactly embedding and file parts"})
 			return
 		}
-		completeMediaUpload(c, pool, store, client, staged, contentType, vector)
+		completeMediaUpload(c, pool, store, client, staged, contentType, originalName, vector)
 	}
 }

@@ -19,19 +19,20 @@ import (
 var ErrDefaultFilter = errors.New("cannot delete the default hidden tag filter")
 
 type Media struct {
-	ID         string
-	Generation string
-	Status     string
-	Error      *string
-	Format     string
-	Width      int
-	Height     int
-	Duration   *int
-	Size       int64
-	UploadedAt time.Time
-	Tags       []Tag
-	Dates      []DateValue
-	Embeddings []Embedding
+	ID           string
+	OriginalName string
+	Generation   string
+	Status       string
+	Error        *string
+	Format       string
+	Width        int
+	Height       int
+	Duration     *int
+	Size         int64
+	UploadedAt   time.Time
+	Tags         []Tag
+	Dates        []DateValue
+	Embeddings   []Embedding
 }
 
 type Tag struct {
@@ -101,7 +102,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 	singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
 	version integer NOT NULL
 );
-INSERT INTO schema_version (singleton, version) VALUES (true, 3)
+INSERT INTO schema_version (singleton, version) VALUES (true, 4)
 ON CONFLICT (singleton) DO UPDATE SET version = EXCLUDED.version;
 
 CREATE TABLE IF NOT EXISTS media (
@@ -116,6 +117,9 @@ CREATE TABLE IF NOT EXISTS media (
     size bigint NOT NULL CHECK (size >= 0),
     uploaded_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Existing media has no recoverable filename. Preserve its content and leave the name empty.
+ALTER TABLE media ADD COLUMN IF NOT EXISTS original_name text NOT NULL DEFAULT '';
 
 -- Upgrade existing installations without resetting their media.
 ALTER TABLE media DROP CONSTRAINT IF EXISTS media_status_check;
@@ -196,9 +200,9 @@ func IsConflict(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-func InsertQueuedMedia(ctx context.Context, tx pgx.Tx, id, generation string, size int64, uploadedAt time.Time) (bool, error) {
-	result, err := tx.Exec(ctx, `INSERT INTO media (id, generation, status, size, uploaded_at)
-VALUES ($1, $2, 'queued', $3, $4) ON CONFLICT (id) DO NOTHING`, id, generation, size, uploadedAt)
+func InsertQueuedMedia(ctx context.Context, tx pgx.Tx, id, generation, originalName string, size int64, uploadedAt time.Time) (bool, error) {
+	result, err := tx.Exec(ctx, `INSERT INTO media (id, generation, original_name, status, size, uploaded_at)
+VALUES ($1, $2, $3, 'queued', $4, $5) ON CONFLICT (id) DO NOTHING`, id, generation, originalName, size, uploadedAt)
 	return err == nil && result.RowsAffected() == 1, err
 }
 
@@ -319,9 +323,9 @@ func GetMediaDetail(ctx context.Context, pool *pgxpool.Pool, id string) (Media, 
 
 func getMedia(ctx context.Context, pool *pgxpool.Pool, id string, readyOnly bool) (Media, error) {
 	var item Media
-	err := pool.QueryRow(ctx, `SELECT id, generation, status, error, COALESCE(format, ''), COALESCE(width, 0), COALESCE(height, 0), duration, size, uploaded_at
+	err := pool.QueryRow(ctx, `SELECT id, original_name, generation, status, error, COALESCE(format, ''), COALESCE(width, 0), COALESCE(height, 0), duration, size, uploaded_at
 FROM media WHERE id = $1 AND (NOT $2 OR status = 'ready')`, id, readyOnly).
-		Scan(&item.ID, &item.Generation, &item.Status, &item.Error, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt)
+		Scan(&item.ID, &item.OriginalName, &item.Generation, &item.Status, &item.Error, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt)
 	if err != nil {
 		return Media{}, err
 	}
@@ -378,7 +382,7 @@ LEFT JOIN media_tag all_mt ON all_mt.tag_id = t.id GROUP BY t.id, t.name ORDER B
 }
 
 func ListMedia(ctx context.Context, pool *pgxpool.Pool) ([]Media, error) {
-	rows, err := pool.Query(ctx, `SELECT id, generation, status, error, format, width, height, duration, size, uploaded_at
+	rows, err := pool.Query(ctx, `SELECT id, original_name, generation, status, error, format, width, height, duration, size, uploaded_at
 FROM media WHERE status = 'ready' ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -388,7 +392,7 @@ FROM media WHERE status = 'ready' ORDER BY id`)
 	byID := map[string]*Media{}
 	for rows.Next() {
 		var item Media
-		if err := rows.Scan(&item.ID, &item.Generation, &item.Status, &item.Error, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.OriginalName, &item.Generation, &item.Status, &item.Error, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

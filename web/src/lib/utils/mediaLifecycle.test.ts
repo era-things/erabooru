@@ -4,6 +4,7 @@ import type { MediaDetail } from '../types/media';
 
 const ready: MediaDetail = {
 	id: 'media',
+	original_name: '2026-11-09.png',
 	url: '',
 	width: 10,
 	height: 10,

@@ -241,6 +241,9 @@
 
 			<div class="flex w-60 flex-col gap-4">
 				<div class="text-sm">
+					{#if media.original_name}
+						<p class="break-all">Original name: {media.original_name}</p>
+					{/if}
 					<p>Format: {media.format}</p>
 					<p>Dimensions: {media.width}×{media.height}</p>
 					<p>Size: {(media.size / 1024 / 1024).toFixed(2)} MB</p>

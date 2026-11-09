@@ -55,7 +55,9 @@ func TestLifecycleRetryDeletionAndReupload(t *testing.T) {
 	RegisterAdminRoutes(router, pool, store, client)
 	request := func(method, path string, body []byte) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, bytes.NewReader(body))
-		r.Header.Set("Content-Type", "image/png")
+		if method == http.MethodPost && path == "/api/media" {
+			r = mediaUploadRequest(t, "2026-11-09T13-04-05Z.png", "image/png", body, false)
+		}
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		return w
@@ -85,9 +87,10 @@ func TestLifecycleRetryDeletionAndReupload(t *testing.T) {
 		t.Fatalf("pending detail: %d %s", detail.Code, detail.Body)
 	}
 	var state struct {
-		Status string `json:"status"`
+		Status       string `json:"status"`
+		OriginalName string `json:"original_name"`
 	}
-	if err := json.Unmarshal(detail.Body.Bytes(), &state); err != nil || state.Status != "queued" {
+	if err := json.Unmarshal(detail.Body.Bytes(), &state); err != nil || (state.Status != "queued" || state.OriginalName != "2026-11-09T13-04-05Z.png") {
 		t.Fatalf("pending response: %s %v", detail.Body, err)
 	}
 	// Probe failure is retryable whether ffprobe is missing or rejects these bytes.

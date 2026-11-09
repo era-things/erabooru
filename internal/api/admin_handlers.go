@@ -126,7 +126,7 @@ func regenerateHandler(pool *pgxpool.Pool, store *storage.Store, riverClient *ri
 					return err
 				}
 				if errors.Is(lifecycleErr, pgx.ErrNoRows) {
-					if _, err := db.InsertQueuedMedia(ctx, tx, id, generation, stat.Size(), time.Now().UTC()); err != nil {
+					if _, err := db.InsertQueuedMedia(ctx, tx, id, generation, "", stat.Size(), time.Now().UTC()); err != nil {
 						return err
 					}
 				} else if err := db.RequeueIngestionTx(ctx, tx, id, generation); err != nil {

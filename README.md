@@ -112,6 +112,16 @@ one video share that batch. When a batch contains frames from multiple items,
 its execution duration appears in each item's summary; these durations should
 not be summed across items. Text searches retain their separate timing line.
 
+### Uploading media and preserving its original name
+
+`POST /api/media` accepts streaming `multipart/form-data` with exactly one `file` part. The part must include its original filename (including extension) and an `image/*` or `video/*` Content-Type. Raw request-body uploads are no longer accepted.
+
+```sh
+curl --fail-with-body http://localhost/api/media -F 'file=@2026-11-09T13-04-05Z.png;type=image/png'
+```
+
+The server stores the basename verbatim as `original_name`, including Unicode and timestamp text. Paths are stripped; names are metadata, never storage paths. Detail, list, preview and similarity responses include this field, and the media details screen displays it. Duplicate uploads preserve the first recorded name. Existing media whose name was already lost has an empty name. Ingestion, repair and embedding jobs preserve recorded names. Timestamp names are kept as text without interpreting or changing their dates.
+
 ### Importing media with locally computed embeddings (API only)
 
 `GET /api/embeddings/profile` returns the active embedding profile: `id`,
@@ -126,7 +136,7 @@ repository name. Both endpoints return 503 if no embedding model is loaded.
 1. `embedding`: one JSON document, at most 64 KiB:
    `{"profile":"<id from the profile endpoint>","vector":[<768 numbers>]}`.
 2. `file`: the original image or video, with an `image/*` or `video/*` part
-   Content-Type. Its filename is not used as a storage path.
+   Content-Type. Its original filename is required and saved as `original_name`; it is not used as a storage path.
 
 For example, after saving the metadata as `embedding.json`:
 

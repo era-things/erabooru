@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -87,10 +86,13 @@ func TestMediaImportLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Exec(context.Background(), "DELETE FROM media WHERE id=$1", result.ID)
-	var generation, mediaStatus, embeddingStatus string
+	var generation, mediaStatus, embeddingStatus, originalName string
 	var stored pgvector.Vector
-	if err := pool.QueryRow(ctx, `SELECT m.generation,m.status,e.status,e.value FROM media m JOIN media_embedding e ON e.media_id=m.id WHERE m.id=$1`, result.ID).Scan(&generation, &mediaStatus, &embeddingStatus, &stored); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT m.generation,m.status,e.status,e.value,m.original_name FROM media m JOIN media_embedding e ON e.media_id=m.id WHERE m.id=$1`, result.ID).Scan(&generation, &mediaStatus, &embeddingStatus, &stored, &originalName); err != nil {
 		t.Fatal(err)
+	}
+	if originalName != "sample.mp4" {
+		t.Fatalf("import filename lost: %q", originalName)
 	}
 	if mediaStatus != "queued" || embeddingStatus != "ready" || stored.Slice()[0] != 1 {
 		t.Fatal("import was not atomic / normalized")
@@ -122,7 +124,7 @@ func TestMediaImportLifecycle(t *testing.T) {
 		t.Fatal("stale inference job can overwrite imported vector", err)
 	}
 	item, err := db.GetMedia(ctx, pool, result.ID)
-	if err != nil || len(item.Embeddings) != 1 || item.Embeddings[0].Status != "ready" {
+	if err != nil || item.OriginalName != "sample.mp4" || len(item.Embeddings) != 1 || item.Embeddings[0].Status != "ready" {
 		t.Fatal("import not searchable after processing", err)
 	}
 	var embedJobs int
@@ -143,8 +145,7 @@ func TestMediaImportLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/media", bytes.NewReader(ordinary))
-	request.Header.Set("Content-Type", "image/png")
+	request := mediaUploadRequest(t, "2026-11-09T13-04-05Z — обычный.png", "image/png", ordinary, false)
 	normalResponse := httptest.NewRecorder()
 	router.ServeHTTP(normalResponse, request)
 	if normalResponse.Code != 201 {
@@ -157,6 +158,18 @@ func TestMediaImportLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Exec(context.Background(), "DELETE FROM media WHERE id=$1", normal.ID)
+	var ordinaryName string
+	if err := pool.QueryRow(ctx, "SELECT original_name FROM media WHERE id=$1", normal.ID).Scan(&ordinaryName); err != nil || ordinaryName != "2026-11-09T13-04-05Z — обычный.png" {
+		t.Fatalf("ordinary filename lost: %q %v", ordinaryName, err)
+	}
+	duplicate := httptest.NewRecorder()
+	router.ServeHTTP(duplicate, mediaUploadRequest(t, "renamed.png", "image/png", ordinary, false))
+	if duplicate.Code != 200 {
+		t.Fatalf("duplicate: %d", duplicate.Code)
+	}
+	if err := pool.QueryRow(ctx, "SELECT original_name FROM media WHERE id=$1", normal.ID).Scan(&ordinaryName); err != nil || ordinaryName != "2026-11-09T13-04-05Z — обычный.png" {
+		t.Fatalf("duplicate replaced original name: %q %v", ordinaryName, err)
+	}
 	var imported int
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM media_embedding WHERE media_id=$1", normal.ID).Scan(&imported); err != nil || imported != 0 {
 		t.Fatal("ordinary upload imported a vector", err)

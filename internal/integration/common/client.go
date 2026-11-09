@@ -5,8 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -54,11 +59,26 @@ func (c *ErabooruClient) UploadAndWait(ctx context.Context, path string) string 
 	}
 	defer f.Close()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/media", f)
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	part, err := w.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": filepath.Base(path)})},
+		"Content-Type":        {"image/png"},
+	})
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if _, err := io.Copy(part, f); err != nil {
+		c.t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		c.t.Fatal(err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/media", &body)
 	if err != nil {
 		c.t.Fatalf("create upload request: %v", err)
 	}
-	req.Header.Set("Content-Type", "image/png")
+	req.Header.Set("Content-Type", w.FormDataContentType())
 	resp, err := c.client.Do(req)
 	if err != nil {
 		c.t.Fatalf("upload %s: %v", path, err)

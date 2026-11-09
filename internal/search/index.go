@@ -25,7 +25,7 @@ func SearchMedia(ctx context.Context, pool *pgxpool.Pool, expr string, limit int
 		conditions = append(conditions, fmt.Sprintf("(m.uploaded_at, m.id) < ($%d, $%d)", len(args)-1, len(args)))
 	}
 	args = append(args, limit+1)
-	query := fmt.Sprintf(`SELECT m.id, m.format, m.width, m.height, m.duration, m.size, m.uploaded_at
+	query := fmt.Sprintf(`SELECT m.id, m.original_name, m.format, m.width, m.height, m.duration, m.size, m.uploaded_at
 FROM media m WHERE %s ORDER BY m.uploaded_at DESC, m.id DESC LIMIT $%d`, joinConditions(conditions), len(args))
 	rows, err := pool.Query(ctx, query, args...)
 	if err != nil {
@@ -49,7 +49,7 @@ func scanMedia(rows pgx.Rows) ([]db.Media, error) {
 	items := []db.Media{}
 	for rows.Next() {
 		var item db.Media
-		if err := rows.Scan(&item.ID, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.OriginalName, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

@@ -5,6 +5,7 @@ export interface MediaDate {
 
 export interface MediaItem {
 	id: string;
+	original_name: string;
 	url: string;
 	width: number;
 	height: number;

@@ -31,7 +31,7 @@ func TestCleanSchemaLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := InsertQueuedMedia(ctx, tx, mediaID, "generation", 123, time.Now().UTC())
+	created, err := InsertQueuedMedia(ctx, tx, mediaID, "generation", "2026-11-09T13-04-05Z.png", 123, time.Now().UTC())
 	if err != nil || !created {
 		t.Fatalf("insert queued media: created=%v err=%v", created, err)
 	}
@@ -62,6 +62,9 @@ func TestCleanSchemaLifecycle(t *testing.T) {
 	item, err := GetMedia(ctx, pool, mediaID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if item.OriginalName != "2026-11-09T13-04-05Z.png" {
+		t.Fatalf("original filename lost: %q", item.OriginalName)
 	}
 	if len(item.Tags) != 2 || len(item.Embeddings) != 1 || item.Embeddings[0].Status != "ready" {
 		t.Fatalf("unexpected media: %+v", item)

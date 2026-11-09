@@ -35,7 +35,7 @@ func SimilarMediaByVector(ctx context.Context, pool *pgxpool.Pool, vectorName st
 	}
 	args = append(args, limit+1)
 	conditionSQL := " WHERE " + joinConditions(conditions)
-	querySQL := fmt.Sprintf(`SELECT m.id, m.format, m.width, m.height, m.duration, m.size, m.uploaded_at
+	querySQL := fmt.Sprintf(`SELECT m.id, m.original_name, m.format, m.width, m.height, m.duration, m.size, m.uploaded_at
 	, me.value::vector(768) <#> $2 AS distance
 FROM media_embedding me JOIN media m ON m.id = me.media_id%s
 ORDER BY distance, m.id LIMIT $%d`, conditionSQL, len(args))
@@ -49,7 +49,7 @@ ORDER BY distance, m.id LIMIT $%d`, conditionSQL, len(args))
 	for rows.Next() {
 		var item db.Media
 		var distance float64
-		if err := rows.Scan(&item.ID, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt, &distance); err != nil {
+		if err := rows.Scan(&item.ID, &item.OriginalName, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt, &distance); err != nil {
 			return nil, "", err
 		}
 		items = append(items, item)

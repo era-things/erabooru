@@ -151,6 +151,7 @@
 
 		return {
 			id,
+			original_name: file.name,
 			url: objectUrl,
 			width,
 			height,
@@ -203,6 +204,7 @@
 
 		return {
 			id,
+			original_name: file.name,
 			url,
 			width,
 			height,
@@ -274,6 +276,7 @@
 		const size = 512;
 		return {
 			id,
+			original_name: file.name,
 			url: buildGenericPlaceholder(file.name),
 			width: size,
 			height: size,

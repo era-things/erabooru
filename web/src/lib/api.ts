@@ -68,11 +68,9 @@ export async function updateMediaTags(id: string, tags: string[]): Promise<void>
 }
 
 export async function uploadMedia(file: File): Promise<{ id: string; existed: boolean }> {
-	const res = await fetch(`${apiBase}/media`, {
-		method: 'POST',
-		body: file,
-		headers: { 'Content-Type': file.type || 'application/octet-stream' }
-	});
+	const body = new FormData();
+	body.append('file', file, file.name);
+	const res = await fetch(`${apiBase}/media`, { method: 'POST', body });
 	return handleJson(res);
 }
 
