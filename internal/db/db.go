@@ -288,7 +288,9 @@ AND e.generation = $3 AND m.generation = $3 AND m.status = 'ready' AND e.status 
 	return err
 }
 
-func MediaExists(ctx context.Context, pool *pgxpool.Pool, id string) (bool, error) {
+func MediaExists(ctx context.Context, pool interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, id string) (bool, error) {
 	var exists bool
 	err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)`, id).Scan(&exists)
 	return exists, err

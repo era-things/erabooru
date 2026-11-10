@@ -30,6 +30,7 @@ func RegisterMediaRoutes(r *gin.Engine, pool *pgxpool.Pool, store *storage.Store
 	r.GET("/api/media", listMediaHandler(pool, limiter))
 	r.GET("/api/media/previews", listPreviewsHandler(pool, limiter))
 	r.GET("/api/media/:id", getMediaHandler(pool))
+	r.HEAD("/api/media/:id", headMediaHandler(pool))
 	r.GET("/api/media/:id/similar", similarMediaByIDHandler(pool))
 	r.POST("/api/media", uploadMediaHandler(pool, store, queueClient))
 	r.POST("/api/media/import", importMediaHandler(pool, store, queueClient, embed.ActiveProfile()))
@@ -181,6 +182,31 @@ func generateTextEmbedding(ctx context.Context, limiter *processing.InferenceLim
 	vector, err := embed.TextEmbedding(text)
 	log.Printf("benchmark stage=text_search wait_ms=%.2f inference_ms=%.2f error=%t", float64(waited)/float64(time.Millisecond), float64(time.Since(started))/float64(time.Millisecond), err != nil)
 	return vector, err
+}
+
+// Existence is independent of processing state and hidden-tag filters, just as
+// duplicate detection during upload is. Deleted records are absent from media.
+func headMediaHandler(pool interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		id, ok := idParam(c)
+		if !ok {
+			return
+		}
+		exists, err := db.MediaExists(c.Request.Context(), pool, strings.ToLower(id))
+		if err != nil {
+			log.Printf("check media %s: %v", id, err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		if !exists {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		c.Status(http.StatusOK)
+	}
 }
 
 func getMediaHandler(pool *pgxpool.Pool) gin.HandlerFunc {

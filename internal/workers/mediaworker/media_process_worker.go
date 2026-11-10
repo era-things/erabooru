@@ -130,12 +130,8 @@ func (w *ProcessWorker) processVideo(ctx context.Context, key, generation string
 	width, height, duration := 0, 0, 0
 	for _, s := range probe.Streams {
 		if s.CodecType == "video" {
-			if s.Width > width {
-				width = s.Width
-			}
-			if s.Height > height {
-				height = s.Height
-			}
+			// Metadata, preview and embedding all use the first video track.
+			width, height = s.Width, s.Height
 			if s.Duration != "" {
 				if f, err := strconv.ParseFloat(s.Duration, 64); err == nil {
 					if int(f+0.5) > duration {
@@ -143,6 +139,7 @@ func (w *ProcessWorker) processVideo(ctx context.Context, key, generation string
 					}
 				}
 			}
+			break
 		}
 	}
 	if duration == 0 && probe.Format.Duration != "" {
@@ -240,16 +237,7 @@ func (w *ProcessWorker) generatePreview(ctx context.Context, key, generation, se
 			timings.Preview += time.Since(started)
 		}
 	}()
-	args := []string{"-loglevel", "error", "-nostdin", "-threads", processing.FFmpegThreads()}
-	if seek != "" {
-		args = append(args, "-ss", seek)
-	}
-	args = append(args,
-		"-i", w.Store.OriginalPath(key), "-frames:v", "1", "-filter_threads", "1",
-		"-vf", "scale=512:512:force_original_aspect_ratio=decrease",
-		"-q:v", "4", "-threads", processing.FFmpegThreads(), "-f", "image2", "pipe:1",
-	)
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, "ffmpeg", previewArgs(w.Store.OriginalPath(key), seek)...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -263,4 +251,16 @@ func (w *ProcessWorker) generatePreview(ctx context.Context, key, generation, se
 		return err
 	}
 	return cmd.Wait()
+}
+
+func previewArgs(src, seek string) []string {
+	args := []string{"-loglevel", "error", "-nostdin", "-threads", processing.FFmpegThreads()}
+	if seek != "" {
+		args = append(args, "-ss", seek)
+	}
+	return append(args,
+		"-i", src, "-map", "0:v:0", "-frames:v", "1", "-filter_threads", "1",
+		"-vf", "scale=512:512:force_original_aspect_ratio=decrease",
+		"-q:v", "4", "-threads", processing.FFmpegThreads(), "-f", "image2", "pipe:1",
+	)
 }

@@ -242,7 +242,9 @@ func videoFrameArgs(src string, duration, samples, size int, seek *float64) []st
 	if seek != nil {
 		args = append(args, "-ss", strconv.FormatFloat(*seek, 'f', 6, 64))
 	}
-	args = append(args, "-i", src, "-an", "-sn", "-dn", "-filter_threads", "1")
+	// Automatic selection prefers resolution and can pick a larger secondary
+	// track that has no frames at the requested timestamps.
+	args = append(args, "-i", src, "-map", "0:v:0", "-an", "-sn", "-dn", "-filter_threads", "1")
 	vf := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(%d-iw)/2:(%d-ih)/2:color=black", size, size, size, size, size, size)
 	count := samples
 	if seek != nil {
