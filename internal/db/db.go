@@ -497,6 +497,12 @@ func SetMediaDates(ctx context.Context, pool *pgxpool.Pool, mediaID string, date
 		return err
 	}
 	defer tx.Rollback(ctx)
+	// Ingestion holds this lock before updating media and inserting its default
+	// upload date. Acquire it first so an override cannot race that insertion or
+	// lock media_date before media and deadlock with ingestion.
+	if err := LockMediaTx(ctx, tx, mediaID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM media_date WHERE media_id = $1`, mediaID); err != nil {
 		return err
 	}
