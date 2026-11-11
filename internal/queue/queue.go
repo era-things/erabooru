@@ -32,8 +32,9 @@ func NewClient(ctx context.Context, pool *pgxpool.Pool, workers *river.Workers, 
 	}
 	return river.NewClient(riverpgxv5.New(pool), (&river.Config{
 		Queues: map[string]river.QueueConfig{
-			"process": {MaxWorkers: ingestConcurrency},
-			"embed":   {MaxWorkers: embedConcurrency},
+			"process":     {MaxWorkers: ingestConcurrency},
+			"embed":       {MaxWorkers: embedConcurrency},
+			"maintenance": {MaxWorkers: 1},
 		},
 		Workers: workers,
 	}).WithDefaults())
@@ -54,6 +55,8 @@ func EnqueueTx(ctx context.Context, c *river.Client[pgx.Tx], tx pgx.Tx, args riv
 	)
 
 	switch args.(type) {
+	case RebuildTagStatisticsArgs:
+		queueName = "maintenance"
 	case ProcessArgs, CleanupArgs:
 		queueName = "process" // Goes to media worker
 	case EmbedArgs:
@@ -78,6 +81,13 @@ func EnqueueTx(ctx context.Context, c *river.Client[pgx.Tx], tx pgx.Tx, args riv
 		_, err = c.InsertTx(ctx, tx, args, opts)
 	}
 	return err
+}
+
+type RebuildTagStatisticsArgs struct{}
+
+func (RebuildTagStatisticsArgs) Kind() string { return "rebuild_tag_statistics" }
+func (RebuildTagStatisticsArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{Queue: "maintenance", MaxAttempts: 3, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: activeUniqueStates}}
 }
 
 func WorkerEnqueue(ctx context.Context, args river.JobArgs) error {

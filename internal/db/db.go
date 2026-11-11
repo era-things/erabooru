@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 	singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
 	version integer NOT NULL
 );
-INSERT INTO schema_version (singleton, version) VALUES (true, 4)
+INSERT INTO schema_version (singleton, version) VALUES (true, 5)
 ON CONFLICT (singleton) DO UPDATE SET version = EXCLUDED.version;
 
 CREATE TABLE IF NOT EXISTS media (
@@ -192,6 +192,9 @@ CREATE TABLE IF NOT EXISTS app_settings (
 	if err != nil {
 		return err
 	}
+	if err := migrateTagStatistics(ctx, pool); err != nil {
+		return err
+	}
 	return EnsureHiddenTagDefaults(ctx, pool)
 }
 
@@ -246,22 +249,29 @@ SELECT id, 'upload', uploaded_at FROM media WHERE id = $1 ON CONFLICT DO NOTHING
 
 // QueueEmbeddingTx preserves an already-ready vector for this media generation.
 func QueueEmbeddingTx(ctx context.Context, tx pgx.Tx, mediaID, generation, space string) (bool, error) {
-	result, err := tx.Exec(ctx, `INSERT INTO media_embedding (media_id, space_id, generation, status)
+	var changed bool
+	err := withTagStatisticsTx(ctx, tx, mediaID, func() error {
+		result, err := tx.Exec(ctx, `INSERT INTO media_embedding (media_id, space_id, generation, status)
 VALUES ($1, $2, $3, 'queued')
 ON CONFLICT (media_id, space_id) DO UPDATE
 SET generation = EXCLUDED.generation, status = 'queued', error = NULL, value = NULL
 WHERE media_embedding.generation <> EXCLUDED.generation OR media_embedding.status <> 'ready'`, mediaID, space, generation)
-	return err == nil && result.RowsAffected() == 1, err
+		changed = err == nil && result.RowsAffected() == 1
+		return err
+	})
+	return changed, err
 }
 
 // ImportEmbeddingTx records a supplied vector before metadata ingestion completes.
 func ImportEmbeddingTx(ctx context.Context, tx pgx.Tx, mediaID, generation string, value pgvector.Vector) error {
-	result, err := tx.Exec(ctx, `INSERT INTO media_embedding (media_id, space_id, generation, status, value)
+	return withTagStatisticsTx(ctx, tx, mediaID, func() error {
+		result, err := tx.Exec(ctx, `INSERT INTO media_embedding (media_id, space_id, generation, status, value)
 SELECT id, $3, generation, 'ready', $4 FROM media WHERE id=$1 AND generation=$2`, mediaID, generation, DefaultEmbeddingSpace, value)
-	if err == nil && result.RowsAffected() != 1 {
-		return pgx.ErrNoRows
-	}
-	return err
+		if err == nil && result.RowsAffected() != 1 {
+			return pgx.ErrNoRows
+		}
+		return err
+	})
 }
 
 func StartEmbedding(ctx context.Context, pool *pgxpool.Pool, mediaID, generation, space string) (bool, error) {
@@ -279,13 +289,24 @@ AND status IN ('queued', 'processing', 'retrying')`, mediaID, space, generation,
 }
 
 func CompleteEmbedding(ctx context.Context, pool *pgxpool.Pool, mediaID, generation, space string, value pgvector.Vector) error {
-	result, err := pool.Exec(ctx, `UPDATE media_embedding e SET status = 'ready', error = NULL, value = $4
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	err = withTagStatisticsTx(ctx, tx, mediaID, func() error {
+		result, err := tx.Exec(ctx, `UPDATE media_embedding e SET status = 'ready', error = NULL, value = $4
 FROM media m WHERE e.media_id = m.id AND e.media_id = $1 AND e.space_id = $2
 AND e.generation = $3 AND m.generation = $3 AND m.status = 'ready' AND e.status IN ('queued', 'processing', 'retrying')`, mediaID, space, generation, value)
-	if err == nil && result.RowsAffected() != 1 {
-		return pgx.ErrNoRows
+		if err == nil && result.RowsAffected() != 1 {
+			return pgx.ErrNoRows
+		}
+		return err
+	})
+	if err != nil {
+		return err
 	}
-	return err
+	return tx.Commit(ctx)
 }
 
 func MediaExists(ctx context.Context, pool interface {
@@ -478,13 +499,27 @@ func SetMediaTags(ctx context.Context, pool *pgxpool.Pool, mediaID string, names
 		return err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, `WITH removed AS (
-	DELETE FROM media_tag WHERE media_id = $1
-), upserted AS (
-	INSERT INTO tag (name) SELECT unnest($2::text[])
-	ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id
-)
-INSERT INTO media_tag (media_id, tag_id) SELECT $1, id FROM upserted`, mediaID, names)
+	err = withTagStatisticsTx(ctx, tx, mediaID, func() error {
+		exists, err := MediaExists(ctx, tx, mediaID)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return pgx.ErrNoRows
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM media_tag WHERE media_id=$1`, mediaID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `WITH upserted AS (
+ INSERT INTO tag (name) SELECT DISTINCT unnest($2::text[]) ORDER BY 1
+ ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id
+ ) INSERT INTO media_tag (media_id,tag_id) SELECT $1,id FROM upserted`, mediaID, names); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `DELETE FROM media_negative_tag n USING media_tag p
+ WHERE n.media_id=$1 AND p.media_id=n.media_id AND p.tag_id=n.tag_id`, mediaID)
+		return err
+	})
 	if err != nil {
 		return err
 	}

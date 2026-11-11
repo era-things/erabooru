@@ -1,5 +1,6 @@
 <script lang="ts">
 	import TabNav from '$lib/components/TabNav.svelte';
+	import TagStatisticsSettings from '$lib/components/TagStatisticsSettings.svelte';
 	import {
 		regenerateReverseIndex,
 		downloadMediaTags,
@@ -152,6 +153,7 @@
 		<input type="file" bind:this={fileInput} accept=".gz" class="hidden" onchange={importTags} />
 	</div>
 
+	<TagStatisticsSettings />
 	<section class="space-y-4 rounded border border-gray-200 p-4">
 		<div class="flex items-center justify-between">
 			<h2 class="text-lg font-semibold">Hidden tag filters</h2>

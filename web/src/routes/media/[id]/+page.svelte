@@ -9,12 +9,17 @@
 	import type { MediaDetail } from '$lib/types/media';
 	import { isFormatVideo } from '$lib/utils/media_utils';
 	import TagAssistInput from '$lib/components/TagAssistInput.svelte';
+	import TagRecommendations from '$lib/components/TagRecommendations.svelte';
+	import { sendTagFeedback, type TagFeedbackAction } from '$lib/api';
 
 	let media = $state<MediaDetail | null>(null);
+	const sortedTags = $derived(
+		[...(media?.tags ?? [])].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+	);
 	let navigationHeight = $state(0);
 	let tagsInput = $state('');
 	let edit = $state(false);
-	let mutation = $state<'idle' | 'saving' | 'deleting'>('idle');
+	let mutation = $state<'idle' | 'saving' | 'deleting' | 'feedback'>('idle');
 	let routeGeneration = 0;
 	let mutationRevision = 0;
 	onDestroy(() => {
@@ -140,6 +145,22 @@
 		}
 	}
 
+	async function feedbackTag(tag: string, action: TagFeedbackAction) {
+		if (!media || edit || mutation !== 'idle') return;
+		const id = media.id;
+		const generation = routeGeneration;
+		mutation = 'feedback';
+		mutationRevision++;
+		try {
+			await sendTagFeedback(id, tag, action);
+			if (!isCurrent(id, generation)) return;
+			const detail = await fetchMediaDetail(id);
+			if (isCurrent(id, generation)) applyMediaDetail(detail);
+		} finally {
+			if (isCurrent(id, generation)) mutation = 'idle';
+		}
+	}
+
 	function formatDate(date: string): string {
 		return new Date(date).toLocaleDateString(undefined, {
 			day: '2-digit',
@@ -188,7 +209,7 @@
 					<p class="font-semibold">Tags</p>
 					{#if media.tags.length}
 						<ul class="ml-4 list-disc">
-							{#each media.tags as t (t.name)}
+							{#each sortedTags as t (t.name)}
 								<li>
 									<a
 										href={`/?q=${encodeURIComponent(t.name)}`}
@@ -226,6 +247,11 @@
 						</div>
 					{/if}
 				</div>
+				<TagRecommendations
+					{media}
+					disabled={edit || mutation !== 'idle'}
+					onfeedback={feedbackTag}
+				/>
 				<div class="text-sm">
 					{#if media.original_name}
 						<p class="break-all">Original name: {media.original_name}</p>
