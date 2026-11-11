@@ -27,6 +27,8 @@
 	let fileInput: HTMLInputElement | null = $state(null);
 	let uploaded = $state<UploadedItem[]>([]);
 	let uploading = $state(false);
+	let dragDepth = $state(0);
+	const pendingFiles: File[] = [];
 
 	const uploadedCount = $derived(uploaded.length);
 	const totalBytes = $derived(uploaded.reduce((sum, item) => sum + item.size, 0));
@@ -67,18 +69,16 @@
 		});
 	}
 
-	async function upload() {
+	async function upload(files: File[]) {
+		if (!files.length || destroyed) return;
+		pendingFiles.push(...files);
 		if (uploading) return;
-		const files = Array.from(fileInput?.files ?? []);
-		if (!files.length) return;
 		uploading = true;
-		if (fileInput) fileInput.value = '';
 		const failures: string[] = [];
 		const skipped: string[] = [];
-		let next = 0;
 		async function uploadNext() {
-			while (next < files.length && !destroyed) {
-				const file = files[next++];
+			while (pendingFiles.length && !destroyed) {
+				const file = pendingFiles.shift()!;
 				if (!supportedTypes.includes(file.type)) {
 					failures.push(`${file.name}: unsupported file type`);
 					continue;
@@ -109,7 +109,7 @@
 			}
 		}
 		try {
-			await Promise.all(Array.from({ length: Math.min(3, files.length) }, uploadNext));
+			await Promise.all(Array.from({ length: 3 }, uploadNext));
 			// Uploads finish independently of local preview decoding.
 			if (!destroyed && (failures.length || skipped.length)) {
 				alert(
@@ -126,6 +126,48 @@
 		} finally {
 			uploading = false;
 		}
+	}
+
+	function selectFiles() {
+		const files = Array.from(fileInput?.files ?? []);
+		if (fileInput) fileInput.value = '';
+		void upload(files);
+	}
+
+	function pasteFiles(event: ClipboardEvent) {
+		const files = Array.from(event.clipboardData?.files ?? []);
+		if (!files.length) return;
+		event.preventDefault();
+		void upload(files);
+	}
+
+	function isFileDrag(event: DragEvent) {
+		return Array.from(event.dataTransfer?.types ?? []).includes('Files');
+	}
+
+	function dragEnter(event: DragEvent) {
+		if (!isFileDrag(event)) return;
+		event.preventDefault();
+		dragDepth += 1;
+	}
+
+	function dragOver(event: DragEvent) {
+		if (!isFileDrag(event)) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+	}
+
+	function dragLeave(event: DragEvent) {
+		if (!isFileDrag(event)) return;
+		event.preventDefault();
+		dragDepth = Math.max(0, dragDepth - 1);
+	}
+
+	function dropFiles(event: DragEvent) {
+		if (!isFileDrag(event)) return;
+		event.preventDefault();
+		dragDepth = 0;
+		void upload(Array.from(event.dataTransfer?.files ?? []));
 	}
 
 	function trigger() {
@@ -329,22 +371,50 @@
 	});
 </script>
 
+<svelte:window onpaste={pasteFiles} />
+
 <div
-	class="cursor-pointer rounded border-2 border-dashed border-gray-300 p-8 text-center"
+	class="mx-auto w-[calc(100%-2rem)] max-w-7xl cursor-pointer rounded-2xl border-2 border-dashed p-8 text-center transition-colors sm:w-[calc(100%-4rem)] {dragDepth >
+	0
+		? 'border-blue-500 bg-blue-50'
+		: 'border-gray-300'}"
 	onclick={trigger}
-	onkeydown={(e) => e.key === 'Enter' && trigger()}
+	onkeydown={(event) => {
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			trigger();
+		}
+	}}
+	ondragenter={dragEnter}
+	ondragover={dragOver}
+	ondragleave={dragLeave}
+	ondrop={dropFiles}
 	role="button"
 	aria-label="Upload files"
+	aria-busy={uploading}
 	tabindex="0"
 >
-	<p class="text-gray-500">{uploading ? 'Uploading…' : 'Click to upload files'}</p>
+	<svg
+		class="mx-auto mb-4 h-16 w-16 text-gray-400"
+		viewBox="0 0 24 24"
+		fill="none"
+		stroke="currentColor"
+		stroke-width="1.5"
+		stroke-linecap="round"
+		stroke-linejoin="round"
+		aria-hidden="true"
+	>
+		<path d="M12 16V3m-5 5 5-5 5 5M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
+	</svg>
+	<p class="text-gray-500">Upload</p>
+	<p class="mt-2 text-sm text-gray-500">drag or paste</p>
 	<input
 		type="file"
 		accept={supportedTypes.join(', ')}
 		class="hidden"
 		bind:this={fileInput}
 		multiple
-		onchange={upload}
+		onchange={selectFiles}
 	/>
 </div>
 
