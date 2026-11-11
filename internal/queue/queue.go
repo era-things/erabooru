@@ -4,6 +4,7 @@ import (
 	"context"
 	"era/booru/internal/processing"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,7 +37,8 @@ func NewClient(ctx context.Context, pool *pgxpool.Pool, workers *river.Workers, 
 			"embed":       {MaxWorkers: embedConcurrency},
 			"maintenance": {MaxWorkers: 1},
 		},
-		Workers: workers,
+		Workers:      workers,
+		PeriodicJobs: []*river.PeriodicJob{river.NewPeriodicJob(river.PeriodicInterval(10*time.Second), func() (river.JobArgs, *river.InsertOpts) { return FitTagsArgs{}, nil }, &river.PeriodicJobOpts{RunOnStart: true})},
 	}).WithDefaults())
 }
 
@@ -83,11 +85,20 @@ func EnqueueTx(ctx context.Context, c *river.Client[pgx.Tx], tx pgx.Tx, args riv
 	return err
 }
 
-type RebuildTagStatisticsArgs struct{}
+type FitTagsArgs struct{}
+
+func (FitTagsArgs) Kind() string { return "fit_tag_classifiers" }
+func (FitTagsArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{Queue: "maintenance", MaxAttempts: 3, UniqueOpts: river.UniqueOpts{ByState: activeUniqueStates}}
+}
+
+type RebuildTagStatisticsArgs struct {
+	LegacyProfile string `json:"legacy_profile,omitempty"`
+}
 
 func (RebuildTagStatisticsArgs) Kind() string { return "rebuild_tag_statistics" }
 func (RebuildTagStatisticsArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{Queue: "maintenance", MaxAttempts: 3, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: activeUniqueStates}}
+	return river.InsertOpts{Queue: "maintenance", MaxAttempts: 3, UniqueOpts: river.UniqueOpts{ByState: activeUniqueStates}}
 }
 
 func WorkerEnqueue(ctx context.Context, args river.JobArgs) error {

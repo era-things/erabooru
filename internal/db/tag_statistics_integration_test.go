@@ -58,7 +58,7 @@ func tagTestMedia(t *testing.T, pool *pgxpool.Pool, name string, value *pgvector
 		t.Fatal(err)
 	}
 	if value != nil {
-		if err := CompleteEmbedding(ctx, pool, id, "generation", DefaultEmbeddingSpace, *value); err != nil {
+		if err := CompleteEmbedding(ctx, pool, id, "generation", DefaultEmbeddingSpace, *value, "test-profile"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -122,7 +122,7 @@ func TestTagStatisticsLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(1, 0, []float32{1, 0}, nil)
-	if err := CompleteEmbedding(ctx, pool, b, "generation", DefaultEmbeddingSpace, v2); err != nil {
+	if err := CompleteEmbedding(ctx, pool, b, "generation", DefaultEmbeddingSpace, v2, "test-profile"); err != nil {
 		t.Fatal(err)
 	}
 	check(2, 0, []float32{1, 1}, nil)
@@ -189,7 +189,7 @@ func TestTagStatisticsLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(1, 0, []float32{1, 0}, nil)
-	if err := CompleteEmbedding(ctx, pool, b, "replacement", DefaultEmbeddingSpace, v1); err != nil {
+	if err := CompleteEmbedding(ctx, pool, b, "replacement", DefaultEmbeddingSpace, v1, "test-profile"); err != nil {
 		t.Fatal(err)
 	}
 	check(2, 0, []float32{2, 0}, nil)
@@ -235,15 +235,15 @@ func TestTagRecommendationEvidenceGroups(t *testing.T) {
 	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM tag WHERE name LIKE $1`, prefix+"%") })
 	v := tagTestVector(1, 0)
 	target := tagTestMedia(t, pool, "evidence-target", &v)
-	tags := make([]string, 6)
+	tags := make([]string, 7)
 	for i := range tags {
 		tags[i] = fmt.Sprintf("%sestablished-%d", prefix, i)
 	}
 	oneShot := prefix + "one-shot"
 	var last string
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 10; i++ {
 		var embedding *pgvector.Vector
-		if i < 4 {
+		if i < 9 {
 			embedding = &v
 		}
 		id := tagTestMedia(t, pool, "evidence-training", embedding)
@@ -264,21 +264,38 @@ func TestTagRecommendationEvidenceGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(before.Recommended) != 0 || len(before.LowEvidence) != 7 {
+	if len(before.Recommended) != 0 || len(before.LowEvidence) != 8 {
 		t.Fatalf("unready embedding counted as evidence: main=%d tentative=%d", len(before.Recommended), len(before.LowEvidence))
 	}
-	if err := CompleteEmbedding(ctx, pool, last, "generation", DefaultEmbeddingSpace, v); err != nil {
+	if err := CompleteEmbedding(ctx, pool, last, "generation", DefaultEmbeddingSpace, v, "test-profile"); err != nil {
 		t.Fatal(err)
+	}
+	opposite := tagTestVector(-1, 0)
+	unrelated := tagTestMedia(t, pool, "evidence-unrelated", &opposite)
+	for range 9 {
+		tagTestMedia(t, pool, "evidence-contrast", &opposite)
+	}
+	if err := BeginClassifierRebuild(ctx, pool, time.Now().UnixNano(), ""); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		worked, err := FitNextClassifier(ctx, pool, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !worked {
+			break
+		}
 	}
 	after, err := RecommendTags(ctx, pool, target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(after.Recommended) != 5 || len(after.LowEvidence) != 1 || after.LowEvidence[0].Name != oneShot || after.LowEvidence[0].Examples != 1 {
+	if len(after.Recommended) != 7 || len(after.LowEvidence) != 1 || after.LowEvidence[0].Name != oneShot || after.LowEvidence[0].Examples != 1 {
 		t.Fatalf("wrong evidence groups: %+v", after)
 	}
 	for i, tag := range after.Recommended {
-		if tag.Examples != 5 || tag.Name != tags[i] {
+		if tag.Muted || tag.Examples != 10 || tag.Name != tags[i] {
 			t.Fatalf("wrong count or tie ordering: %+v", after.Recommended)
 		}
 	}
@@ -292,7 +309,7 @@ func TestTagRecommendationEvidenceGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(filtered.LowEvidence) != 0 || len(filtered.Recommended) != 5 {
+	if len(filtered.LowEvidence) != 0 || len(filtered.Recommended) != 6 {
 		t.Fatalf("groups not independently filtered: %+v", filtered)
 	}
 	for _, tag := range filtered.Recommended {
@@ -300,16 +317,19 @@ func TestTagRecommendationEvidenceGroups(t *testing.T) {
 			t.Fatalf("applied or excluded tag recommended: %s", tag.Name)
 		}
 	}
-	// Opposite visual content yields an empty list instead of filling available slots.
-	opposite := tagTestVector(-1, 0)
-	unrelated := tagTestMedia(t, pool, "evidence-unrelated", &opposite)
-	empty, err := RecommendTags(ctx, pool, unrelated)
+	weak, err := RecommendTags(ctx, pool, unrelated)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(empty.Recommended) != 0 || len(empty.LowEvidence) != 0 {
-		t.Fatalf("weak matches filled list: %+v", empty)
+	if len(weak.Recommended) != 6 || len(weak.LowEvidence) != 0 {
+		t.Fatalf("wrong muted fallback: %+v", weak)
 	}
+	for _, tag := range weak.Recommended {
+		if !tag.Muted {
+			t.Fatalf("expected muted suggestion: %+v", tag)
+		}
+	}
+
 }
 
 func TestTagRecommendationsAndNegativeFeedback(t *testing.T) {

@@ -68,7 +68,7 @@ export async function updateMediaTags(id: string, tags: string[]): Promise<void>
 }
 
 export interface TagRecommendationsResponse {
-	recommended: { name: string; score: number; examples: number }[];
+	recommended: { name: string; score: number; examples: number; muted?: boolean }[];
 	low_evidence: { name: string; score: number; examples: number }[];
 	negative: string[];
 	embedding_ready: boolean;
@@ -99,6 +99,8 @@ export async function sendTagFeedback(
 export interface TagStatisticsStatus {
 	state: string;
 	rebuilt_at: string | null;
+	legacy_embeddings: number;
+	active_profile: string;
 	tags: number;
 }
 
@@ -106,8 +108,9 @@ export async function fetchTagStatisticsStatus(signal?: AbortSignal): Promise<Ta
 	return handleJson(await fetch(`${apiBase}/settings/tag-statistics`, { signal }));
 }
 
-export async function rebuildTagStatistics(): Promise<void> {
-	const res = await fetch(`${apiBase}/settings/tag-statistics/rebuild`, { method: 'POST' });
+export async function rebuildTagStatistics(legacyProfile = ''): Promise<void> {
+	const query = legacyProfile ? `?legacy_profile=${encodeURIComponent(legacyProfile)}` : '';
+	const res = await fetch(`${apiBase}/settings/tag-statistics/rebuild${query}`, { method: 'POST' });
 	if (!res.ok) throw new ApiError(res.status, `Could not start rebuild (HTTP ${res.status})`);
 }
 

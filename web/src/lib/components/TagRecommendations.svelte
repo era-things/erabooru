@@ -69,7 +69,7 @@
 			<li class="flex items-center gap-1.5">
 				<div class="min-w-0 flex-1">
 					<a
-						class="break-all text-blue-500 hover:underline"
+						class="break-all hover:underline {tag.muted ? 'text-gray-500' : 'text-blue-500'}"
 						href={`/?q=${encodeURIComponent(tag.name)}`}>{tag.name} ({tag.examples})</a
 					>
 				</div>

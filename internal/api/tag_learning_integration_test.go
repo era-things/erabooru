@@ -52,7 +52,7 @@ func TestTagLearningEndpoints(t *testing.T) {
 		if err := db.CompleteIngestionTx(ctx, tx, db.Media{ID: id, Generation: "generation", Format: "png", Width: 10, Height: 10, Size: 10}); err != nil {
 			t.Fatal(err)
 		}
-		if err := db.ImportEmbeddingTx(ctx, tx, id, "generation", pgvector.NewVector(v)); err != nil {
+		if err := db.ImportEmbeddingTx(ctx, tx, id, "generation", pgvector.NewVector(v), "test-profile"); err != nil {
 			t.Fatal(err)
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -79,6 +79,7 @@ func TestTagLearningEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	workers := river.NewWorkers()
+	river.AddWorker(workers, &tagworker.FitWorker{DB: pool})
 	river.AddWorker(workers, &tagworker.RebuildWorker{DB: pool})
 	client, err := queue.NewClient(ctx, pool, workers, 1, 1)
 	if err != nil {

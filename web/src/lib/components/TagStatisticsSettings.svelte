@@ -5,6 +5,7 @@
 
 	let status = $state<TagStatisticsStatus | null>(null);
 	let starting = $state(false);
+	let legacyProfile = $state('');
 	let error = $state('');
 	let refresh = $state(0);
 	const active = $derived(
@@ -45,7 +46,8 @@
 		starting = true;
 		error = '';
 		try {
-			await rebuildTagStatistics();
+			await rebuildTagStatistics(legacyProfile);
+			legacyProfile = '';
 			refresh++;
 		} catch {
 			error = 'Could not start the rebuild. Please try again.';
@@ -58,21 +60,37 @@
 <section class="space-y-3 rounded border border-gray-200 p-4">
 	<h2 class="text-lg font-semibold">Tag recommendations</h2>
 	<p class="text-sm text-gray-600">
-		Recommendations learn from applied and rejected tags. Statistics update automatically; rebuild
-		them to recalculate everything from your collection. The tag “tagme” is excluded.
+		Tag recommendations update automatically as you edit your collection. Rebuild to train the
+		classifiers again using your current tags and feedback.
 	</p>
+	{#if status && status.legacy_embeddings > 0 && status.active_profile}
+		<label class="block text-sm">
+			<input
+				type="checkbox"
+				checked={legacyProfile === status.active_profile}
+				disabled={active || starting}
+				onchange={(event) => {
+					legacyProfile = event.currentTarget.checked ? (status?.active_profile ?? '') : '';
+				}}
+			/>
+			Include {status.legacy_embeddings} older embeddings in training. I confirm they were all created
+			with the current model and preprocessing.
+		</label>
+	{/if}
 	<button
 		class="rounded border px-3 py-1 disabled:opacity-50"
 		disabled={starting || active || !status}
 		onclick={rebuild}
-		>{starting || active ? 'Rebuilding tag statistics...' : 'Rebuild tag statistics'}</button
+		>{starting || active
+			? 'Rebuilding tag recommendations...'
+			: 'Rebuild tag recommendations'}</button
 	>
 	<div aria-live="polite" class="space-y-1 text-sm text-gray-600">
 		{#if active}
-			<progress aria-label="Rebuilding tag statistics" class="block w-60"></progress>
+			<progress aria-label="Rebuilding tag recommendations" class="block w-60"></progress>
 			<p>
 				{status?.state === 'running'
-					? 'Recalculating tag statistics. Current recommendations remain available.'
+					? 'Training tag classifiers. Current recommendations remain available.'
 					: status?.state === 'retryable'
 						? 'Rebuild interrupted. Waiting to retry...'
 						: 'Rebuild queued...'}

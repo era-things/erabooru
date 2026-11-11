@@ -2,10 +2,13 @@ package db
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"slices"
 	"sort"
+
+	"era/booru/internal/tagmodel"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,6 +18,9 @@ import (
 // All source mutations share this lock. A rebuild takes it exclusively, so
 // readers retain the previous statistics while concurrent edits wait to commit.
 const tagStatisticsLock int64 = 731926481
+
+//go:embed tag_classifiers.sql
+var classifierSchema string
 
 var ErrInvalidTagFeedback = errors.New("invalid tag feedback")
 
@@ -44,6 +50,9 @@ INSERT INTO tag_statistics_state (singleton) VALUES (true) ON CONFLICT DO NOTHIN
 	if err != nil {
 		return err
 	}
+	if _, err := pool.Exec(ctx, classifierSchema); err != nil {
+		return err
+	}
 	var initialized bool
 	if err := pool.QueryRow(ctx, `SELECT initialized FROM tag_statistics_state`).Scan(&initialized); err != nil {
 		return err
@@ -62,10 +71,17 @@ func RebuildTagStatistics(ctx context.Context, pool *pgxpool.Pool) error {
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err := rebuildTagStatisticsTx(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func rebuildTagStatisticsTx(ctx context.Context, tx pgx.Tx) error {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, tagStatisticsLock); err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `
+	_, err := tx.Exec(ctx, `
 CREATE TEMP TABLE rebuilt_tag_statistics ON COMMIT DROP AS
 WITH examples AS (
  SELECT media_id, tag_id, true AS positive FROM media_tag
@@ -76,23 +92,24 @@ SELECT x.tag_id, e.space_id,
  sum(e.value) FILTER (WHERE x.positive) AS positive_sum,
  count(*) FILTER (WHERE x.positive) AS positive_count,
  sum(e.value) FILTER (WHERE NOT x.positive) AS negative_sum,
- count(*) FILTER (WHERE NOT x.positive) AS negative_count
+ count(*) FILTER (WHERE NOT x.positive) AS negative_count, e.profile
 FROM examples x JOIN tag t ON t.id=x.tag_id
 JOIN media_embedding e ON e.media_id=x.media_id AND e.status='ready' AND e.value IS NOT NULL
 WHERE t.name <> 'tagme' AND vector_norm(e.value) > 0
-GROUP BY x.tag_id, e.space_id;
+GROUP BY x.tag_id, e.space_id, e.profile;
 DELETE FROM tag_statistics;
 INSERT INTO tag_statistics SELECT * FROM rebuilt_tag_statistics;
 UPDATE tag_statistics_state SET initialized=true, rebuilt_at=now();`)
 	if err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 type tagExampleKey struct {
 	tagID    int64
 	space    string
+	profile  string
 	positive bool
 }
 type tagExamples map[tagExampleKey][]float32
@@ -102,7 +119,7 @@ func readTagExamplesTx(ctx context.Context, tx pgx.Tx, mediaID string) (tagExamp
  SELECT tag_id, true AS positive FROM media_tag WHERE media_id=$1
  UNION ALL SELECT tag_id, false AS positive FROM media_negative_tag WHERE media_id=$1
 )
-SELECT x.tag_id, e.space_id, x.positive, e.value
+SELECT x.tag_id, e.space_id, x.positive, e.profile, e.value
 FROM examples x JOIN tag t ON t.id=x.tag_id
 JOIN media_embedding e ON e.media_id=$1 AND e.status='ready' AND e.value IS NOT NULL
 WHERE t.name <> 'tagme' AND vector_norm(e.value)>0`, mediaID)
@@ -114,7 +131,7 @@ WHERE t.name <> 'tagme' AND vector_norm(e.value)>0`, mediaID)
 	for rows.Next() {
 		var key tagExampleKey
 		var value pgvector.Vector
-		if err := rows.Scan(&key.tagID, &key.space, &key.positive, &value); err != nil {
+		if err := rows.Scan(&key.tagID, &key.space, &key.positive, &key.profile, &value); err != nil {
 			return nil, err
 		}
 		out[key] = value.Slice()
@@ -161,12 +178,20 @@ func updateTagStatisticsTx(ctx context.Context, tx pgx.Tx, before, after tagExam
 		if a.space != b.space {
 			return a.space < b.space
 		}
+		if a.profile != b.profile {
+			return a.profile < b.profile
+		}
 		return !a.positive && b.positive
 	})
 	for _, k := range keys {
 		old, next := before[k], after[k]
 		if slices.Equal(old, next) {
 			continue
+		}
+		if k.space == DefaultEmbeddingSpace && k.profile != "" {
+			if _, err := tx.Exec(ctx, dirtyClassifierSQL, k.tagID, k.space, k.profile); err != nil {
+				return err
+			}
 		}
 		for _, change := range []struct {
 			value []float32
@@ -182,17 +207,17 @@ func updateTagStatisticsTx(ctx context.Context, tx pgx.Tx, before, after tagExam
 				column, countColumn = "positive_sum", "positive_count"
 			}
 			if change.count > 0 {
-				_, err := tx.Exec(ctx, fmt.Sprintf(`INSERT INTO tag_statistics (tag_id,space_id,%s,%s)
-VALUES ($1,$2,$3,1) ON CONFLICT (tag_id,space_id) DO UPDATE SET
+				_, err := tx.Exec(ctx, fmt.Sprintf(`INSERT INTO tag_statistics (tag_id,space_id,profile,%s,%s)
+VALUES ($1,$2,$4,$3,1) ON CONFLICT (tag_id,space_id,profile) DO UPDATE SET
 %s=COALESCE(tag_statistics.%s + EXCLUDED.%s, EXCLUDED.%s),
-%s=tag_statistics.%s+1`, column, countColumn, column, column, column, column, countColumn, countColumn), k.tagID, k.space, pgvector.NewVector(change.value))
+%s=tag_statistics.%s+1`, column, countColumn, column, column, column, column, countColumn, countColumn), k.tagID, k.space, pgvector.NewVector(change.value), k.profile)
 				if err != nil {
 					return err
 				}
 			} else {
 				_, err := tx.Exec(ctx, fmt.Sprintf(`UPDATE tag_statistics SET
 %s=CASE WHEN %s=1 THEN NULL ELSE %s-$3 END, %s=%s-1
-WHERE tag_id=$1 AND space_id=$2`, column, countColumn, column, countColumn, countColumn), k.tagID, k.space, pgvector.NewVector(change.value))
+WHERE tag_id=$1 AND space_id=$2 AND profile=$4`, column, countColumn, column, countColumn, countColumn), k.tagID, k.space, pgvector.NewVector(change.value), k.profile)
 				if err != nil {
 					return err
 				}
@@ -248,6 +273,7 @@ type RecommendedTag struct {
 	Name     string  `json:"name"`
 	Score    float64 `json:"score"`
 	Examples int64   `json:"examples"`
+	Muted    bool    `json:"muted,omitempty"`
 }
 
 type TagRecommendations struct {
@@ -257,7 +283,7 @@ type TagRecommendations struct {
 	EmbeddingReady bool             `json:"embedding_ready"`
 }
 
-const minimumRecommendationExamples = 5
+const minimumRecommendationExamples = tagmodel.MinimumPositives
 
 func RecommendTags(ctx context.Context, pool *pgxpool.Pool, mediaID string) (TagRecommendations, error) {
 	out := TagRecommendations{Recommended: []RecommendedTag{}, LowEvidence: []RecommendedTag{}, Negative: []string{}}
@@ -294,33 +320,39 @@ func RecommendTags(ctx context.Context, pool *pgxpool.Pool, mediaID string) (Tag
 		return out, err
 	}
 	if out.EmbeddingReady {
-		rows, err = tx.Query(ctx, `WITH scored AS (
-SELECT t.name,s.positive_count,
- (1-(e.value <=> s.positive_sum)) - 0.5 * CASE WHEN s.negative_count>0 AND vector_norm(s.negative_sum)>0
- THEN 1-(e.value <=> s.negative_sum) ELSE 0 END AS score
-FROM tag_statistics s JOIN tag t ON t.id=s.tag_id
-JOIN media_embedding e ON e.media_id=$1 AND e.space_id=s.space_id AND e.status='ready'
-WHERE s.space_id=$2 AND s.positive_count>0 AND vector_norm(s.positive_sum)>0 AND t.name<>'tagme'
-AND NOT EXISTS(SELECT 1 FROM media_tag mt WHERE mt.media_id=$1 AND mt.tag_id=t.id)
-AND NOT EXISTS(SELECT 1 FROM media_negative_tag n WHERE n.media_id=$1 AND n.tag_id=t.id)
-), ranked AS (
- SELECT *, row_number() OVER (
- PARTITION BY (positive_count >= $3) ORDER BY score DESC,name) AS position
- FROM scored WHERE score>0
-)
-SELECT name,score,positive_count FROM ranked
-WHERE position <= CASE WHEN positive_count >= $3 THEN 5 ELSE 10 END
-ORDER BY score DESC,name`, mediaID, DefaultEmbeddingSpace, minimumRecommendationExamples)
+		rows, err = tx.Query(ctx, `WITH candidates AS (
+ SELECT t.name,s.positive_count,s.positive_sum,s.negative_count,s.negative_sum,e.value,
+ c.weights,c.bias,(s.positive_count >= $3 AND c.weights IS NOT NULL AND c.model_version=$4) AS main
+ FROM media_embedding e JOIN tag_statistics s USING(space_id,profile)
+ JOIN tag t ON t.id=s.tag_id LEFT JOIN tag_classifier c USING(tag_id,space_id,profile)
+ WHERE e.media_id=$1 AND e.space_id=$2 AND e.status='ready' AND vector_dims(e.value)=768
+ AND e.profile<>'' AND vector_norm(e.value)>0 AND s.positive_count>0 AND t.name<>'tagme'
+ AND NOT EXISTS (SELECT FROM media_tag mt WHERE mt.media_id=$1 AND mt.tag_id=t.id)
+ AND NOT EXISTS (SELECT FROM media_negative_tag n WHERE n.media_id=$1 AND n.tag_id=t.id)
+ ), scored AS (
+ SELECT name,positive_count,main,
+ CASE WHEN main THEN bias-(value <#> weights)/vector_norm(value)
+ WHEN vector_norm(positive_sum)>0 THEN 1-(value <=> positive_sum) -
+  0.5 * CASE WHEN negative_count>0 AND vector_norm(negative_sum)>0 THEN 1-(value <=> negative_sum) ELSE 0 END
+ END AS score FROM candidates
+ ), ranked AS (
+ SELECT *,row_number() OVER(PARTITION BY main ORDER BY score DESC,name) AS pos
+ FROM scored WHERE score IS NOT NULL AND (main OR score > 0)
+ )
+ SELECT name,score,positive_count,main,main AND score < $5::float8 FROM ranked
+ WHERE (main AND (score >= $5 OR pos <= 6)) OR (NOT main AND pos <= 10)
+ ORDER BY main DESC,score DESC,name`, mediaID, DefaultEmbeddingSpace, minimumRecommendationExamples, tagmodel.Version, tagmodel.Margin)
 		if err != nil {
 			return out, err
 		}
 		for rows.Next() {
 			var tag RecommendedTag
-			if err := rows.Scan(&tag.Name, &tag.Score, &tag.Examples); err != nil {
+			var main bool
+			if err := rows.Scan(&tag.Name, &tag.Score, &tag.Examples, &main, &tag.Muted); err != nil {
 				rows.Close()
 				return out, err
 			}
-			if tag.Examples >= minimumRecommendationExamples {
+			if main {
 				out.Recommended = append(out.Recommended, tag)
 			} else {
 				out.LowEvidence = append(out.LowEvidence, tag)

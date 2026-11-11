@@ -33,8 +33,8 @@ func RegisterMediaRoutes(r *gin.Engine, pool *pgxpool.Pool, store *storage.Store
 	r.HEAD("/api/media/:id", headMediaHandler(pool))
 	r.GET("/api/media/:id/similar", similarMediaByIDHandler(pool))
 	r.POST("/api/media", uploadMediaHandler(pool, store, queueClient))
-	r.POST("/api/media/import", importMediaHandler(pool, store, queueClient, embed.ActiveProfile()))
-	r.GET("/api/embeddings/profile", embeddingProfileHandler(embed.ActiveProfile()))
+	r.POST("/api/media/import", func(c *gin.Context) { importMediaHandler(pool, store, queueClient, embed.ActiveProfile())(c) })
+	r.GET("/api/embeddings/profile", func(c *gin.Context) { embeddingProfileHandler(embed.ActiveProfile())(c) })
 	r.POST("/api/media/:id/tags", updateMediaTagsHandler(pool))
 	r.POST("/api/media/:id/dates", updateMediaDatesHandler(pool))
 	r.DELETE("/api/media/:id", deleteMediaHandler(pool, queueClient))
@@ -345,13 +345,13 @@ func uploadMediaHandler(pool *pgxpool.Pool, store *storage.Store, queueClient *r
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "expected exactly one file part"})
 			return
 		}
-		completeMediaUpload(c, pool, store, queueClient, staged, contentType, originalName, nil)
+		completeMediaUpload(c, pool, store, queueClient, staged, contentType, originalName, nil, "")
 	}
 }
 
 // File installation and rollback cleanup share the per-ID transaction lock with
 // deletion and repair. Streaming and multipart validation happen before locking.
-func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Store, queueClient *river.Client[pgx.Tx], staged *storage.StagedOriginal, contentType, originalName string, vector []float32) {
+func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Store, queueClient *river.Client[pgx.Tx], staged *storage.StagedOriginal, contentType, originalName string, vector []float32, profile string) {
 	ctx := c.Request.Context()
 	id := staged.ID
 	tx, err := pool.Begin(ctx)
@@ -388,7 +388,7 @@ func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Stor
 	}
 	created, err := db.InsertQueuedMedia(ctx, tx, id, generation, originalName, staged.Size, time.Now().UTC())
 	if err == nil && created && vector != nil {
-		err = db.ImportEmbeddingTx(ctx, tx, id, generation, pgvector.NewVector(vector))
+		err = db.ImportEmbeddingTx(ctx, tx, id, generation, pgvector.NewVector(vector), profile)
 	}
 	if err == nil && created {
 		err = queue.EnqueueTx(ctx, queueClient, tx, queue.ProcessArgs{Key: id, Generation: generation, ContentType: contentType})

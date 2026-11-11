@@ -230,6 +230,10 @@ func InputSpatialSize() int { return int(inputSpatialSize.Load()) }
 func setInputSpatialSize(size int) {
 	if size > 0 {
 		inputSpatialSize.Store(int64(size))
+		if p := activeProfile.Load(); p != nil && p.ImageSize != size {
+			next := p.ForImageSize(size)
+			activeProfile.Store(&next)
+		}
 	}
 }
 

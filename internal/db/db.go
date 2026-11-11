@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 	singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
 	version integer NOT NULL
 );
-INSERT INTO schema_version (singleton, version) VALUES (true, 5)
+INSERT INTO schema_version (singleton, version) VALUES (true, 6)
 ON CONFLICT (singleton) DO UPDATE SET version = EXCLUDED.version;
 
 CREATE TABLE IF NOT EXISTS media (
@@ -169,8 +169,10 @@ CREATE TABLE IF NOT EXISTS media_embedding (
 	status text NOT NULL CHECK (status IN ('queued', 'processing', 'ready', 'failed')),
 	error text,
     value vector,
+    profile text NOT NULL DEFAULT '',
     PRIMARY KEY (media_id, space_id)
 );
+ALTER TABLE media_embedding ADD COLUMN IF NOT EXISTS profile text NOT NULL DEFAULT '';
 ALTER TABLE media_embedding DROP CONSTRAINT IF EXISTS media_embedding_status_check;
 ALTER TABLE media_embedding ADD CONSTRAINT media_embedding_status_check
     CHECK (status IN ('queued', 'processing', 'retrying', 'ready', 'failed'));
@@ -254,7 +256,7 @@ func QueueEmbeddingTx(ctx context.Context, tx pgx.Tx, mediaID, generation, space
 		result, err := tx.Exec(ctx, `INSERT INTO media_embedding (media_id, space_id, generation, status)
 VALUES ($1, $2, $3, 'queued')
 ON CONFLICT (media_id, space_id) DO UPDATE
-SET generation = EXCLUDED.generation, status = 'queued', error = NULL, value = NULL
+SET generation = EXCLUDED.generation, status = 'queued', error = NULL, value = NULL, profile = ''
 WHERE media_embedding.generation <> EXCLUDED.generation OR media_embedding.status <> 'ready'`, mediaID, space, generation)
 		changed = err == nil && result.RowsAffected() == 1
 		return err
@@ -263,10 +265,10 @@ WHERE media_embedding.generation <> EXCLUDED.generation OR media_embedding.statu
 }
 
 // ImportEmbeddingTx records a supplied vector before metadata ingestion completes.
-func ImportEmbeddingTx(ctx context.Context, tx pgx.Tx, mediaID, generation string, value pgvector.Vector) error {
+func ImportEmbeddingTx(ctx context.Context, tx pgx.Tx, mediaID, generation string, value pgvector.Vector, profile ...string) error {
 	return withTagStatisticsTx(ctx, tx, mediaID, func() error {
-		result, err := tx.Exec(ctx, `INSERT INTO media_embedding (media_id, space_id, generation, status, value)
-SELECT id, $3, generation, 'ready', $4 FROM media WHERE id=$1 AND generation=$2`, mediaID, generation, DefaultEmbeddingSpace, value)
+		result, err := tx.Exec(ctx, `INSERT INTO media_embedding (media_id, space_id, generation, status, value, profile)
+SELECT id, $3, generation, 'ready', $4, $5 FROM media WHERE id=$1 AND generation=$2`, mediaID, generation, DefaultEmbeddingSpace, value, embeddingProfile(profile))
 		if err == nil && result.RowsAffected() != 1 {
 			return pgx.ErrNoRows
 		}
@@ -288,16 +290,16 @@ AND status IN ('queued', 'processing', 'retrying')`, mediaID, space, generation,
 	return err
 }
 
-func CompleteEmbedding(ctx context.Context, pool *pgxpool.Pool, mediaID, generation, space string, value pgvector.Vector) error {
+func CompleteEmbedding(ctx context.Context, pool *pgxpool.Pool, mediaID, generation, space string, value pgvector.Vector, profile ...string) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 	err = withTagStatisticsTx(ctx, tx, mediaID, func() error {
-		result, err := tx.Exec(ctx, `UPDATE media_embedding e SET status = 'ready', error = NULL, value = $4
+		result, err := tx.Exec(ctx, `UPDATE media_embedding e SET status = 'ready', error = NULL, value = $4, profile = $5
 FROM media m WHERE e.media_id = m.id AND e.media_id = $1 AND e.space_id = $2
-AND e.generation = $3 AND m.generation = $3 AND m.status = 'ready' AND e.status IN ('queued', 'processing', 'retrying')`, mediaID, space, generation, value)
+AND e.generation = $3 AND m.generation = $3 AND m.status = 'ready' AND e.status IN ('queued', 'processing', 'retrying')`, mediaID, space, generation, value, embeddingProfile(profile))
 		if err == nil && result.RowsAffected() != 1 {
 			return pgx.ErrNoRows
 		}

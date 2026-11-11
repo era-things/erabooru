@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"era/booru/internal/db"
+	embed "era/booru/internal/embeddings"
 	"era/booru/internal/queue"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -20,7 +21,12 @@ func RegisterTagLearningRoutes(r *gin.Engine, pool *pgxpool.Pool, client *river.
 	r.POST("/api/media/:id/tag-feedback", tagFeedbackHandler(pool))
 	r.GET("/api/settings/tag-statistics", tagStatisticsStatusHandler(pool))
 	r.POST("/api/settings/tag-statistics/rebuild", func(c *gin.Context) {
-		if err := queue.Enqueue(c.Request.Context(), client, queue.RebuildTagStatisticsArgs{}); err != nil {
+		profile := c.Query("legacy_profile")
+		if profile != "" && profile != embed.ActiveProfile().ID {
+			c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": "Embedding profile changed. Refresh settings."})
+			return
+		}
+		if err := queue.Enqueue(c.Request.Context(), client, queue.RebuildTagStatisticsArgs{LegacyProfile: profile}); err != nil {
 			log.Printf("enqueue tag statistics rebuild: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
@@ -84,11 +90,11 @@ func tagStatisticsStatusHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 		var rebuiltAt *time.Time
-		var tags int64
-		if err := pool.QueryRow(ctx, `SELECT rebuilt_at,(SELECT count(DISTINCT tag_id) FROM tag_statistics WHERE positive_count>0) FROM tag_statistics_state`).Scan(&rebuiltAt, &tags); err != nil {
+		var tags, legacy int64
+		if err := pool.QueryRow(ctx, `SELECT classifier_rebuilt_at,(SELECT count(DISTINCT tag_id) FROM tag_statistics WHERE positive_count>0),(SELECT count(*) FROM media_embedding WHERE space_id='vision' AND profile='' AND status='ready') FROM tag_statistics_state`).Scan(&rebuiltAt, &tags, &legacy); err != nil {
 			tagLearningError(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"state": state, "rebuilt_at": rebuiltAt, "tags": tags})
+		c.JSON(http.StatusOK, gin.H{"state": state, "rebuilt_at": rebuiltAt, "tags": tags, "legacy_embeddings": legacy, "active_profile": embed.ActiveProfile().ID})
 	}
 }
