@@ -55,12 +55,21 @@ func loadProfile(dir string, size int) error {
 		}
 		*file.destination = hex.EncodeToString(h.Sum(nil))
 	}
-	data, err := json.Marshal(p)
-	if err != nil {
-		return err
-	}
-	hash := sha256.Sum256(data)
-	p.ID = fmt.Sprintf("siglip2-%x", hash)
+	p = p.ForImageSize(size)
 	activeProfile.Store(&p)
 	return nil
+}
+
+// ForImageSize fingerprints the preprocessing actually used for one inference,
+// including the fallback size discovered from an ONNX shape error.
+func (p Profile) ForImageSize(size int) Profile {
+	if p.VisionSHA256 == "" || (p.ImageSize == size && p.ID != "") {
+		return p
+	}
+	p.ImageSize = size
+	p.ID = ""
+	data, _ := json.Marshal(p) // Profile contains only strings and integers.
+	hash := sha256.Sum256(data)
+	p.ID = fmt.Sprintf("siglip2-%x", hash)
+	return p
 }

@@ -11,6 +11,10 @@ services:
     image: node:20-bookworm
     working_dir: /app
     command: sh /app/dev-start.sh
+    environment:
+      # Windows bind mounts may not forward file-change events into Docker.
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "300"
     volumes:
       - ./web:/app
       - web-node-modules:/app/node_modules

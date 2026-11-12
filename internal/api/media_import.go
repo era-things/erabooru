@@ -136,6 +136,6 @@ func importMediaHandler(pool *pgxpool.Pool, store *storage.Store, client *river.
 			c.JSON(http.StatusBadRequest, gin.H{"error": "expected exactly embedding and file parts"})
 			return
 		}
-		completeMediaUpload(c, pool, store, client, staged, contentType, originalName, vector)
+		completeMediaUpload(c, pool, store, client, staged, contentType, originalName, vector, profile.ID)
 	}
 }

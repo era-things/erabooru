@@ -67,6 +67,53 @@ export async function updateMediaTags(id: string, tags: string[]): Promise<void>
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
+export interface TagRecommendationsResponse {
+	recommended: { name: string; score: number; examples: number; muted?: boolean }[];
+	low_evidence: { name: string; score: number; examples: number }[];
+	negative: string[];
+	embedding_ready: boolean;
+}
+
+export type TagFeedbackAction = 'accept' | 'reject' | 'clear';
+
+export async function fetchTagRecommendations(
+	id: string,
+	signal?: AbortSignal
+): Promise<TagRecommendationsResponse> {
+	return handleJson(await fetch(`${apiBase}/media/${id}/tag-recommendations`, { signal }));
+}
+
+export async function sendTagFeedback(
+	id: string,
+	tag: string,
+	action: TagFeedbackAction
+): Promise<void> {
+	const res = await fetch(`${apiBase}/media/${id}/tag-feedback`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ tag, action })
+	});
+	if (!res.ok) throw new ApiError(res.status, `Could not save tag feedback (HTTP ${res.status})`);
+}
+
+export interface TagStatisticsStatus {
+	state: string;
+	rebuilt_at: string | null;
+	legacy_embeddings: number;
+	active_profile: string;
+	tags: number;
+}
+
+export async function fetchTagStatisticsStatus(signal?: AbortSignal): Promise<TagStatisticsStatus> {
+	return handleJson(await fetch(`${apiBase}/settings/tag-statistics`, { signal }));
+}
+
+export async function rebuildTagStatistics(legacyProfile = ''): Promise<void> {
+	const query = legacyProfile ? `?legacy_profile=${encodeURIComponent(legacyProfile)}` : '';
+	const res = await fetch(`${apiBase}/settings/tag-statistics/rebuild${query}`, { method: 'POST' });
+	if (!res.ok) throw new ApiError(res.status, `Could not start rebuild (HTTP ${res.status})`);
+}
+
 export async function uploadMedia(file: File): Promise<{ id: string; existed: boolean }> {
 	const body = new FormData();
 	body.append('file', file, file.name);

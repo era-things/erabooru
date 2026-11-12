@@ -18,6 +18,7 @@ import (
 	"era/booru/internal/storage"
 	embedworker "era/booru/internal/workers/embedworker"
 	mediaworker "era/booru/internal/workers/mediaworker"
+	"era/booru/internal/workers/tagworker"
 
 	"github.com/riverqueue/river"
 )
@@ -53,6 +54,8 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		}
 	}()
 	workers := river.NewWorkers()
+	river.AddWorker(workers, &tagworker.FitWorker{DB: pool})
+	river.AddWorker(workers, &tagworker.RebuildWorker{DB: pool})
 	river.AddWorker(workers, &mediaworker.CleanupWorker{Store: store, DB: pool})
 	inference := processing.NewInferenceLimiter(cfg.InferenceConcurrency)
 	decode := processing.NewLimiter(cfg.DecodeConcurrency)
@@ -80,6 +83,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 	api.RegisterTagRoutes(r, pool)
 	api.RegisterAdminRoutes(r, pool, store, riverClient)
 	api.RegisterSettingsRoutes(r, pool)
+	api.RegisterTagLearningRoutes(r, pool, riverClient)
 	api.RegisterStaticRoutes(r)
 
 	s := &Server{

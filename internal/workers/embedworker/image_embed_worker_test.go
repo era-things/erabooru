@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -151,5 +154,60 @@ func TestExtractVideoFramesWithFFmpeg(t *testing.T) {
 				t.Fatal("unexpected frame dimensions/color")
 			}
 		}
+	}
+}
+
+func TestExtractVideoFramesIgnoresLargerShortSecondaryTrack(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg unavailable")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	src := filepath.Join(t.TempDir(), "multiple-tracks.mkv")
+	// Both tracks are default, but the larger blue track ends before every
+	// sparse sample. Automatic selection silently produces zero frames.
+	args := []string{"-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=32x32:r=2:d=61",
+		"-f", "lavfi", "-i", "color=c=blue:s=34x34:r=2:d=0.5",
+		"-map", "0:v", "-map", "1:v", "-c:v", "ffv1",
+		"-disposition:v:0", "default", "-disposition:v:1", "default", src}
+	if out, err := exec.CommandContext(ctx, "ffmpeg", args...).CombinedOutput(); err != nil {
+		t.Fatalf("generate clip: %v: %s", err, out)
+	}
+	for _, duration := range []int{4, 60} {
+		frames, err := extractVideoFrames(ctx, src, duration, 5, 16)
+		if err != nil || len(frames) != 5 {
+			t.Fatalf("duration %d: got %d frames, error %v", duration, len(frames), err)
+		}
+		for _, frame := range frames {
+			if frame[0] < 200 || frame[2] > 30 {
+				t.Fatal("selected secondary video track")
+			}
+		}
+	}
+}
+
+func TestExtractVideoFramesFromExternalFixtures(t *testing.T) {
+	paths := filepath.SplitList(os.Getenv("TEST_VIDEO_FIXTURES"))
+	if len(paths) == 0 {
+		t.Skip("set TEST_VIDEO_FIXTURES to video paths to verify without copying into the repository")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	for _, src := range paths {
+		out, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", src).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		seconds, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		duration := int(seconds + 0.5)
+		samples := videoSampleCount(duration)
+		frames, err := extractVideoFrames(ctx, src, duration, samples, 32)
+		if err != nil || len(frames) != samples {
+			t.Fatalf("%s: got %d/%d frames, error %v", src, len(frames), samples, err)
+		}
+		t.Logf("%s: extracted %d frames", filepath.Base(src), len(frames))
 	}
 }

@@ -30,10 +30,11 @@ func RegisterMediaRoutes(r *gin.Engine, pool *pgxpool.Pool, store *storage.Store
 	r.GET("/api/media", listMediaHandler(pool, limiter))
 	r.GET("/api/media/previews", listPreviewsHandler(pool, limiter))
 	r.GET("/api/media/:id", getMediaHandler(pool))
+	r.HEAD("/api/media/:id", headMediaHandler(pool))
 	r.GET("/api/media/:id/similar", similarMediaByIDHandler(pool))
 	r.POST("/api/media", uploadMediaHandler(pool, store, queueClient))
-	r.POST("/api/media/import", importMediaHandler(pool, store, queueClient, embed.ActiveProfile()))
-	r.GET("/api/embeddings/profile", embeddingProfileHandler(embed.ActiveProfile()))
+	r.POST("/api/media/import", func(c *gin.Context) { importMediaHandler(pool, store, queueClient, embed.ActiveProfile())(c) })
+	r.GET("/api/embeddings/profile", func(c *gin.Context) { embeddingProfileHandler(embed.ActiveProfile())(c) })
 	r.POST("/api/media/:id/tags", updateMediaTagsHandler(pool))
 	r.POST("/api/media/:id/dates", updateMediaDatesHandler(pool))
 	r.DELETE("/api/media/:id", deleteMediaHandler(pool, queueClient))
@@ -183,6 +184,31 @@ func generateTextEmbedding(ctx context.Context, limiter *processing.InferenceLim
 	return vector, err
 }
 
+// Existence is independent of processing state and hidden-tag filters, just as
+// duplicate detection during upload is. Deleted records are absent from media.
+func headMediaHandler(pool interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		id, ok := idParam(c)
+		if !ok {
+			return
+		}
+		exists, err := db.MediaExists(c.Request.Context(), pool, strings.ToLower(id))
+		if err != nil {
+			log.Printf("check media %s: %v", id, err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		if !exists {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		c.Status(http.StatusOK)
+	}
+}
+
 func getMediaHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := idParam(c)
@@ -319,13 +345,13 @@ func uploadMediaHandler(pool *pgxpool.Pool, store *storage.Store, queueClient *r
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "expected exactly one file part"})
 			return
 		}
-		completeMediaUpload(c, pool, store, queueClient, staged, contentType, originalName, nil)
+		completeMediaUpload(c, pool, store, queueClient, staged, contentType, originalName, nil, "")
 	}
 }
 
 // File installation and rollback cleanup share the per-ID transaction lock with
 // deletion and repair. Streaming and multipart validation happen before locking.
-func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Store, queueClient *river.Client[pgx.Tx], staged *storage.StagedOriginal, contentType, originalName string, vector []float32) {
+func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Store, queueClient *river.Client[pgx.Tx], staged *storage.StagedOriginal, contentType, originalName string, vector []float32, profile string) {
 	ctx := c.Request.Context()
 	id := staged.ID
 	tx, err := pool.Begin(ctx)
@@ -362,7 +388,7 @@ func completeMediaUpload(c *gin.Context, pool *pgxpool.Pool, store *storage.Stor
 	}
 	created, err := db.InsertQueuedMedia(ctx, tx, id, generation, originalName, staged.Size, time.Now().UTC())
 	if err == nil && created && vector != nil {
-		err = db.ImportEmbeddingTx(ctx, tx, id, generation, pgvector.NewVector(vector))
+		err = db.ImportEmbeddingTx(ctx, tx, id, generation, pgvector.NewVector(vector), profile)
 	}
 	if err == nil && created {
 		err = queue.EnqueueTx(ctx, queueClient, tx, queue.ProcessArgs{Key: id, Generation: generation, ContentType: contentType})

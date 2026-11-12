@@ -114,6 +114,8 @@ not be summed across items. Text searches retain their separate timing line.
 
 ### Uploading media and preserving its original name
 
+Clients can [check a content hash before uploading](docs/upload-existence.md) to skip existing media without decoding or transferring it.
+
 `POST /api/media` accepts streaming `multipart/form-data` with exactly one `file` part. The part must include its original filename (including extension) and an `image/*` or `video/*` Content-Type. Raw request-body uploads are no longer accepted.
 
 ```sh

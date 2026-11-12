@@ -79,8 +79,9 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 	format := strings.ToLower(media.Format)
 
 	var vec []float32
+	var inputSize int
 	if config.SupportedVideoFormats[format] {
-		vec, err = w.videoEmbedding(ctx, job.Args.Key, media)
+		vec, inputSize, err = w.videoEmbedding(ctx, job.Args.Key, media)
 		if err != nil {
 			log.Printf("Failed to generate video embedding: %v", err)
 			return classifyEmbeddingError(err, job.Args.Key)
@@ -96,7 +97,7 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 		}
 
 		preparedAt := time.Now()
-		inputSize := embed.InputSpatialSize()
+		inputSize = embed.InputSpatialSize()
 		raw, prepareErr := embed.PrepareImage(data, inputSize)
 		timings.Prepare += time.Since(preparedAt)
 		if prepareErr != nil {
@@ -110,7 +111,7 @@ func (w *ImageEmbedWorker) Work(ctx context.Context, job *river.Job[queue.EmbedA
 	}
 
 	pgv := pgvector.NewVector(vec)
-	if err := db.CompleteEmbedding(ctx, w.DB, job.Args.Key, job.Args.Generation, job.Args.Space, pgv); err != nil {
+	if err := db.CompleteEmbedding(ctx, w.DB, job.Args.Key, job.Args.Generation, job.Args.Space, pgv, embed.ActiveProfile().ForImageSize(inputSize).ID); err != nil {
 		log.Printf("Failed to save embedding to database: %v", err)
 		return err
 	}
@@ -161,7 +162,7 @@ func isFatalEmbeddingError(err error) bool {
 	return false
 }
 
-func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media db.Media) ([]float32, error) {
+func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media db.Media) ([]float32, int, error) {
 
 	duration := 0
 	if media.Duration != nil && *media.Duration > 0 {
@@ -170,12 +171,12 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media
 
 	samples := videoSampleCount(duration)
 	if samples <= 0 {
-		return nil, fmt.Errorf("invalid sample count computed for video %s", key)
+		return nil, 0, fmt.Errorf("invalid sample count computed for video %s", key)
 	}
 
 	src := w.Store.OriginalPath(key)
 	if _, err := os.Stat(src); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	const maxAttempts = 3
@@ -185,7 +186,7 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media
 		waitAt := time.Now()
 		release, err := w.Decode.Acquire(ctx)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		decodeWait := time.Since(waitAt)
 		decodeAt := time.Now()
@@ -196,10 +197,10 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media
 			timings.Decode += time.Since(decodeAt)
 		}
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if len(frames) == 0 {
-			return nil, fmt.Errorf("no frames extracted for video %s", key)
+			return nil, 0, fmt.Errorf("no frames extracted for video %s", key)
 		}
 		vectors, err := w.Batcher.Embed(ctx, frames)
 		if err != nil {
@@ -208,17 +209,17 @@ func (w *ImageEmbedWorker) videoEmbedding(ctx context.Context, key string, media
 				log.Printf("Video embedding input resized from %d to %d for %s", inputSize, newSize, key)
 				continue
 			}
-			return nil, err
+			return nil, 0, err
 		}
 
 		avg, err := averageVectors(vectors)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
-		return avg, nil
+		return avg, inputSize, nil
 	}
-	return nil, lastErr
+	return nil, 0, lastErr
 }
 
 // Long clips use sparse input-side seeks. Short/unknown clips retain a single
@@ -242,7 +243,9 @@ func videoFrameArgs(src string, duration, samples, size int, seek *float64) []st
 	if seek != nil {
 		args = append(args, "-ss", strconv.FormatFloat(*seek, 'f', 6, 64))
 	}
-	args = append(args, "-i", src, "-an", "-sn", "-dn", "-filter_threads", "1")
+	// Automatic selection prefers resolution and can pick a larger secondary
+	// track that has no frames at the requested timestamps.
+	args = append(args, "-i", src, "-map", "0:v:0", "-an", "-sn", "-dn", "-filter_threads", "1")
 	vf := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(%d-iw)/2:(%d-ih)/2:color=black", size, size, size, size, size, size)
 	count := samples
 	if seek != nil {

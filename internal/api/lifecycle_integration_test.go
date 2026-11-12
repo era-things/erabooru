@@ -78,6 +78,17 @@ func TestLifecycleRetryDeletionAndReupload(t *testing.T) {
 	defer pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->>'key'=$1`, id)
 	defer pool.Exec(context.Background(), `DELETE FROM media WHERE id=$1`, id)
 	defer pool.Exec(context.Background(), `DELETE FROM deleted_media WHERE id=$1`, id)
+	checkExists := func(want int) {
+		t.Helper()
+		response := request(http.MethodHead, "/api/media/"+id, nil)
+		if response.Code != want || response.Body.Len() != 0 || response.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("existence: status=%d body=%q headers=%v", response.Code, response.Body, response.Header())
+		}
+	}
+	checkExists(http.StatusOK) // Queued originals already count as uploaded.
+	if response := request(http.MethodHead, "/api/media/00000000000000000000000000000000", nil); response.Code != http.StatusNotFound {
+		t.Fatalf("missing media existence: %d", response.Code)
+	}
 	generation, status, err := db.MediaLifecycle(ctx, pool, id)
 	if err != nil || status != "queued" {
 		t.Fatalf("queued: %s %v", status, err)
@@ -110,6 +121,7 @@ func TestLifecycleRetryDeletionAndReupload(t *testing.T) {
 	if err != nil || status != "failed" {
 		t.Fatalf("terminal: %s %v", status, err)
 	}
+	checkExists(http.StatusOK) // Processing failures need repair, not a re-upload.
 	if started, err := db.StartIngestion(ctx, pool, id, generation); err != nil || started {
 		t.Fatalf("terminal restarted: %v %v", started, err)
 	}
@@ -137,6 +149,7 @@ func TestLifecycleRetryDeletionAndReupload(t *testing.T) {
 	if response := request(http.MethodGet, "/api/media/"+id, nil); response.Code != 404 {
 		t.Fatalf("deleted detail: %d", response.Code)
 	}
+	checkExists(http.StatusNotFound) // Even before original-file cleanup finishes.
 	var cleanupJobs int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind='cleanup_media' AND args->>'key'=$1`, id).Scan(&cleanupJobs); err != nil || cleanupJobs != 1 {
 		t.Fatalf("cleanup not durable: %d %v", cleanupJobs, err)

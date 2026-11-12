@@ -162,7 +162,7 @@ func regenerateHandler(pool *pgxpool.Pool, store *storage.Store, riverClient *ri
 func exportTagsHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		items, err := db.ListMedia(ctx, pool)
+		items, err := db.ListMediaMetadata(ctx, pool)
 		if err != nil {
 			log.Printf("export tags: %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -179,37 +179,19 @@ func exportTagsHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		meta := struct {
 			Version   int       `json:"version"`
 			CreatedAt time.Time `json:"createdAt"`
-		}{Version: 2, CreatedAt: time.Now().UTC()}
+		}{Version: 3, CreatedAt: time.Now().UTC()}
 		if err := enc.Encode(meta); err != nil {
 			log.Printf("encode meta: %v", err)
 			return
 		}
 
 		for _, media := range items {
-			tags := make([]string, len(media.Tags))
-			for i, tag := range media.Tags {
-				tags[i] = tag.Name
+			item := metadataRecord{ID: media.ID, OriginalName: media.OriginalName, UploadedAt: media.UploadedAt, Tags: media.Tags,
+				NegativeTags: media.NegativeTags, Dates: make([]metadataDate, len(media.Dates))}
+			for i, date := range media.Dates {
+				item.Dates[i] = metadataDate{Name: date.Name, Value: date.Value.Format("2006-01-02")}
 			}
-
-			dates := make([]struct {
-				Name  string `json:"name"`
-				Value string `json:"value"`
-			}, 0)
-			for _, date := range media.Dates {
-				dates = append(dates, struct {
-					Name  string `json:"name"`
-					Value string `json:"value"`
-				}{Name: date.Name, Value: date.Value.Format("2006-01-02")})
-			}
-
-			if err := enc.Encode(struct {
-				ID    string   `json:"id"`
-				Tags  []string `json:"tags"`
-				Dates []struct {
-					Name  string `json:"name"`
-					Value string `json:"value"`
-				} `json:"dates"`
-			}{ID: media.ID, Tags: tags, Dates: dates}); err != nil {
+			if err := enc.Encode(item); err != nil {
 				log.Printf("encode record %s: %v", media.ID, err)
 				return
 			}
@@ -241,15 +223,12 @@ func importTagsHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
+		if meta.Version < 1 || meta.Version > 3 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported metadata version"})
+			return
+		}
 		for {
-			var item struct {
-				ID    string   `json:"id"`
-				Tags  []string `json:"tags"`
-				Dates []struct {
-					Name  string `json:"name"`
-					Value string `json:"value"`
-				} `json:"dates"`
-			}
+			var item metadataRecord
 			if err := dec.Decode(&item); err != nil {
 				if err == io.EOF {
 					break
@@ -258,31 +237,16 @@ func importTagsHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 				c.AbortWithStatus(http.StatusBadRequest)
 				return
 			}
-
-			exists, err := db.MediaExists(ctx, pool, item.ID)
+			metadata, err := item.metadata(meta.Version)
 			if err != nil {
-				log.Printf("check media %s: %v", item.ID, err)
-				c.AbortWithStatus(http.StatusInternalServerError)
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
-			if !exists {
-				continue
-			}
-			dates := make([]db.DateValue, 0, len(item.Dates))
-			for _, d := range item.Dates {
-				value, err := time.Parse("2006-01-02", d.Value)
-				if err != nil {
+			if err := db.RestoreMediaMetadata(ctx, pool, metadata); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
 					continue
 				}
-				dates = append(dates, db.DateValue{Name: d.Name, Value: value})
-			}
-			if err := db.SetMediaTags(ctx, pool, item.ID, normalizeTags(item.Tags)); err != nil {
-				log.Printf("import tags for %s: %v", item.ID, err)
-				c.AbortWithStatus(http.StatusInternalServerError)
-				return
-			}
-			if err := db.SetMediaDates(ctx, pool, item.ID, dates); err != nil {
-				log.Printf("import dates for %s: %v", item.ID, err)
+				log.Printf("import metadata for %s: %v", item.ID, err)
 				c.AbortWithStatus(http.StatusInternalServerError)
 				return
 			}
