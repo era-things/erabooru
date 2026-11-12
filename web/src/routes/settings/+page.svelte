@@ -146,12 +146,15 @@
 		<button class="rounded border px-3 py-1" onclick={regenerate} disabled={repairing}>
 			{repairing ? 'Scanning collection...' : 'Repair media processing'}
 		</button>
-		<button class="rounded border px-3 py-1" onclick={exportTags}> Export tags </button>
+		<button class="rounded border px-3 py-1" onclick={exportTags}> Export metadata </button>
 		<button class="rounded border px-3 py-1" onclick={() => fileInput.click()}>
-			Import tags
+			Import metadata
 		</button>
 		<input type="file" bind:this={fileInput} accept=".gz" class="hidden" onchange={importTags} />
 	</div>
+	<p class="text-sm text-gray-500">
+		Export assigned and rejected tags, dates, and original filenames. Media files are not included.
+	</p>
 
 	<TagStatisticsSettings />
 	<section class="space-y-4 rounded border border-gray-200 p-4">

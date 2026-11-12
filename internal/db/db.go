@@ -509,23 +509,27 @@ func SetMediaTags(ctx context.Context, pool *pgxpool.Pool, mediaID string, names
 		if !exists {
 			return pgx.ErrNoRows
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM media_tag WHERE media_id=$1`, mediaID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `WITH upserted AS (
- INSERT INTO tag (name) SELECT DISTINCT unnest($2::text[]) ORDER BY 1
- ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id
- ) INSERT INTO media_tag (media_id,tag_id) SELECT $1,id FROM upserted`, mediaID, names); err != nil {
-			return err
-		}
-		_, err = tx.Exec(ctx, `DELETE FROM media_negative_tag n USING media_tag p
- WHERE n.media_id=$1 AND p.media_id=n.media_id AND p.tag_id=n.tag_id`, mediaID)
-		return err
+		return setMediaTagsTx(ctx, tx, mediaID, names)
 	})
 	if err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func setMediaTagsTx(ctx context.Context, tx pgx.Tx, mediaID string, names []string) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM media_tag WHERE media_id=$1`, mediaID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `WITH upserted AS (
+INSERT INTO tag (name) SELECT DISTINCT unnest($2::text[]) ORDER BY 1
+ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id
+) INSERT INTO media_tag (media_id,tag_id) SELECT $1,id FROM upserted`, mediaID, names); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `DELETE FROM media_negative_tag n USING media_tag p
+WHERE n.media_id=$1 AND p.media_id=n.media_id AND p.tag_id=n.tag_id`, mediaID)
+	return err
 }
 
 func SetMediaDates(ctx context.Context, pool *pgxpool.Pool, mediaID string, dates []DateValue) error {
@@ -540,6 +544,13 @@ func SetMediaDates(ctx context.Context, pool *pgxpool.Pool, mediaID string, date
 	if err := LockMediaTx(ctx, tx, mediaID); err != nil {
 		return err
 	}
+	if err := setMediaDatesTx(ctx, tx, mediaID, dates); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func setMediaDatesTx(ctx context.Context, tx pgx.Tx, mediaID string, dates []DateValue) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM media_date WHERE media_id = $1`, mediaID); err != nil {
 		return err
 	}
@@ -563,7 +574,7 @@ SELECT $1, input.name, input.value FROM unnest($2::text[], $3::timestamptz[]) AS
 			return err
 		}
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 func ListTags(ctx context.Context, pool *pgxpool.Pool, prefix string, limit int) ([]Tag, error) {
