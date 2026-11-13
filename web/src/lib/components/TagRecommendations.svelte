@@ -2,6 +2,7 @@
 	import { fetchTagRecommendations } from '$lib/api';
 	import type { TagRecommendationsResponse, TagFeedbackAction } from '$lib/api';
 	import type { MediaDetail } from '$lib/types/media';
+	import { createRequest } from '$lib/utils/request.svelte';
 
 	let {
 		media,
@@ -12,11 +13,14 @@
 		disabled?: boolean;
 		onfeedback: (tag: string, action: TagFeedbackAction) => Promise<void>;
 	} = $props();
-	let data = $state<TagRecommendationsResponse | null>(null);
-	let loading = $state(false);
+	const request = createRequest<TagRecommendationsResponse>();
+	const data = $derived(request.current);
+	const loading = $derived(request.loading);
 	let pending = $state(false);
-	let error = $state('');
-	let reload = $state(0);
+	let feedbackError = $state('');
+	const error = $derived(
+		feedbackError || (request.error ? 'Could not load tag recommendations.' : '')
+	);
 	let negativeOpen = $state(false);
 	let lowEvidenceOpen = $state(false);
 	let currentMediaID = '';
@@ -30,33 +34,23 @@
 		}
 		// Refresh after edits or embedding completion, including on the same media.
 		void media;
-		void reload;
-		const controller = new AbortController();
-		loading = true;
-		error = '';
-		data = null;
-		fetchTagRecommendations(id, controller.signal)
-			.then((result) => {
-				if (!controller.signal.aborted) data = result;
-			})
-			.catch(() => {
-				if (!controller.signal.aborted) error = 'Could not load tag recommendations.';
-			})
-			.finally(() => {
-				if (!controller.signal.aborted) loading = false;
-			});
-		return () => controller.abort();
+		load();
 	});
+
+	function load() {
+		feedbackError = '';
+		return request.run((signal) => fetchTagRecommendations(media.id, signal));
+	}
 
 	async function feedback(tag: string, action: TagFeedbackAction) {
 		if (disabled || pending) return;
 		const id = media.id;
 		pending = true;
-		error = '';
+		feedbackError = '';
 		try {
 			await onfeedback(tag, action);
 		} catch {
-			if (media.id === id) error = 'Could not save tag feedback. Please try again.';
+			if (media.id === id) feedbackError = 'Could not save tag feedback. Please try again.';
 		} finally {
 			pending = false;
 		}
@@ -136,6 +130,6 @@
 	{/if}
 	{#if error}
 		<p role="alert" class="text-red-700">{error}</p>
-		{#if !data && !loading}<button class="underline" onclick={() => reload++}>Retry</button>{/if}
+		{#if !data && !loading}<button class="underline" onclick={load}>Retry</button>{/if}
 	{/if}
 </section>

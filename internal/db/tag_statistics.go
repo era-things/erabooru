@@ -22,6 +22,9 @@ const tagStatisticsLock int64 = 731926481
 //go:embed tag_classifiers.sql
 var classifierSchema string
 
+//go:embed tag_review.sql
+var tagReviewSchema string
+
 var ErrInvalidTagFeedback = errors.New("invalid tag feedback")
 
 func migrateTagStatistics(ctx context.Context, pool *pgxpool.Pool) error {
@@ -51,6 +54,9 @@ INSERT INTO tag_statistics_state (singleton) VALUES (true) ON CONFLICT DO NOTHIN
 		return err
 	}
 	if _, err := pool.Exec(ctx, classifierSchema); err != nil {
+		return err
+	}
+	if _, err := pool.Exec(ctx, tagReviewSchema); err != nil {
 		return err
 	}
 	var initialized bool
@@ -320,6 +326,12 @@ func RecommendTags(ctx context.Context, pool *pgxpool.Pool, mediaID string) (Tag
 		return out, err
 	}
 	if out.EmbeddingReady {
+		score := (tagmodel.ScoreSQL{
+			Value: "value", ValueNorm: "vector_norm(value)",
+			Positive: "positive_sum", PositiveNorm: "vector_norm(positive_sum)",
+			Negative: "negative_sum", NegativeNorm: "vector_norm(negative_sum)", NegativeCount: "negative_count",
+			Classifier: "main", Weights: "weights", Bias: "bias",
+		}).Expression()
 		rows, err = tx.Query(ctx, `WITH candidates AS (
  SELECT t.name,s.positive_count,s.positive_sum,s.negative_count,s.negative_sum,e.value,
  c.weights,c.bias,(s.positive_count >= $3 AND c.weights IS NOT NULL AND c.model_version=$4) AS main
@@ -331,10 +343,7 @@ func RecommendTags(ctx context.Context, pool *pgxpool.Pool, mediaID string) (Tag
  AND NOT EXISTS (SELECT FROM media_negative_tag n WHERE n.media_id=$1 AND n.tag_id=t.id)
  ), scored AS (
  SELECT name,positive_count,main,
- CASE WHEN main THEN bias-(value <#> weights)/vector_norm(value)
- WHEN vector_norm(positive_sum)>0 THEN 1-(value <=> positive_sum) -
-  0.5 * CASE WHEN negative_count>0 AND vector_norm(negative_sum)>0 THEN 1-(value <=> negative_sum) ELSE 0 END
- END AS score FROM candidates
+ `+score+` AS score FROM candidates
  ), ranked AS (
  SELECT *,row_number() OVER(PARTITION BY main ORDER BY score DESC,name) AS pos
  FROM scored WHERE score IS NOT NULL AND (main OR score > 0)

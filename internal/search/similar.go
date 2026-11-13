@@ -3,9 +3,11 @@ package search
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"era/booru/internal/db"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	pgvector "github.com/pgvector/pgvector-go"
 )
@@ -34,7 +36,7 @@ func SimilarMediaByVector(ctx context.Context, pool *pgxpool.Pool, vectorName st
 		conditions = append(conditions, fmt.Sprintf("(me.value::vector(768) <#> $2, m.id) > ($%d, $%d)", len(args)-1, len(args)))
 	}
 	args = append(args, limit+1)
-	conditionSQL := " WHERE " + joinConditions(conditions)
+	conditionSQL := " WHERE " + strings.Join(conditions, " AND ")
 	querySQL := fmt.Sprintf(`SELECT m.id, m.original_name, m.format, m.width, m.height, m.duration, m.size, m.uploaded_at
 	, me.value::vector(768) <#> $2 AS distance
 FROM media_embedding me JOIN media m ON m.id = me.media_id%s
@@ -43,37 +45,9 @@ ORDER BY distance, m.id LIMIT $%d`, conditionSQL, len(args))
 	if err != nil {
 		return nil, "", err
 	}
-	defer rows.Close()
-	items := []db.Media{}
-	distances := []float64{}
-	for rows.Next() {
-		var item db.Media
+	return collectMediaPage(rows, limit, func(row pgx.Row, item *db.Media) (vectorCursor, error) {
 		var distance float64
-		if err := rows.Scan(&item.ID, &item.OriginalName, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt, &distance); err != nil {
-			return nil, "", err
-		}
-		items = append(items, item)
-		distances = append(distances, distance)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, "", err
-	}
-	next := ""
-	if len(items) > limit {
-		items = items[:limit]
-		distances = distances[:limit]
-		next = encodeCursor(vectorCursor{Distance: distances[len(distances)-1], ID: items[len(items)-1].ID})
-	}
-	return items, next, nil
-}
-
-func joinConditions(parts []string) string {
-	result := ""
-	for i, part := range parts {
-		if i > 0 {
-			result += " AND "
-		}
-		result += part
-	}
-	return result
+		err := row.Scan(&item.ID, &item.OriginalName, &item.Format, &item.Width, &item.Height, &item.Duration, &item.Size, &item.UploadedAt, &distance)
+		return vectorCursor{Distance: distance, ID: item.ID}, err
+	})
 }

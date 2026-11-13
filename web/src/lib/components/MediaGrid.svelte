@@ -1,9 +1,11 @@
 <script lang="ts">
-	import { onMount, onDestroy, untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import Masonry from './media_grid/Masonry.svelte'; // Masonry component
 	import type { MediaPreviewItem, MediaItem } from '$lib/types/media';
 	import { PAGE_SIZE } from '$lib/constants';
 	import { fetchMediaPreviews } from '$lib/api';
+	import type { MediaPreviewsResponse } from '$lib/api';
+	import { createRequest } from '$lib/utils/request.svelte';
 
 	let {
 		query = '',
@@ -21,8 +23,9 @@
 	let mounted = $state(false);
 	let scrollY = $state(0);
 	let nextCursor = $state<string | null>(null);
-	let loading = $state(false);
-	let error = $state('');
+	const request = createRequest<MediaPreviewsResponse>();
+	const loading = $derived(request.loading);
+	const error = $derived(request.error?.message ?? '');
 
 	let columnCount = $derived(Math.max(Math.floor(innerWidth / 300), 2));
 	let columnWidths = $derived(Array(columnCount).fill('1fr'));
@@ -30,19 +33,9 @@
 
 	const usingProvidedItems = $derived(items !== undefined);
 
-	let requestCounter = 0;
-	let controller: AbortController | undefined;
-	onDestroy(() => {
-		requestCounter++;
-		controller?.abort();
-	});
-
 	$effect(() => {
 		if (usingProvidedItems) {
-			requestCounter++;
-			controller?.abort();
-			loading = false;
-			error = '';
+			request.cancel();
 			media = items ?? [];
 			nextCursor = null;
 			return;
@@ -56,53 +49,42 @@
 		void untrack(() => load(true, currentQuery, currentPageSize, currentVectorQuery));
 	});
 
-	async function load(
+	function load(
 		reset: boolean,
 		currentQuery: string,
 		currentPageSize: number,
 		currentVectorQuery: string
 	) {
 		if (usingProvidedItems || (loading && !reset)) return;
-		const requestId = ++requestCounter;
-		controller?.abort();
-		controller = new AbortController();
-		loading = true;
-		error = '';
 		if (reset) {
 			media = [];
 			nextCursor = null;
 		}
-		try {
-			const data = await fetchMediaPreviews(
-				currentQuery,
-				currentPageSize,
-				currentVectorQuery,
-				reset ? null : nextCursor,
-				controller.signal
-			);
-			if (requestId !== requestCounter) {
-				return;
+		return request.run(
+			(signal) =>
+				fetchMediaPreviews(
+					currentQuery,
+					currentPageSize,
+					currentVectorQuery,
+					reset ? null : nextCursor,
+					signal
+				),
+			(data) => {
+				const items = data.media as MediaItem[];
+				const previews = items.map((it) => {
+					const displayHeight = Math.min(it.height, it.width * 3);
+					return {
+						...it,
+						height: displayHeight,
+						displayHeight,
+						originalHeight: it.height,
+						cropped: displayHeight < it.height
+					} satisfies MediaPreviewItem;
+				});
+				media = reset ? previews : [...media, ...previews];
+				nextCursor = data.next_cursor || null;
 			}
-			const items = data.media as MediaItem[];
-			const previews = items.map((it) => {
-				const displayHeight = Math.min(it.height, it.width * 3);
-				return {
-					...it,
-					height: displayHeight,
-					displayHeight,
-					originalHeight: it.height,
-					cropped: displayHeight < it.height
-				} satisfies MediaPreviewItem;
-			});
-			media = reset ? previews : [...media, ...previews];
-			nextCursor = data.next_cursor || null;
-		} catch (err) {
-			if (requestId === requestCounter) {
-				error = err instanceof Error ? err.message : 'Search failed';
-			}
-		} finally {
-			if (requestId === requestCounter) loading = false;
-		}
+		);
 	}
 
 	onMount(() => {

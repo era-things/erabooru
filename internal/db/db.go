@@ -173,6 +173,19 @@ CREATE TABLE IF NOT EXISTS media_embedding (
     PRIMARY KEY (media_id, space_id)
 );
 ALTER TABLE media_embedding ADD COLUMN IF NOT EXISTS profile text NOT NULL DEFAULT '';
+-- Store cheap vector metadata so filtering doesn't repeatedly fetch the full
+-- vector, and ANALYZE can estimate eligible row counts accurately.
+DO $$
+BEGIN
+    IF (SELECT count(*) FROM pg_attribute
+        WHERE attrelid='media_embedding'::regclass AND NOT attisdropped
+        AND attname IN ('value_norm','value_dimensions')) < 2 THEN
+        ALTER TABLE media_embedding
+            ADD COLUMN IF NOT EXISTS value_norm double precision GENERATED ALWAYS AS (vector_norm(value)) STORED,
+            ADD COLUMN IF NOT EXISTS value_dimensions integer GENERATED ALWAYS AS (vector_dims(value)) STORED;
+        ANALYZE media_embedding (value_norm, value_dimensions);
+    END IF;
+END $$;
 ALTER TABLE media_embedding DROP CONSTRAINT IF EXISTS media_embedding_status_check;
 ALTER TABLE media_embedding ADD CONSTRAINT media_embedding_status_check
     CHECK (status IN ('queued', 'processing', 'retrying', 'ready', 'failed'));

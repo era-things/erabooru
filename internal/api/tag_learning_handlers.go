@@ -10,6 +10,7 @@ import (
 	"era/booru/internal/db"
 	embed "era/booru/internal/embeddings"
 	"era/booru/internal/queue"
+	"era/booru/internal/search"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -70,6 +71,8 @@ func tagFeedbackHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 func tagLearningError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, search.ErrInvalidCursor):
+		c.AbortWithStatus(http.StatusBadRequest)
 	case errors.Is(err, db.ErrInvalidTagFeedback):
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, pgx.ErrNoRows):

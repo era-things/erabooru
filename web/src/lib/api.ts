@@ -150,6 +150,19 @@ export async function fetchTags(): Promise<TagCount[]> {
 	return data.tags;
 }
 
+export interface TagReviewResponse extends MediaPreviewsResponse {
+	representatives: MediaItem[];
+}
+
+export async function fetchTagReview(
+	tag: string,
+	cursor = '',
+	signal?: AbortSignal
+): Promise<TagReviewResponse> {
+	const params = new URLSearchParams({ tag, cursor });
+	return handleJson(await fetch(`${apiBase}/tags/review?${params}`, { signal }));
+}
+
 export async function fetchTagSuggestions(prefix: string): Promise<TagCount[]> {
 	const params = new URLSearchParams({ q: prefix });
 	const res = await fetch(`${apiBase}/tags/suggest?${params.toString()}`);
