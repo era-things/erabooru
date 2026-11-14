@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import Masonry from './media_grid/Masonry.svelte'; // Masonry component
-	import type { MediaPreviewItem, MediaItem } from '$lib/types/media';
+	import type { MediaPreviewItem, MediaItem, MediaGridState } from '$lib/types/media';
 	import { PAGE_SIZE } from '$lib/constants';
 	import { fetchMediaPreviews } from '$lib/api';
 	import type { MediaPreviewsResponse } from '$lib/api';
@@ -10,18 +10,19 @@
 	let {
 		query = '',
 		vectorQuery = '',
+		seed = '',
 		pageSize = Number(PAGE_SIZE),
 		items
 	}: {
 		query?: string;
 		vectorQuery?: string;
+		seed?: string;
 		pageSize?: number;
 		items?: MediaPreviewItem[];
 	} = $props();
 	let media: MediaPreviewItem[] = $state([]);
 	let innerWidth = $state(0);
 	let mounted = $state(false);
-	let scrollY = $state(0);
 	let nextCursor = $state<string | null>(null);
 	const request = createRequest<MediaPreviewsResponse>();
 	const loading = $derived(request.loading);
@@ -32,6 +33,21 @@
 	const normalizedVectorQuery = $derived(typeof vectorQuery === 'string' ? vectorQuery : '');
 
 	const usingProvidedItems = $derived(items !== undefined);
+	const queryKey = $derived(JSON.stringify([query, pageSize, normalizedVectorQuery, seed]));
+	let loadedKey = '';
+
+	export function captureState(): MediaGridState | null {
+		return media.length ? { key: loadedKey, media: $state.snapshot(media), nextCursor } : null;
+	}
+
+	export function restoreState(saved: MediaGridState): boolean {
+		if (usingProvidedItems || saved.key !== queryKey) return false;
+		request.cancel();
+		loadedKey = saved.key;
+		media = saved.media;
+		nextCursor = saved.nextCursor;
+		return true;
+	}
 
 	$effect(() => {
 		if (usingProvidedItems) {
@@ -46,16 +62,24 @@
 		const currentQuery = query;
 		const currentPageSize = pageSize;
 		const currentVectorQuery = normalizedVectorQuery;
-		void untrack(() => load(true, currentQuery, currentPageSize, currentVectorQuery));
+		const currentSeed = seed;
+		const key = queryKey;
+		untrack(() => {
+			if (key !== loadedKey)
+				void load(true, currentQuery, currentPageSize, currentVectorQuery, currentSeed);
+		});
 	});
 
 	function load(
 		reset: boolean,
 		currentQuery: string,
 		currentPageSize: number,
-		currentVectorQuery: string
+		currentVectorQuery: string,
+		currentSeed: string
 	) {
 		if (usingProvidedItems || (loading && !reset)) return;
+		if (currentVectorQuery.trim() === ':random' && !currentSeed) return;
+		loadedKey = JSON.stringify([currentQuery, currentPageSize, currentVectorQuery, currentSeed]);
 		if (reset) {
 			media = [];
 			nextCursor = null;
@@ -67,7 +91,8 @@
 					currentPageSize,
 					currentVectorQuery,
 					reset ? null : nextCursor,
-					signal
+					signal,
+					currentSeed
 				),
 			(data) => {
 				const items = data.media as MediaItem[];
@@ -97,7 +122,7 @@
 	});
 </script>
 
-<svelte:window bind:innerWidth bind:scrollY />
+<svelte:window bind:innerWidth />
 
 {#if loading}
 	<p role="status" class="my-4 text-sm text-gray-500">Loading results...</p>
@@ -108,12 +133,12 @@
 		<button
 			type="button"
 			class="underline"
-			onclick={() => load(true, query, pageSize, normalizedVectorQuery)}>Retry</button
+			onclick={() => load(true, query, pageSize, normalizedVectorQuery, seed)}>Retry</button
 		>
 	</div>
 {/if}
 
-<Masonry items={media} {columnWidths} scrollPosition={scrollY} />
+<Masonry items={media} {columnWidths} />
 
 {#if !usingProvidedItems && nextCursor}
 	<div class="my-4 flex justify-center">
@@ -121,7 +146,7 @@
 			type="button"
 			class="rounded border px-4 py-2"
 			disabled={loading}
-			onclick={() => load(false, query, pageSize, normalizedVectorQuery)}
+			onclick={() => load(false, query, pageSize, normalizedVectorQuery, seed)}
 		>
 			{loading ? 'Loading…' : 'Load more'}
 		</button>

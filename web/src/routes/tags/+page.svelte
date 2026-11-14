@@ -9,6 +9,7 @@
 	import type { TagReviewResponse } from '$lib/api';
 	import { createRequest } from '$lib/utils/request.svelte';
 	import { mediaBorderClass } from '$lib/utils/media_utils';
+	import { createScrollSnapshot } from '$lib/utils/scrollSnapshot';
 
 	const disabledTags = new Set(['tagme']);
 
@@ -27,6 +28,28 @@
 	);
 	let tagsError = $state('');
 	let notice = $state('');
+
+	export const snapshot = createScrollSnapshot(
+		() =>
+			$state.snapshot({
+				tags,
+				active,
+				representatives,
+				media,
+				selected,
+				nextCursor,
+				notice,
+				feedbackError
+			}),
+		(saved) => {
+			const tag = page.url.searchParams.get('tag') ?? '';
+			if (saved.active !== (disabledTags.has(tag) ? '' : tag)) return false;
+			request.cancel();
+			({ tags, active, representatives, media, selected, nextCursor, notice, feedbackError } =
+				saved);
+			return true;
+		}
+	);
 
 	onMount(async () => {
 		try {

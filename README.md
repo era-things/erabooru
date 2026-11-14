@@ -23,7 +23,7 @@ Run `make dev`
 * It will create .env file out of .env.example if there is none, you can redact it if needed
 * It will run Air for Go hot realoading and Vite dev server for web hot reloading
 * It will launch an additional helper container to inspect PostgreSQL
-* The UI will be available at `http://localhost:5173`
+* The UI and live reload will be available at `http://localhost` through Caddy. Vite stays inside Docker, so other projects can use host port 5173.
 
 Development dependencies are installed into a Docker volume and refreshed only when
 `package-lock.json` changes. Caddy remains the development proxy so request paths match production.

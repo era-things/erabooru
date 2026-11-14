@@ -41,9 +41,10 @@ export async function fetchMediaPreviews(
 	pageSize: number,
 	vectorQuery?: string | null,
 	cursor?: string | null,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	seed?: string | null
 ): Promise<MediaPreviewsResponse> {
-	const params = buildSearchParams({ pageSize, query, vectorQuery, cursor });
+	const params = buildSearchParams({ pageSize, query, vectorQuery, cursor, seed });
 	const res = await fetch(`${apiBase}/media/previews?${params.toString()}`, { signal });
 	return handleJson(res);
 }

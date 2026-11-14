@@ -56,9 +56,10 @@ func listCommon(previews bool, pool *pgxpool.Pool, limiter *processing.Inference
 		vectorQueryParamRaw, hasVectorQueryParam := c.GetQuery("vector_q")
 		vectorQueryParam := strings.TrimSpace(vectorQueryParamRaw)
 		vectorFlag := c.Query("vector") == "1"
+		randomSort := c.Query("sort") == "random"
 		tagQuery := rawQuery
 		vectorQuery := vectorQueryParam
-		if vectorFlag && vectorQuery == "" {
+		if !randomSort && vectorFlag && vectorQuery == "" {
 			vectorQuery = rawQuery
 			if !hasVectorQueryParam {
 				tagQuery = ""
@@ -92,7 +93,18 @@ func listCommon(previews bool, pool *pgxpool.Pool, limiter *processing.Inference
 			nextCursor string
 		)
 
-		if vectorSearch && vectorQuery != "" {
+		if randomSort {
+			items, nextCursor, err = search.RandomMedia(c.Request.Context(), pool, tagQuery, c.Query("seed"), pageSize, cursor)
+			if err != nil {
+				if errors.Is(err, search.ErrInvalidCursor) {
+					c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				} else {
+					log.Printf("random media search: %v", err)
+					c.AbortWithStatus(http.StatusInternalServerError)
+				}
+				return
+			}
+		} else if vectorSearch && vectorQuery != "" {
 			requestCtx := c.Request.Context()
 			vectorName := "vision"
 			excludeID := ""
