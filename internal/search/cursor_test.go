@@ -1,6 +1,8 @@
 package search
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -18,7 +20,10 @@ func TestCursorRoundTrip(t *testing.T) {
 }
 
 func TestInvalidCursor(t *testing.T) {
-	if _, err := decodeCursor[mediaCursor]("not-base64!"); err == nil {
-		t.Fatal("expected invalid cursor error")
+	for _, raw := range []string{"not-base64!", "ew"} {
+		_, err := decodeCursor[mediaCursor](raw)
+		if !errors.Is(fmt.Errorf("request: %w", err), ErrInvalidCursor) {
+			t.Fatalf("expected a typed invalid cursor error, got %v", err)
+		}
 	}
 }

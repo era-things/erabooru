@@ -2,39 +2,30 @@
 	import Column from './Column.svelte';
 	import { distributeRoundRobin } from '$lib/masonryDistribution';
 	import type { MediaPreviewItem } from '$lib/types/media';
-	import { ElementRect } from 'runed';
+	import { ElementSize } from 'runed';
+	import { innerHeight, scrollY } from 'svelte/reactivity/window';
 
 	let {
 		items = [],
-		columnWidths = ['1fr', '1fr'],
-		scrollPosition = 0
+		columnWidths = ['1fr', '1fr']
 	}: {
 		items: MediaPreviewItem[];
 		columnWidths: string[];
-		scrollPosition: number;
 	} = $props();
 
 	let columns = $derived(distributeRoundRobin(items, columnWidths.length));
 
 	let el = $state<HTMLElement>();
-	const rect = new ElementRect(() => el);
+	const rect = new ElementSize(() => el);
 
 	let scrolledPercentage = $derived.by(() => {
-		if (!rect.current || typeof window === 'undefined') return 0;
+		const y = scrollY.current ?? 0;
+		const maxScrollThroughContainer = rect.height - (innerHeight.current ?? 0);
+		if (!el || maxScrollThroughContainer <= 0) return 0;
 
-		const containerTop = rect.top;
-		//const containerBottom = rect.top + rect.height;
-		const viewportHeight = window.innerHeight;
-
-		// How much of the container is above the viewport
-		const scrolledIntoContainer = Math.max(0, scrollPosition - containerTop);
-
-		// Total scrollable distance through the container
-		const maxScrollThroughContainer = Math.max(0, rect.height - viewportHeight);
-
-		return maxScrollThroughContainer > 0
-			? clamp01(scrolledIntoContainer / maxScrollThroughContainer)
-			: 0;
+		// Measure in page coordinates now, including after history restoration or resizing.
+		const containerTop = el.getBoundingClientRect().top + y;
+		return clamp01((y - containerTop) / maxScrollThroughContainer);
 	});
 
 	function clamp01(value: number): number {

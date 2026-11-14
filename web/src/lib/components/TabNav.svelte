@@ -3,12 +3,12 @@
 	import { page } from '$app/state';
 	import { PAGE_SIZE } from '$lib/constants';
 	import TagAssistInput from '$lib/components/TagAssistInput.svelte';
-	import { buildSearchUrl } from '$lib/utils/searchParams';
+	import { buildSearchUrl, createRandomSeed } from '$lib/utils/searchParams';
 
 	let tagQuery: string = $state('');
-	let vectorQuery: string = $state('');
+	let sortQuery: string = $state('');
 	const tagActive = $derived(tagQuery.trim().length > 0);
-	const vectorActive = $derived(vectorQuery.trim().length > 0);
+	const sortActive = $derived(sortQuery.trim().length > 0);
 	const tagInputClass = $derived(`rounded border px-2 py-1 ${tagActive ? 'border-blue-500' : ''}`);
 	type TabKey = 'media' | 'upload' | 'tags' | 'settings';
 	const navItems: { href: string; key: TabKey; label: string }[] = [
@@ -25,23 +25,27 @@
 		const vectorFlag = params.get('vector') === '1';
 		const hasVectorParam = params.has('vector_q');
 		const vectorParam = params.get('vector_q') ?? '';
-		if (vectorFlag && !hasVectorParam) {
+		if (params.get('sort') === 'random') {
+			tagQuery = rawQuery;
+			sortQuery = ':random';
+		} else if (vectorFlag && !hasVectorParam) {
 			tagQuery = '';
-			vectorQuery = rawQuery;
+			sortQuery = rawQuery;
 		} else {
 			tagQuery = rawQuery;
-			vectorQuery = vectorParam;
+			sortQuery = vectorParam;
 		}
 	});
 
 	function submitSearch(event: Event) {
 		event.preventDefault();
 		const trimmedTag = tagQuery.trim();
-		const trimmedVector = vectorQuery.trim();
+		const trimmedSort = sortQuery.trim();
 		const url = buildSearchUrl({
 			pageSize: PAGE_SIZE,
 			query: trimmedTag,
-			vectorQuery: trimmedVector
+			vectorQuery: trimmedSort,
+			seed: trimmedSort === ':random' ? createRandomSeed() : undefined
 		});
 		goto(url);
 	}
@@ -72,11 +76,12 @@
 				/>
 				<input
 					type="text"
-					name="vector-search"
-					placeholder="Vector search"
-					bind:value={vectorQuery}
+					name="sort-by"
+					placeholder="Sort by"
+					aria-label="Sort by"
+					bind:value={sortQuery}
 					class="rounded border px-2 py-1"
-					class:border-blue-500={vectorActive}
+					class:border-blue-500={sortActive}
 				/>
 				<button type="submit" class="hidden" aria-hidden="true">Search</button>
 			</form>

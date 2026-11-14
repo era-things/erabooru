@@ -3,6 +3,7 @@
 	import type { MediaPreviewItem } from '$lib/types/media';
 	import { ElementSize } from 'runed';
 	import { browser } from '$app/environment';
+	import { innerHeight } from 'svelte/reactivity/window';
 
 	let {
 		items = [],
@@ -27,7 +28,7 @@
 			return '';
 		}
 
-		const viewportHeight = window.innerHeight; // Height of visible area
+		const viewportHeight = innerHeight.current ?? 0;
 		const columnHeight = rect.height;
 
 		// Don't move column if it fits in the viewport

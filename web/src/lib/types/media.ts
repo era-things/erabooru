@@ -46,3 +46,9 @@ export interface MediaPreviewItem extends MediaItem {
 	/** Whether the preview is cropped because it's too tall. */
 	cropped: boolean;
 }
+
+export interface MediaGridState {
+	key: string;
+	media: MediaPreviewItem[];
+	nextCursor: string | null;
+}

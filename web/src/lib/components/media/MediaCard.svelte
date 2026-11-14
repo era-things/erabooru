@@ -1,17 +1,9 @@
 <script lang="ts">
 	import type { MediaPreviewItem } from '$lib/types/media';
-	import { isFormatVideo } from '$lib/utils/media_utils';
+	import { mediaBorderClass } from '$lib/utils/media_utils';
 	let { item } = $props<{ item: MediaPreviewItem }>();
 
 	const needsCrop = $derived(item.cropped);
-
-	function getBorderStyle(format: string) {
-		if (isFormatVideo(format)) {
-			return ' border-2 border-dashed border-neutral-900 ';
-		} else {
-			return '';
-		}
-	}
 </script>
 
 <a href={`/media/${item.id}`} class="group relative block">
@@ -24,8 +16,8 @@
 			alt={'media ' + item.id}
 			class={'h-full w-full ' +
 				(needsCrop ? 'object-cover' : '') +
-				' shadow' +
-				getBorderStyle(item.format)}
+				' shadow ' +
+				mediaBorderClass(item.format)}
 			loading="lazy"
 		/>
 		{#if needsCrop}

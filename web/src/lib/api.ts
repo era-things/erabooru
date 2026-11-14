@@ -41,9 +41,10 @@ export async function fetchMediaPreviews(
 	pageSize: number,
 	vectorQuery?: string | null,
 	cursor?: string | null,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	seed?: string | null
 ): Promise<MediaPreviewsResponse> {
-	const params = buildSearchParams({ pageSize, query, vectorQuery, cursor });
+	const params = buildSearchParams({ pageSize, query, vectorQuery, cursor, seed });
 	const res = await fetch(`${apiBase}/media/previews?${params.toString()}`, { signal });
 	return handleJson(res);
 }
@@ -148,6 +149,19 @@ export async function fetchTags(): Promise<TagCount[]> {
 	const res = await fetch(`${apiBase}/tags`);
 	const data = await handleJson<{ tags: TagCount[] }>(res);
 	return data.tags;
+}
+
+export interface TagReviewResponse extends MediaPreviewsResponse {
+	representatives: MediaItem[];
+}
+
+export async function fetchTagReview(
+	tag: string,
+	cursor = '',
+	signal?: AbortSignal
+): Promise<TagReviewResponse> {
+	const params = new URLSearchParams({ tag, cursor });
+	return handleJson(await fetch(`${apiBase}/tags/review?${params}`, { signal }));
 }
 
 export async function fetchTagSuggestions(prefix: string): Promise<TagCount[]> {
