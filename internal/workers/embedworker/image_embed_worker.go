@@ -1,14 +1,12 @@
 package embedworker
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"log"
 	"math"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -271,12 +269,9 @@ func extractVideoFrames(ctx context.Context, src string, duration, samples, size
 			timestamp := (float64(i) + 0.5) * float64(duration) / float64(samples)
 			seek = &timestamp
 		}
-		cmd := exec.CommandContext(ctx, "ffmpeg", videoFrameArgs(src, duration, samples, size, seek)...)
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		output, err := cmd.Output()
+		output, err := processing.FFmpegOutput(ctx, videoFrameArgs(src, duration, samples, size, seek)...)
 		if err != nil {
-			return nil, fmt.Errorf("ffmpeg frame extraction: %w: %s", err, strings.TrimSpace(stderr.String()))
+			return nil, fmt.Errorf("ffmpeg frame extraction: %w", err)
 		}
 		frameBytes := 3 * size * size
 		if len(output)%frameBytes != 0 {

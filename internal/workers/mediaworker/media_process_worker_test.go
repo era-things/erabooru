@@ -3,6 +3,7 @@ package mediaworker
 import (
 	"bytes"
 	"context"
+	"era/booru/internal/processing"
 	"image/jpeg"
 	"os"
 	"os/exec"
@@ -52,7 +53,7 @@ func TestPreviewFromExternalFixtures(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	for _, src := range paths {
-		output, err := exec.CommandContext(ctx, "ffmpeg", previewArgs(src, "2.000")...).Output()
+		output, err := processing.FFmpegOutput(ctx, previewArgs(src, "2.000")...)
 		if err != nil {
 			t.Fatalf("%s: %v", src, err)
 		}

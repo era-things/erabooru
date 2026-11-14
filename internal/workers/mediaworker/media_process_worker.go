@@ -1,6 +1,7 @@
 package mediaworker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -237,20 +238,11 @@ func (w *ProcessWorker) generatePreview(ctx context.Context, key, generation, se
 			timings.Preview += time.Since(started)
 		}
 	}()
-	cmd := exec.CommandContext(ctx, "ffmpeg", previewArgs(w.Store.OriginalPath(key), seek)...)
-	stdout, err := cmd.StdoutPipe()
+	output, err := processing.FFmpegOutput(ctx, previewArgs(w.Store.OriginalPath(key), seek)...)
 	if err != nil {
 		return err
 	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	if err = w.Store.PutPreview(ctx, key, stdout); err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		return err
-	}
-	return cmd.Wait()
+	return w.Store.PutPreview(ctx, key, bytes.NewReader(output))
 }
 
 func previewArgs(src, seek string) []string {
